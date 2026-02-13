@@ -1,0 +1,38 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Env
+.env
+.env.*
+
+# Node
+node_modules/
+dist/
+build/
+.next/
+data/
+.runtime/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Local-only import spreadsheets (may contain PII)
+Members.xlsx
+South Africa-2026-01-11.xlsx
+docs/imports/*
+!docs/imports/README.md
+!docs/imports/members-fixture.xlsx
+!docs/imports/members-fixture.csv
+!docs/imports/members-fixture-summary.json
+!docs/imports/members-fixture-issues.csv

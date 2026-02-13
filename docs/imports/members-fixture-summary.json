@@ -1,0 +1,40 @@
+{
+  "generated_at_utc": "2026-02-10T17:01:51.302918+00:00",
+  "schema": {
+    "expected_headers": [
+      "No",
+      "First Name",
+      "Surname",
+      "Email",
+      "Organisation",
+      "Username",
+      "Status",
+      "Groups",
+      "Roles"
+    ],
+    "required_headers": [
+      "First Name",
+      "Surname",
+      "Email"
+    ],
+    "allowed_status_values": [
+      "Active",
+      "Suspended"
+    ]
+  },
+  "counts": {
+    "total_data_rows": 10,
+    "valid_rows": 10,
+    "rows_with_issues": 0,
+    "missing_required_rows": 0,
+    "invalid_email_rows": 0,
+    "duplicate_email_rows": 0
+  },
+  "status_breakdown": {
+    "Active": 9,
+    "Suspended": 1,
+    "Other": 0
+  },
+  "missing_expected_headers": [],
+  "missing_required_headers": []
+}
