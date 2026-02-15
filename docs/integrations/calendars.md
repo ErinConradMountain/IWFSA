@@ -23,3 +23,20 @@ Add an opt-in integration to insert/update/cancel events directly in a member ca
 - Microsoft Graph Calendar API (OAuth)
 
 This remains optional and may require enterprise security review.
+
+## Current Implementation (Checkpoint 3.3)
+Feature flag:
+- `FEATURE_CALENDAR_OAUTH_SYNC`
+
+Member API surface:
+- `POST /api/calendar-sync/oauth/start`
+- `POST /api/calendar-sync/oauth/callback`
+- `GET /api/calendar-sync/connections`
+- `POST /api/calendar-sync/disconnect`
+
+Behavior:
+- Sync is opt-in per member/provider.
+- Confirmed registrations trigger calendar insert/update.
+- Event publish/update propagates updates to connected confirmed participants.
+- Registration cancellation and event deletion trigger calendar cancellation attempts.
+- Provider errors are recorded in `calendar_sync_failures` and surfaced via in-app notifications (`calendar_sync_failed`).

@@ -85,7 +85,7 @@ Restart run (beginning from plan start):
 - Prior implemented work is carried forward as baseline and revalidated.
 - Unfinished work from the prior cycle remains integrated and is executed in sequence (`2.2+` when reached).
 
-Current checkpoint: `3.3 - Calendar Sync`
+Current checkpoint: `4.1 - Enhancements Wave`
 
 ## Local Run
 1. `npm run migrate`

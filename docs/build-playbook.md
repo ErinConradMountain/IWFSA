@@ -673,7 +673,7 @@ Suggested status values:
 - Done
 
 Tracker Last Updated: 2026-02-15
-Current Checkpoint: 3.3 - Calendar Sync (Not Started)
+Current Checkpoint: 4.1 - Enhancements Wave (Not Started)
 
 | Checkpoint | Status | Notes |
 | --- | --- | --- |
@@ -696,5 +696,5 @@ Current Checkpoint: 3.3 - Calendar Sync (Not Started)
 | 2.5 Regression and Release Readiness | Done | Quality gates revalidated on 2026-02-14 (`npm run ci` + focused API/Web regression) with typecheck, tests, and build green. |
 | 3.1 SharePoint Document Flow | Done | Implemented event document flow with SharePoint-backed metadata persistence (`event_documents`), app-mediated upload/download endpoints, availability windows (immediate/after_event/scheduled), RBAC + audience enforcement on document access, and checkpoint validation tests for authorized download, availability gating, and restricted-audience denial. |
 | 3.2 Teams Graph Automation | Done | Added feature-flagged Microsoft Graph automation for online meetings: publish creates Teams meetings, updates patch existing meetings, manual join-link fallback remains active, and meeting metadata is persisted in `event_online_meetings`. |
-| 3.3 Calendar Sync | Not Started | Optional post-MVP integration checkpoint after core integration stabilization. |
+| 3.3 Calendar Sync | Done | Added feature-flagged OAuth sync foundations for Google/Outlook: connect/disconnect endpoints, insert/update/cancel propagation on registration and event lifecycle changes, mapping persistence, and failure tracking with member-visible in-app alerts. |
 | 4.1 Enhancements Wave | Not Started | Push/SMS, reporting, intelligence dashboards, and social workflow remain controlled backlog work. |
