@@ -2,6 +2,12 @@
 
 This runbook describes day-to-day operations for the IWFSA application.
 
+## 0) Using the Admin Console
+- **Navigation**: Use the top-level tabs to switch between public site, Member Portal, and Admin Console. Inside the Admin Console, use the sub-navigation links to jump between modules (Directory, Imports, Event Hub, Notifications).
+- **Event Hub**: Use this dashboard to see all upcoming events (published and draft) and access planning tools.
+- **Help Banners**: Most admin screens have a help banner at the top explaining key tasks. You can click the **"X"** to dismiss these instructions. They will stay hidden on your device unless you clear your browser data.
+- **Queue Status**: Check the "Notification Queue Status" card on the main admin dashboard for a quick health check of the email system (`Healthy`, `Degraded`, etc.).
+
 ## Roles referenced
 - **ChiefAdmin**: platform owner and escalation path (Akeida Bradley)
 - **Admin**: supports membership, events, permissions
@@ -22,6 +28,8 @@ This runbook describes day-to-day operations for the IWFSA application.
 4. Confirm invitation fan-out:
    - Invitees receive in-app notifications.
    - Invitees receive email with RSVP confirmation link.
+   - RSVP links allow two responses: **Confirm participation** or **Cannot attend**.
+   - A **Cannot attend** response is recorded immediately, visible in Meeting Planning, and can trigger waitlist promotion when applicable.
 5. If a scheduling overlap warning appears, decide whether to:
    - adjust the time, or
    - keep the time and continue (overlaps are allowed, but members may need to choose one meeting).
@@ -102,10 +110,12 @@ This runbook describes day-to-day operations for the IWFSA application.
 ### Upload documents (Admins, EventEditors for assigned events, or event owners)
 1. Upload to SharePoint via the app.
 2. Tag document type: `agenda`, `minutes`, or `attachment`.
-3. Set availability:
+3. Use a suitable file format for the audience (for example PDF, Word, Excel, PowerPoint, CSV, or TXT).
+4. Do not upload executable/program files (for example `.exe`) — these are blocked by the system.
+5. Set availability:
    - immediate (agenda)
    - after event (minutes)
-4. Verify that only eligible members can download.
+6. Verify that only eligible members can download.
 
 ### Replace/remove documents
 - Replace by uploading a new document and unpublishing/removing the old.

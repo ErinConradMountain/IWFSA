@@ -5611,7 +5611,13 @@ test("Checkpoint 3.1: after_event documents are blocked for members until availa
     const form = new FormData();
     form.set("documentType", "minutes");
     form.set("availabilityMode", "after_event");
-    form.set("file", new Blob(["Minutes content"], { type: "text/plain" }), "minutes.txt");
+    form.set(
+      "file",
+      new Blob(["Minutes content"], {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      }),
+      "minutes.docx"
+    );
 
     const uploadResponse = await fetch(`http://${server.host}:${server.port}/api/events/1/documents`, {
       method: "POST",
@@ -5638,6 +5644,38 @@ test("Checkpoint 3.1: after_event documents are blocked for members until availa
     const adminText = await adminDownload.text();
     assert.equal(adminDownload.status, 200);
     assert.equal(adminText, "Minutes content");
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Checkpoint 3.1: executable document uploads are rejected", async () => {
+  const fakeSharePoint = createFakeSharePointClient();
+  const { server, workingDirectory } = await createRunningServer({ sharePointClient: fakeSharePoint });
+
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "admin1", password: "adminpass" })
+    });
+    const adminPayload = await adminLogin.json();
+
+    const form = new FormData();
+    form.set("documentType", "attachment");
+    form.set("availabilityMode", "immediate");
+    form.set("file", new Blob(["MZ"], { type: "application/x-msdownload" }), "unsafe.exe");
+
+    const uploadResponse = await fetch(`http://${server.host}:${server.port}/api/events/1/documents`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${adminPayload.token}` },
+      body: form
+    });
+    const uploadPayload = await uploadResponse.json();
+    assert.equal(uploadResponse.status, 400);
+    assert.equal(uploadPayload.error, "validation_error");
+    assert.match(uploadPayload.message || "", /Unsupported file type/i);
   } finally {
     await server.close();
     rmSync(workingDirectory, { recursive: true, force: true });
@@ -6257,6 +6295,298 @@ test("Checkpoint 3.3: sync failures are recorded and surfaced to members", async
       (item) => item.eventType === "calendar_sync_failed"
     );
     assert.ok(failureNotification);
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Checkpoint 4.1: members can manage SMS settings and limits block excess sends", async () => {
+  const { server, workingDirectory, databasePath } = await createRunningServer();
+
+  try {
+    const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const memberPayload = await memberLogin.json();
+    assert.equal(memberLogin.status, 200);
+
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "admin1", password: "adminpass" })
+    });
+    const adminPayload = await adminLogin.json();
+    assert.equal(adminLogin.status, 200);
+
+    const updateSmsResponse = await fetch(`http://${server.host}:${server.port}/api/notifications/sms-settings`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${memberPayload.token}`
+      },
+      body: JSON.stringify({
+        enabled: true,
+        phoneNumber: "+27123456789",
+        dailyLimit: 1,
+        perEventLimit: 1,
+        quietHoursStart: "23:00",
+        quietHoursEnd: "05:00",
+        allowUrgent: true
+      })
+    });
+    const updateSmsPayload = await updateSmsResponse.json();
+    assert.equal(updateSmsResponse.status, 200);
+    assert.equal(updateSmsPayload.item.enabled, true);
+    assert.equal(updateSmsPayload.item.phoneNumber, "+27123456789");
+
+    const registerResponse = await fetch(`http://${server.host}:${server.port}/api/events/1/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${memberPayload.token}`
+      },
+      body: JSON.stringify({})
+    });
+    assert.equal(registerResponse.status, 200);
+
+    const firstPatch = await fetch(`http://${server.host}:${server.port}/api/events/1`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({ title: "Leadership Roundtable v1" })
+    });
+    assert.equal(firstPatch.status, 200);
+
+    const secondPatch = await fetch(`http://${server.host}:${server.port}/api/events/1`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({ title: "Leadership Roundtable v2" })
+    });
+    assert.equal(secondPatch.status, 200);
+
+    const db = openDatabase(databasePath);
+    try {
+      await waitFor(
+        () => {
+          const sent = db
+            .prepare("SELECT COUNT(*) AS count FROM sms_delivery_logs WHERE user_id = ? AND status = 'sent'")
+            .get(memberPayload.user.id);
+          return Number(sent?.count || 0) >= 1;
+        },
+        { label: "sms sent log" }
+      );
+      await waitFor(
+        () => {
+          const blocked = db
+            .prepare("SELECT COUNT(*) AS count FROM sms_delivery_logs WHERE user_id = ? AND status = 'blocked'")
+            .get(memberPayload.user.id);
+          return Number(blocked?.count || 0) >= 1;
+        },
+        { label: "sms blocked log" }
+      );
+    } finally {
+      db.close();
+    }
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Checkpoint 4.1: published minutes can be restricted to invited attendees", async () => {
+  const fakeSharePoint = createFakeSharePointClient();
+  const { server, workingDirectory } = await createRunningServer({ sharePointClient: fakeSharePoint });
+
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "admin1", password: "adminpass" })
+    });
+    const adminPayload = await adminLogin.json();
+    assert.equal(adminLogin.status, 200);
+
+    const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const memberPayload = await memberLogin.json();
+    assert.equal(memberLogin.status, 200);
+
+    const registerResponse = await fetch(`http://${server.host}:${server.port}/api/events/1/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${memberPayload.token}`
+      },
+      body: JSON.stringify({})
+    });
+    assert.equal(registerResponse.status, 200);
+
+    const form = new FormData();
+    form.set("documentType", "minutes");
+    form.set("availabilityMode", "immediate");
+    form.set("publishNow", "false");
+    form.set("memberAccessScope", "invited_attended");
+    form.set("file", new Blob(["Minutes content"], { type: "application/pdf" }), "minutes-protected.pdf");
+
+    const uploadResponse = await fetch(`http://${server.host}:${server.port}/api/events/1/documents`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${adminPayload.token}` },
+      body: form
+    });
+    const uploadPayload = await uploadResponse.json();
+    assert.equal(uploadResponse.status, 201);
+    assert.equal(uploadPayload.item.published, false);
+
+    const prePublishDownload = await fetch(
+      `http://${server.host}:${server.port}/api/events/1/documents/${uploadPayload.item.id}/download`,
+      {
+        headers: { Authorization: `Bearer ${memberPayload.token}` }
+      }
+    );
+    assert.equal(prePublishDownload.status, 403);
+
+    const publishResponse = await fetch(
+      `http://${server.host}:${server.port}/api/events/1/documents/${uploadPayload.item.id}/publish`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${adminPayload.token}`
+        },
+        body: JSON.stringify({ memberAccessScope: "invited_attended" })
+      }
+    );
+    const publishPayload = await publishResponse.json();
+    assert.equal(publishResponse.status, 200);
+    assert.equal(publishPayload.item.memberAccessScope, "invited_attended");
+
+    const preAttendanceDownload = await fetch(
+      `http://${server.host}:${server.port}/api/events/1/documents/${uploadPayload.item.id}/download`,
+      {
+        headers: { Authorization: `Bearer ${memberPayload.token}` }
+      }
+    );
+    assert.equal(preAttendanceDownload.status, 403);
+
+    const attendanceResponse = await fetch(`http://${server.host}:${server.port}/api/events/1/attendance`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({
+        records: [{ userId: memberPayload.user.id, attendanceStatus: "attended" }]
+      })
+    });
+    assert.equal(attendanceResponse.status, 200);
+
+    const memberDownload = await fetch(
+      `http://${server.host}:${server.port}/api/events/1/documents/${uploadPayload.item.id}/download`,
+      {
+        headers: { Authorization: `Bearer ${memberPayload.token}` }
+      }
+    );
+    const text = await memberDownload.text();
+    assert.equal(memberDownload.status, 200);
+    assert.equal(text, "Minutes content");
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Checkpoint 4.1: social moderation and reporting export endpoints are available", async () => {
+  const { server, workingDirectory } = await createRunningServer();
+
+  try {
+    const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const memberPayload = await memberLogin.json();
+    assert.equal(memberLogin.status, 200);
+
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "admin1", password: "adminpass" })
+    });
+    const adminPayload = await adminLogin.json();
+    assert.equal(adminLogin.status, 200);
+
+    const assignModeratorResponse = await fetch(`http://${server.host}:${server.port}/api/admin/social/moderators`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({ userId: memberPayload.user.id })
+    });
+    assert.equal(assignModeratorResponse.status, 200);
+
+    const postResponse = await fetch(`http://${server.host}:${server.port}/api/social/celebrations`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${memberPayload.token}`
+      },
+      body: JSON.stringify({
+        bodyText: "Congratulations to our IWFSA mentoring programme team.",
+        acknowledgeRules: true,
+        relevantToIwfsa: true
+      })
+    });
+    const postPayload = await postResponse.json();
+    assert.equal(postResponse.status, 201);
+    assert.ok(postPayload.item.id);
+
+    const socialListResponse = await fetch(`http://${server.host}:${server.port}/api/social/celebrations?limit=10`, {
+      headers: { Authorization: `Bearer ${memberPayload.token}` }
+    });
+    const socialListPayload = await socialListResponse.json();
+    assert.equal(socialListResponse.status, 200);
+    assert.ok(Array.isArray(socialListPayload.rules));
+    assert.equal(socialListPayload.canModerate, true);
+
+    const deleteResponse = await fetch(
+      `http://${server.host}:${server.port}/api/social/celebrations/${postPayload.item.id}`,
+      {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${memberPayload.token}` }
+      }
+    );
+    const deletePayload = await deleteResponse.json();
+    assert.equal(deleteResponse.status, 200);
+    assert.equal(deletePayload.removed, true);
+
+    const reportResponse = await fetch(`http://${server.host}:${server.port}/api/admin/reports/dashboard?days=30`, {
+      headers: { Authorization: `Bearer ${adminPayload.token}` }
+    });
+    const reportPayload = await reportResponse.json();
+    assert.equal(reportResponse.status, 200);
+    assert.equal(typeof reportPayload.summary.activeMembers, "number");
+    assert.ok(Array.isArray(reportPayload.topEvents));
+
+    const csvResponse = await fetch(`http://${server.host}:${server.port}/api/admin/reports/dashboard.csv?days=30`, {
+      headers: { Authorization: `Bearer ${adminPayload.token}` }
+    });
+    const csvText = await csvResponse.text();
+    assert.equal(csvResponse.status, 200);
+    assert.match(String(csvResponse.headers.get("content-type") || ""), /text\/csv/i);
+    assert.ok(csvText.includes("window_days"));
+    assert.ok(csvText.includes("active_members"));
   } finally {
     await server.close();
     rmSync(workingDirectory, { recursive: true, force: true });

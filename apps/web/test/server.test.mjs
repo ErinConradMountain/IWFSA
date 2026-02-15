@@ -34,13 +34,43 @@ test("web routes render baseline surfaces", async () => {
     assert.match(publicHtml, /Public Surface/);
     assert.match(publicHtml, /Build Progress Tracker/);
     assert.match(publicHtml, /Source:\s*<code>docs\/build-playbook\.md<\/code>/);
-    assert.match(publicHtml, /Current checkpoint:\s*<strong>Checkpoint \d+(?:\.[0-9]+)+ - [^<]+<\/strong>/);
+    assert.match(
+      publicHtml,
+      /Current checkpoint:\s*<strong>Checkpoint \d+(?:\.[0-9]+)+ - [^<]+<\/strong>|No active checkpoint is selected yet\./
+    );
+    assert.match(publicHtml, /\/member#events/);
+    assert.match(publicHtml, /\/member#birthdays/);
+    assert.match(publicHtml, /\/member#sms/);
+    assert.match(publicHtml, /\/member#celebrations/);
+    assert.match(publicHtml, /\/admin#members/);
+    assert.match(publicHtml, /\/admin#imports/);
+    assert.match(publicHtml, /\/admin#notifications/);
+    assert.match(publicHtml, /\/admin#reports/);
     assert.match(memberHtml, /Member Event Directory/);
+    assert.match(memberHtml, /data-member-module-link="events"/);
+    assert.match(memberHtml, /data-member-module-link="birthdays"/);
+    assert.match(memberHtml, /data-member-module-link="notifications"/);
+    assert.match(memberHtml, /data-member-module-link="sms"/);
+    assert.match(memberHtml, /data-member-module-link="celebrations"/);
+    assert.match(memberHtml, /SMS Settings/);
+    assert.match(memberHtml, /Celebration Thread/);
     assert.match(memberHtml, /Event window/);
     assert.match(adminHtml, /Admin Login/);
+    assert.match(adminHtml, /data-admin-module-link="members"/);
+    assert.match(adminHtml, /data-admin-module-link="imports"/);
+    assert.match(adminHtml, /data-admin-module-link="notifications"/);
+    assert.match(adminHtml, /data-admin-module-link="reports"/);
+    assert.match(adminHtml, /Member Directory/);
+    assert.match(adminHtml, /Event Hub/);
+    assert.match(adminHtml, /Notification Delivery Report/);
+    assert.match(adminHtml, /Notification Queue Status/);
+    assert.match(adminHtml, /Reporting and Exports Dashboard/);
+    assert.match(adminHtml, /Celebration Moderators/);
     assert.match(adminHtml, /Member Import \(Excel\)/);
     assert.match(adminHtml, /Delete<\/button>/);
     assert.doesNotMatch(adminHtml, /akeida123/);
+    assert.doesNotMatch(publicHtml, /memberpass|adminpass|akeida123/);
+    assert.doesNotMatch(adminHtml, /memberpass|adminpass|demo_member1/);
     assert.match(activateHtml, /Activate your account/);
     assert.match(resetHtml, /Reset your password/);
     assert.match(rsvpHtml, /Confirm meeting participation/);
@@ -64,6 +94,12 @@ test("web serves stylesheet", async () => {
     assert.equal(response.status, 200);
     assert.match(response.headers.get("content-type") || "", /text\/css/);
     assert.match(css, /:root/);
+    assert.match(css, /@media \(max-width: 900px\)/);
+    assert.match(css, /@media \(max-width: 760px\)/);
+    assert.match(css, /@media \(max-width: 480px\)/);
+    assert.match(css, /\.inline-login-form\s*\{[\s\S]*display:\s*flex/);
+    assert.match(css, /\.member-actions input\[type="search"\],[\s\S]*width:\s*100%/);
+    assert.match(css, /\.event-toolbar select,[\s\S]*\.event-toolbar button\s*\{[\s\S]*width:\s*100%/);
   } finally {
     await server.close();
   }

@@ -33,6 +33,12 @@ When changing requirements or execution order, update:
 - `README.md` and `CONTRIBUTING.md` when contributor workflow changes
 - Any feature-specific docs touched by the change (for example notifications/import docs)
 
+### User Dictionary writing standard
+- All entries in `docs/User-dictionary.md` must be written for a 7th-grade reading level (ages 12–13).
+- Use short sentences, everyday words, and real-world analogies.
+- Avoid jargon; if a technical term is needed, explain it in plain language immediately.
+- When adding or editing dictionary entries, follow the format and tone of existing entries.
+
 ## 5) Carry-Forward Focus Rules
 ### Membership data consistency
 - Treat batch `membership_set_json` as canonical for import/member-set behavior.

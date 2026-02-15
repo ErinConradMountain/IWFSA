@@ -9,13 +9,11 @@ This roadmap is executed with `docs/build-playbook.md`.
 - Keep unfinished items from the previous cycle integrated in the same checkpoint order.
 - Keep exactly one checkpoint marked `In Progress` in the playbook tracker.
 
-## Current Restart Baseline (2026-02-10)
-- Active checkpoint is now `1.4` after closing `1.3`.
-- Checkpoint `1.3` was closed with member provisioning hardening: import validation, onboarding invites, credential resets, activation gating, and admin batch outcome visibility.
-- Overlapping meeting times are warning-based (not blocking): creators receive in-app clash notifications during meeting creation.
-- Invitees confirm participation via email RSVP links or in-app registration, and organisers can manage planning updates from Event Hub.
-- Prior cycle outputs are retained and revalidated during this restart run.
-- Previously unfinished work (`2.2+`) is explicitly carried forward and remains in scope.
+## Current Restart Baseline (2026-02-15)
+- Checkpoints `2.1` through `2.5` are complete and validated.
+- Checkpoint `3.1` is complete with SharePoint document-flow foundations: persisted SharePoint identifiers, app-mediated upload/download APIs, availability windows, and RBAC/audience-gated access controls.
+- Active checkpoint is now `3.2` (Teams Graph Automation), remaining feature-flagged until tenant readiness and security approvals are confirmed.
+- Prior cycle outputs remain retained and revalidated through the restart run sequence.
 
 ## Phase 0 - Blueprint and Decision Lock (Done)
 Goal:
@@ -29,7 +27,7 @@ Checkpoints:
 Exit criteria:
 - Decisions remain aligned with current implementation and no unresolved drift exists.
 
-## Phase 1 - MVP Core Delivery (Active)
+## Phase 1 - MVP Core Delivery (Done)
 Goal:
 - Revalidate and harden core MVP flows end-to-end.
 
@@ -47,7 +45,7 @@ Checkpoints:
 Exit criteria:
 - Core flows are validated and any identified gaps are closed.
 
-## Phase 2 - Consistency and UX Hardening (Queued; Carry-Forward)
+## Phase 2 - Consistency and UX Hardening (Done)
 Goal:
 - Execute integrated unfinished items from the prior cycle in approved order.
 
@@ -61,7 +59,7 @@ Checkpoints:
 Exit criteria:
 - Data consistency, modular navigation, and notifications operations are all production-ready.
 
-## Phase 3 - Integrations and Automation (Queued)
+## Phase 3 - Integrations and Automation (Active)
 Goal:
 - Add integrations while preserving governance, reliability, and fallback behavior.
 

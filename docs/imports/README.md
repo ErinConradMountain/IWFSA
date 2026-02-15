@@ -4,7 +4,6 @@ Use this folder for import datasets and dry-run outputs.
 
 ## Canonical repository dataset (Phase 2)
 - `members-fixture.xlsx`
-- `members-fixture.csv`
 - `members-fixture-summary.json`
 - `members-fixture-issues.csv`
 

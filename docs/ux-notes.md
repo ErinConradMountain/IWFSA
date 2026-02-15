@@ -21,6 +21,15 @@
 	- Profile (basic profile view/edit when enabled)
 - Use anchors or tabs (for example `/member#events`, `/member#notifications`) so admins and members can jump directly to a module from the Public page or docs.
 
+### Admin Console UX
+- **Modular Layout**: Top-level tabs for high-level tasks (Directory, Imports, Event Hub, Notifications) to mimic the Member Modular approach.
+- **Help Banners**:
+	- **Problem**: Admin interfaces (especially imports/queues) are complex for infrequent users, but repetitive/noisy for power users.
+	- **Solution**: Show blue/gray information banners by default at the top of complex modules.
+	- **Interaction**: Provide a clear "X" (dismiss) button on each banner.
+	- **Persistence**: Store the dismissed state in `localStorage` so the user doesn't see it again on that device.
+- **Event Hub Card Layout**: Use a card-based grid (similar to Member events) but denser, focusing on "Status" (Draft/Published) and "Audience" controls.
+
 ### Events Page: Right Sidebar
 The member event listing view includes a right-side panel for member-only “at a glance” content.
 

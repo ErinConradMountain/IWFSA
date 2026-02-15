@@ -169,6 +169,14 @@ The IWFSA web app supports:
 	- Queue Status default view: health label + aggregate counts (pending/processing/sent/failed)
 - Internal ids, raw error text, and other low-level diagnostics stay in audit/log tables and are not shown in the default admin grid.
 
+### Admin Worksurface
+- **Modular Navigation**: The Admin Console is divided into distinct functional modules (Member Directory, Import, Event Hub, Notifications Audit) to prevent scrolling fatigue.
+- **Event Hub**: A dedicated dashboard for admins to manage the event lifecycle, including published events, upcoming drafts, and meeting planning.
+- **Persistent Help**:
+	- Complex admin screens (Import, Event Hub, Queue) include explanatory help banners.
+	- Admins can dismiss these banners once read.
+	- Dismissal state is saved locally per-device so experienced admins do not see repetitive help text.
+
 ### Documents & Notifications (nice-to-have)
 - Optional: notify signed-up members when a new document is added (e.g., agenda published, minutes available).
 

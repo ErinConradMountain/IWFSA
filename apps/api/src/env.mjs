@@ -30,6 +30,19 @@ function parseUrl(value, key) {
   }
 }
 
+function parseCsvList(value, fallback = []) {
+  if (value === undefined || value === null || String(value).trim() === "") {
+    return [...fallback];
+  }
+
+  const items = String(value)
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+
+  return items.length > 0 ? [...new Set(items)] : [...fallback];
+}
+
 export function getApiConfig(env = process.env) {
   const host = env.API_HOST || "127.0.0.1";
   const port = parsePort(env.API_PORT || "4000", "API_PORT");
@@ -38,6 +51,33 @@ export function getApiConfig(env = process.env) {
   const sharePointEnabled = parseBoolean(env.FEATURE_SHAREPOINT_DOCUMENTS, false);
   const teamsGraphEnabled = parseBoolean(env.FEATURE_TEAMS_GRAPH_AUTOMATION, false);
   const calendarSyncEnabled = parseBoolean(env.FEATURE_CALENDAR_OAUTH_SYNC, false);
+  const defaultDocumentExtensions = [
+    "pdf",
+    "txt",
+    "csv",
+    "doc",
+    "docx",
+    "rtf",
+    "odt",
+    "xls",
+    "xlsx",
+    "ppt",
+    "pptx"
+  ];
+  const defaultDocumentMimeTypes = [
+    "application/pdf",
+    "text/plain",
+    "text/csv",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/rtf",
+    "text/rtf",
+    "application/vnd.oasis.opendocument.text",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  ];
 
   return {
     host,
@@ -72,6 +112,10 @@ export function getApiConfig(env = process.env) {
         clientSecret: env.OUTLOOK_CALENDAR_CLIENT_SECRET || "",
         redirectUri: env.OUTLOOK_CALENDAR_REDIRECT_URI || ""
       }
+    },
+    documentUploads: {
+      allowedExtensions: parseCsvList(env.EVENT_DOCUMENT_ALLOWED_EXTENSIONS, defaultDocumentExtensions),
+      allowedMimeTypes: parseCsvList(env.EVENT_DOCUMENT_ALLOWED_MIME_TYPES, defaultDocumentMimeTypes)
     }
   };
 }

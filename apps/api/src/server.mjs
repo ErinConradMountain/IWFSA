@@ -49,9 +49,54 @@ const IMPORT_BLOCKING_REASON_CODES = new Set(["missing_required_field", "invalid
 const DEFAULT_ACTIVATION_POLICY = "password_change_required";
 const EVENT_DOCUMENT_TYPES = new Set(["agenda", "minutes", "attachment"]);
 const EVENT_DOCUMENT_AVAILABILITY_MODES = new Set(["immediate", "after_event", "scheduled"]);
+const EVENT_DOCUMENT_MEMBER_ACCESS_SCOPES = new Set(["all_visible", "invited_attended"]);
 const EVENT_DOCUMENT_MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
+const EVENT_DOCUMENT_ALLOWED_EXTENSIONS = new Set([
+  "pdf",
+  "txt",
+  "csv",
+  "doc",
+  "docx",
+  "rtf",
+  "odt",
+  "xls",
+  "xlsx",
+  "ppt",
+  "pptx"
+]);
+const EVENT_DOCUMENT_ALLOWED_MIME_TYPES = new Set([
+  "application/pdf",
+  "text/plain",
+  "text/csv",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/rtf",
+  "text/rtf",
+  "application/vnd.oasis.opendocument.text",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+]);
 const TEAMS_GRAPH_PROVIDER_LABEL = "Microsoft Teams";
 const CALENDAR_SYNC_PROVIDERS = new Set(["google", "outlook"]);
+const SMS_QUIET_HOURS_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const SMS_DAILY_LIMIT_RANGE = { min: 1, max: 20 };
+const SMS_PER_EVENT_LIMIT_RANGE = { min: 1, max: 5 };
+const SOCIAL_POST_RULES = Object.freeze([
+  "Posts must be respectful and professional.",
+  "Posts must be relevant to IWFSA members, events, milestones, or celebrations.",
+  "No harassment, abuse, or discriminatory language.",
+  "Do not post confidential or personal data without consent."
+]);
+const SOCIAL_DISALLOWED_TERMS = new Set([
+  "idiot",
+  "stupid",
+  "hate",
+  "racist",
+  "sexist",
+  "trash"
+]);
 
 function writeJson(response, statusCode, payload, extraHeaders = {}) {
   response.writeHead(statusCode, {
@@ -2155,6 +2200,31 @@ function sanitizeEventDocumentFileName(fileName) {
   return cleaned || `event-document-${Date.now()}.bin`;
 }
 
+function extractFileExtension(fileName) {
+  const normalized = String(fileName || "").trim().toLowerCase();
+  const lastDot = normalized.lastIndexOf(".");
+  if (lastDot <= 0 || lastDot === normalized.length - 1) {
+    return "";
+  }
+  return normalized.slice(lastDot + 1);
+}
+
+function isAllowedEventDocumentUpload(fileName, mimeType) {
+  const extension = extractFileExtension(fileName);
+  if (extension && EVENT_DOCUMENT_ALLOWED_EXTENSIONS.has(extension)) {
+    return true;
+  }
+
+  const normalizedMimeType = String(mimeType || "")
+    .trim()
+    .toLowerCase();
+  if (normalizedMimeType && EVENT_DOCUMENT_ALLOWED_MIME_TYPES.has(normalizedMimeType)) {
+    return true;
+  }
+
+  return false;
+}
+
 function buildEventDocumentFolderPath(eventRow, eventId) {
   const startMs = parseIsoToMs(eventRow?.start_at || eventRow?.startAt);
   const year = Number.isFinite(startMs) ? new Date(startMs).getUTCFullYear() : new Date().getUTCFullYear();
@@ -2232,6 +2302,9 @@ function listEventDocuments(database, eventId, { includeRemoved = false } = {}) 
       sharepoint_web_url AS sharePointWebUrl,
       availability_mode AS availabilityMode,
       available_from AS availableFrom,
+      published_at AS publishedAt,
+      published_by_user_id AS publishedByUserId,
+      member_access_scope AS memberAccessScope,
       uploaded_by_user_id AS uploadedByUserId,
       removed_at AS removedAt,
       removed_by_user_id AS removedByUserId,
@@ -2265,6 +2338,9 @@ function loadEventDocument(database, eventId, documentId) {
         sharepoint_web_url AS sharePointWebUrl,
         availability_mode AS availabilityMode,
         available_from AS availableFrom,
+        published_at AS publishedAt,
+        published_by_user_id AS publishedByUserId,
+        member_access_scope AS memberAccessScope,
         uploaded_by_user_id AS uploadedByUserId,
         removed_at AS removedAt,
         removed_by_user_id AS removedByUserId,
@@ -2290,6 +2366,9 @@ function toEventDocumentResponseItem(item, { includeInternal = false, nowMs = Da
     availabilityMode: item.availabilityMode,
     availableFrom: item.availableFrom,
     available: Boolean(available),
+    published: Boolean(item.publishedAt),
+    publishedAt: item.publishedAt || null,
+    memberAccessScope: item.memberAccessScope || "all_visible",
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
     removedAt: item.removedAt || null
@@ -2303,6 +2382,693 @@ function toEventDocumentResponseItem(item, { includeInternal = false, nowMs = Da
     };
   }
   return payload;
+}
+
+function normalizeEventDocumentMemberAccessScope(value, fallback = "all_visible") {
+  const scope = String(value ?? fallback)
+    .trim()
+    .toLowerCase();
+  if (!EVENT_DOCUMENT_MEMBER_ACCESS_SCOPES.has(scope)) {
+    const error = new Error("memberAccessScope must be all_visible or invited_attended.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  return scope;
+}
+
+function isEventDocumentPublished(documentRow) {
+  return Boolean(documentRow?.publishedAt || documentRow?.published_at);
+}
+
+function hasEventAttendanceStatus(database, eventId, userId, status = "attended") {
+  const row = database
+    .prepare(
+      `
+      SELECT attendance_status AS attendanceStatus
+      FROM event_attendance
+      WHERE event_id = ? AND user_id = ?
+      LIMIT 1
+    `
+    )
+    .get(eventId, userId);
+  return String(row?.attendanceStatus || "").trim().toLowerCase() === String(status || "").trim().toLowerCase();
+}
+
+function canMemberDownloadEventDocument(database, { eventId, userId, documentRow }) {
+  const scope = String(documentRow?.memberAccessScope || documentRow?.member_access_scope || "all_visible")
+    .trim()
+    .toLowerCase();
+  if (scope !== "invited_attended") {
+    return true;
+  }
+  return hasEventAttendanceStatus(database, eventId, userId, "attended");
+}
+
+function listEventAttendance(database, eventId) {
+  return database
+    .prepare(
+      `
+      SELECT
+        users.id AS userId,
+        users.username AS username,
+        users.email AS email,
+        signups.status AS signupStatus,
+        event_attendance.attendance_status AS attendanceStatus,
+        event_attendance.marked_at AS markedAt,
+        event_attendance.updated_at AS updatedAt
+      FROM users
+      LEFT JOIN signups ON signups.event_id = ? AND signups.user_id = users.id
+      LEFT JOIN event_attendance ON event_attendance.event_id = ? AND event_attendance.user_id = users.id
+      WHERE users.role IN ('member', 'event_editor', 'admin', 'chief_admin')
+        AND users.status = 'active'
+        AND (signups.id IS NOT NULL)
+      ORDER BY LOWER(COALESCE(users.username, users.email, '')) ASC
+    `
+    )
+    .all(eventId, eventId);
+}
+
+function parseBooleanInput(value, fallback = false) {
+  if (value === undefined || value === null || value === "") {
+    return Boolean(fallback);
+  }
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return value !== 0;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+  return Boolean(fallback);
+}
+
+function parseNumberInRange(value, { min, max, fallback, label }) {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+    const error = new Error(`${label} must be between ${min} and ${max}.`);
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  return parsed;
+}
+
+function normalizeQuietHourValue(value, fallback) {
+  const source = value === undefined || value === null || value === "" ? fallback : value;
+  const normalized = String(source || "").trim();
+  if (!SMS_QUIET_HOURS_PATTERN.test(normalized)) {
+    const error = new Error("Quiet hours must use HH:MM (24-hour) format.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  return normalized;
+}
+
+function normalizeSmsPhone(value) {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/[^\d+]/g, "");
+  if (!normalized) {
+    return "";
+  }
+  if (!/^\+\d{8,15}$/.test(normalized)) {
+    const error = new Error("Phone number must be in international format, for example +27123456789.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  return normalized;
+}
+
+function loadSmsPreference(database, userId) {
+  return database
+    .prepare(
+      `
+      SELECT
+        user_id AS userId,
+        enabled,
+        phone_number AS phoneNumber,
+        daily_limit AS dailyLimit,
+        per_event_limit AS perEventLimit,
+        quiet_hours_start AS quietHoursStart,
+        quiet_hours_end AS quietHoursEnd,
+        allow_urgent AS allowUrgent,
+        created_at AS createdAt,
+        updated_at AS updatedAt
+      FROM sms_notification_preferences
+      WHERE user_id = ?
+      LIMIT 1
+    `
+    )
+    .get(userId);
+}
+
+function upsertSmsPreference(database, userId, payload) {
+  database
+    .prepare(
+      `
+      INSERT INTO sms_notification_preferences (
+        user_id,
+        enabled,
+        phone_number,
+        daily_limit,
+        per_event_limit,
+        quiet_hours_start,
+        quiet_hours_end,
+        allow_urgent,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ON CONFLICT(user_id) DO UPDATE SET
+        enabled = excluded.enabled,
+        phone_number = excluded.phone_number,
+        daily_limit = excluded.daily_limit,
+        per_event_limit = excluded.per_event_limit,
+        quiet_hours_start = excluded.quiet_hours_start,
+        quiet_hours_end = excluded.quiet_hours_end,
+        allow_urgent = excluded.allow_urgent,
+        updated_at = CURRENT_TIMESTAMP
+    `
+    )
+    .run(
+      userId,
+      payload.enabled ? 1 : 0,
+      payload.phoneNumber || null,
+      payload.dailyLimit,
+      payload.perEventLimit,
+      payload.quietHoursStart,
+      payload.quietHoursEnd,
+      payload.allowUrgent ? 1 : 0
+    );
+}
+
+function resolveSmsPreferencePayload(payload, existing = null) {
+  const enabled = parseBooleanInput(payload?.enabled, existing?.enabled === 1);
+  const phoneCandidate =
+    payload?.phoneNumber !== undefined ? payload?.phoneNumber : existing?.phoneNumber;
+  const phoneNumber = normalizeSmsPhone(phoneCandidate);
+  if (enabled && !phoneNumber) {
+    const error = new Error("A valid phone number is required when SMS is enabled.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+
+  return {
+    enabled,
+    phoneNumber,
+    dailyLimit: parseNumberInRange(payload?.dailyLimit, {
+      min: SMS_DAILY_LIMIT_RANGE.min,
+      max: SMS_DAILY_LIMIT_RANGE.max,
+      fallback: Number(existing?.dailyLimit || 3),
+      label: "dailyLimit"
+    }),
+    perEventLimit: parseNumberInRange(payload?.perEventLimit, {
+      min: SMS_PER_EVENT_LIMIT_RANGE.min,
+      max: SMS_PER_EVENT_LIMIT_RANGE.max,
+      fallback: Number(existing?.perEventLimit || 1),
+      label: "perEventLimit"
+    }),
+    quietHoursStart: normalizeQuietHourValue(payload?.quietHoursStart, existing?.quietHoursStart || "21:00"),
+    quietHoursEnd: normalizeQuietHourValue(payload?.quietHoursEnd, existing?.quietHoursEnd || "07:00"),
+    allowUrgent: parseBooleanInput(payload?.allowUrgent, existing?.allowUrgent !== 0)
+  };
+}
+
+function toSmsPreferenceResponse(row, userId) {
+  return {
+    userId: Number(row?.userId || userId || 0),
+    enabled: Boolean(Number(row?.enabled || 0)),
+    phoneNumber: String(row?.phoneNumber || ""),
+    dailyLimit: Number(row?.dailyLimit || 3),
+    perEventLimit: Number(row?.perEventLimit || 1),
+    quietHoursStart: String(row?.quietHoursStart || "21:00"),
+    quietHoursEnd: String(row?.quietHoursEnd || "07:00"),
+    allowUrgent: Boolean(Number(row?.allowUrgent ?? 1)),
+    updatedAt: row?.updatedAt || null
+  };
+}
+
+function parseQuietHoursToMinutes(value) {
+  const match = String(value || "").trim().match(SMS_QUIET_HOURS_PATTERN);
+  if (!match) {
+    return null;
+  }
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function isInQuietHours(nowMinutes, quietStartMinutes, quietEndMinutes) {
+  if (quietStartMinutes === null || quietEndMinutes === null || quietStartMinutes === quietEndMinutes) {
+    return false;
+  }
+  if (quietStartMinutes < quietEndMinutes) {
+    return nowMinutes >= quietStartMinutes && nowMinutes < quietEndMinutes;
+  }
+  return nowMinutes >= quietStartMinutes || nowMinutes < quietEndMinutes;
+}
+
+function countSmsSentSince(database, userId, sinceIso) {
+  const row = database
+    .prepare(
+      `
+      SELECT COUNT(*) AS count
+      FROM sms_delivery_logs
+      WHERE user_id = ? AND status = 'sent' AND datetime(created_at) >= datetime(?)
+    `
+    )
+    .get(userId, sinceIso);
+  return Number(row?.count || 0);
+}
+
+function countSmsSentForEventSince(database, userId, eventId, sinceIso) {
+  if (!Number.isInteger(Number(eventId)) || Number(eventId) <= 0) {
+    return 0;
+  }
+  const row = database
+    .prepare(
+      `
+      SELECT COUNT(*) AS count
+      FROM sms_delivery_logs
+      WHERE user_id = ? AND event_id = ? AND status = 'sent' AND datetime(created_at) >= datetime(?)
+    `
+    )
+    .get(userId, Number(eventId), sinceIso);
+  return Number(row?.count || 0);
+}
+
+function recordSmsDeliveryLog(database, { userId, eventId = null, eventType, status, phoneNumber, messageText, reason = null, metadata = null }) {
+  const excerpt = String(messageText || "").trim().slice(0, 180);
+  database
+    .prepare(
+      `
+      INSERT INTO sms_delivery_logs (
+        user_id,
+        event_id,
+        event_type,
+        status,
+        phone_number,
+        message_excerpt,
+        blocked_reason,
+        metadata_json,
+        created_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `
+    )
+    .run(
+      userId,
+      Number.isInteger(Number(eventId)) ? Number(eventId) : null,
+      String(eventType || "notification"),
+      String(status || "blocked"),
+      phoneNumber || null,
+      excerpt || null,
+      reason || null,
+      metadata ? JSON.stringify(metadata) : null
+    );
+}
+
+function maybeLogSmsForNotification(database, { userId, eventId = null, eventType, messageText, urgent = false }) {
+  const preference = loadSmsPreference(database, userId);
+  if (!preference || Number(preference.enabled || 0) !== 1) {
+    return;
+  }
+  const phoneNumber = String(preference.phoneNumber || "").trim();
+  if (!phoneNumber) {
+    recordSmsDeliveryLog(database, {
+      userId,
+      eventId,
+      eventType,
+      status: "blocked",
+      reason: "missing_phone",
+      messageText,
+      metadata: { urgent: Boolean(urgent) }
+    });
+    return;
+  }
+
+  const now = new Date();
+  const todayStartIso = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
+  const sentToday = countSmsSentSince(database, userId, todayStartIso);
+  if (sentToday >= Number(preference.dailyLimit || 0)) {
+    recordSmsDeliveryLog(database, {
+      userId,
+      eventId,
+      eventType,
+      status: "blocked",
+      phoneNumber,
+      reason: "daily_limit_reached",
+      messageText,
+      metadata: { sentToday, dailyLimit: Number(preference.dailyLimit || 0), urgent: Boolean(urgent) }
+    });
+    return;
+  }
+
+  if (eventId && countSmsSentForEventSince(database, userId, eventId, todayStartIso) >= Number(preference.perEventLimit || 0)) {
+    recordSmsDeliveryLog(database, {
+      userId,
+      eventId,
+      eventType,
+      status: "blocked",
+      phoneNumber,
+      reason: "per_event_limit_reached",
+      messageText,
+      metadata: { perEventLimit: Number(preference.perEventLimit || 0), urgent: Boolean(urgent) }
+    });
+    return;
+  }
+
+  if (!urgent || Number(preference.allowUrgent || 0) !== 1) {
+    const nowMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+    const quietStartMinutes = parseQuietHoursToMinutes(preference.quietHoursStart);
+    const quietEndMinutes = parseQuietHoursToMinutes(preference.quietHoursEnd);
+    if (isInQuietHours(nowMinutes, quietStartMinutes, quietEndMinutes)) {
+      recordSmsDeliveryLog(database, {
+        userId,
+        eventId,
+        eventType,
+        status: "blocked",
+        phoneNumber,
+        reason: "quiet_hours",
+        messageText,
+        metadata: {
+          nowUtcMinutes: nowMinutes,
+          quietHoursStart: preference.quietHoursStart,
+          quietHoursEnd: preference.quietHoursEnd,
+          urgent: Boolean(urgent)
+        }
+      });
+      return;
+    }
+  }
+
+  recordSmsDeliveryLog(database, {
+    userId,
+    eventId,
+    eventType,
+    status: "sent",
+    phoneNumber,
+    messageText,
+    metadata: { urgent: Boolean(urgent) }
+  });
+}
+
+function normalizeSocialPostBody(value) {
+  const text = String(value || "").trim();
+  if (!text) {
+    const error = new Error("Post body is required.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  if (text.length < 8) {
+    const error = new Error("Post body must be at least 8 characters.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  if (text.length > 600) {
+    const error = new Error("Post body must be 600 characters or fewer.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  const lowered = text.toLowerCase();
+  for (const term of SOCIAL_DISALLOWED_TERMS) {
+    if (lowered.includes(term)) {
+      const error = new Error("Post does not meet community respect rules.");
+      error.httpStatus = 400;
+      error.code = "validation_error";
+      throw error;
+    }
+  }
+  return text;
+}
+
+function loadSocialModerators(database) {
+  return database
+    .prepare(
+      `
+      SELECT
+        social_moderators.user_id AS userId,
+        social_moderators.assigned_by_user_id AS assignedByUserId,
+        social_moderators.created_at AS createdAt,
+        users.username AS username,
+        users.email AS email
+      FROM social_moderators
+      JOIN users ON users.id = social_moderators.user_id
+      ORDER BY datetime(social_moderators.created_at) DESC, social_moderators.user_id DESC
+    `
+    )
+    .all();
+}
+
+function isSocialModerator(database, userId) {
+  if (!Number.isInteger(Number(userId)) || Number(userId) <= 0) {
+    return false;
+  }
+  const row = database
+    .prepare(
+      `
+      SELECT user_id AS userId
+      FROM social_moderators
+      WHERE user_id = ?
+      LIMIT 1
+    `
+    )
+    .get(Number(userId));
+  return Boolean(row?.userId);
+}
+
+function canModerateSocial(database, user) {
+  if (!user) {
+    return false;
+  }
+  if (isAdminRole(user.role)) {
+    return true;
+  }
+  return isSocialModerator(database, user.id);
+}
+
+function listSocialCelebrationPosts(database, { includeRemoved = false, limit = 100 } = {}) {
+  let sql = `
+    SELECT
+      social_celebration_posts.id,
+      social_celebration_posts.author_user_id AS authorUserId,
+      social_celebration_posts.body_text AS bodyText,
+      social_celebration_posts.created_at AS createdAt,
+      social_celebration_posts.updated_at AS updatedAt,
+      social_celebration_posts.removed_at AS removedAt,
+      social_celebration_posts.removed_by_user_id AS removedByUserId,
+      social_celebration_posts.removed_reason AS removedReason,
+      author.username AS authorUsername,
+      author.email AS authorEmail
+    FROM social_celebration_posts
+    JOIN users author ON author.id = social_celebration_posts.author_user_id
+    WHERE 1 = 1
+  `;
+  if (!includeRemoved) {
+    sql += " AND social_celebration_posts.removed_at IS NULL";
+  }
+  sql += " ORDER BY datetime(social_celebration_posts.created_at) DESC, social_celebration_posts.id DESC LIMIT ?";
+  return database.prepare(sql).all(limit);
+}
+
+function buildAdminEngagementReport(database, windowDays = 30) {
+  const safeWindowDays = Math.min(Math.max(Number(windowDays || 30), 7), 180);
+  const sinceIso = new Date(Date.now() - safeWindowDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const memberRow = database
+    .prepare(
+      `
+      SELECT
+        COUNT(*) AS activeMembers
+      FROM users
+      WHERE role = 'member' AND status = 'active'
+    `
+    )
+    .get();
+
+  const smsOptInRow = database
+    .prepare(
+      `
+      SELECT COUNT(*) AS count
+      FROM sms_notification_preferences
+      WHERE enabled = 1
+    `
+    )
+    .get();
+
+  const smsRow = database
+    .prepare(
+      `
+      SELECT
+        COALESCE(SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END), 0) AS sentCount,
+        COALESCE(SUM(CASE WHEN status = 'blocked' THEN 1 ELSE 0 END), 0) AS blockedCount,
+        COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) AS failedCount
+      FROM sms_delivery_logs
+      WHERE datetime(created_at) >= datetime(?)
+    `
+    )
+    .get(sinceIso);
+
+  const socialRow = database
+    .prepare(
+      `
+      SELECT
+        COALESCE(SUM(CASE WHEN removed_at IS NULL THEN 1 ELSE 0 END), 0) AS postCount,
+        COALESCE(SUM(CASE WHEN removed_at IS NOT NULL THEN 1 ELSE 0 END), 0) AS removedCount
+      FROM social_celebration_posts
+      WHERE datetime(created_at) >= datetime(?)
+    `
+    )
+    .get(sinceIso);
+
+  const eventRow = database
+    .prepare(
+      `
+      SELECT
+        COALESCE(SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END), 0) AS publishedCount
+      FROM events
+      WHERE datetime(created_at) >= datetime(?)
+    `
+    )
+    .get(sinceIso);
+
+  const signupRow = database
+    .prepare(
+      `
+      SELECT
+        COALESCE(SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END), 0) AS confirmedCount,
+        COALESCE(SUM(CASE WHEN status = 'waitlisted' THEN 1 ELSE 0 END), 0) AS waitlistedCount
+      FROM signups
+      WHERE datetime(created_at) >= datetime(?)
+    `
+    )
+    .get(sinceIso);
+
+  const attendanceRow = database
+    .prepare(
+      `
+      SELECT
+        COALESCE(SUM(CASE WHEN attendance_status = 'attended' THEN 1 ELSE 0 END), 0) AS attendedCount
+      FROM event_attendance
+      WHERE datetime(updated_at) >= datetime(?)
+    `
+    )
+    .get(sinceIso);
+
+  const documentRow = database
+    .prepare(
+      `
+      SELECT
+        COALESCE(SUM(CASE WHEN published_at IS NOT NULL THEN 1 ELSE 0 END), 0) AS publishedDocuments,
+        COALESCE(SUM(CASE WHEN member_access_scope = 'invited_attended' AND published_at IS NOT NULL THEN 1 ELSE 0 END), 0) AS restrictedDocuments
+      FROM event_documents
+      WHERE datetime(created_at) >= datetime(?)
+    `
+    )
+    .get(sinceIso);
+
+  const topEvents = database
+    .prepare(
+      `
+      SELECT
+        events.id,
+        events.title,
+        COALESCE(SUM(CASE WHEN signups.status = 'confirmed' THEN 1 ELSE 0 END), 0) AS confirmedCount,
+        COALESCE(SUM(CASE WHEN signups.status = 'waitlisted' THEN 1 ELSE 0 END), 0) AS waitlistedCount,
+        COALESCE(SUM(CASE WHEN event_attendance.attendance_status = 'attended' THEN 1 ELSE 0 END), 0) AS attendedCount
+      FROM events
+      LEFT JOIN signups ON signups.event_id = events.id
+      LEFT JOIN event_attendance ON event_attendance.event_id = events.id AND event_attendance.user_id = signups.user_id
+      WHERE datetime(events.created_at) >= datetime(?)
+      GROUP BY events.id
+      ORDER BY confirmedCount DESC, attendedCount DESC, events.id DESC
+      LIMIT 10
+    `
+    )
+    .all(sinceIso)
+    .map((row) => ({
+      id: Number(row.id),
+      title: row.title || "Untitled Event",
+      confirmedCount: Number(row.confirmedCount || 0),
+      waitlistedCount: Number(row.waitlistedCount || 0),
+      attendedCount: Number(row.attendedCount || 0)
+    }));
+
+  const recentSms = database
+    .prepare(
+      `
+      SELECT
+        sms_delivery_logs.id,
+        sms_delivery_logs.user_id AS userId,
+        sms_delivery_logs.event_id AS eventId,
+        sms_delivery_logs.event_type AS eventType,
+        sms_delivery_logs.status,
+        sms_delivery_logs.blocked_reason AS blockedReason,
+        sms_delivery_logs.created_at AS createdAt,
+        users.username AS username,
+        users.email AS email
+      FROM sms_delivery_logs
+      LEFT JOIN users ON users.id = sms_delivery_logs.user_id
+      ORDER BY datetime(sms_delivery_logs.created_at) DESC, sms_delivery_logs.id DESC
+      LIMIT 40
+    `
+    )
+    .all()
+    .map((row) => ({
+      id: Number(row.id),
+      userId: Number(row.userId || 0),
+      eventId: Number(row.eventId || 0) || null,
+      eventType: row.eventType || "",
+      status: row.status || "",
+      blockedReason: row.blockedReason || null,
+      createdAt: row.createdAt,
+      username: row.username || "",
+      email: row.email || ""
+    }));
+
+  return {
+    windowDays: safeWindowDays,
+    sinceIso,
+    summary: {
+      activeMembers: Number(memberRow?.activeMembers || 0),
+      smsOptInMembers: Number(smsOptInRow?.count || 0),
+      smsSent: Number(smsRow?.sentCount || 0),
+      smsBlocked: Number(smsRow?.blockedCount || 0),
+      smsFailed: Number(smsRow?.failedCount || 0),
+      socialPosts: Number(socialRow?.postCount || 0),
+      socialRemoved: Number(socialRow?.removedCount || 0),
+      publishedEvents: Number(eventRow?.publishedCount || 0),
+      confirmedSignups: Number(signupRow?.confirmedCount || 0),
+      waitlistedSignups: Number(signupRow?.waitlistedCount || 0),
+      attendedMembers: Number(attendanceRow?.attendedCount || 0),
+      publishedDocuments: Number(documentRow?.publishedDocuments || 0),
+      restrictedDocuments: Number(documentRow?.restrictedDocuments || 0)
+    },
+    topEvents,
+    recentSms
+  };
+}
+
+function escapeCsvCell(value) {
+  const text = String(value ?? "");
+  if (/[",\r\n]/.test(text)) {
+    return `"${text.replace(/"/g, "\"\"")}"`;
+  }
+  return text;
 }
 
 function loadEventOnlineMeeting(database, eventId) {
@@ -3049,6 +3815,13 @@ function processNotificationQueue(database, { limit = 50, supportEmail = "suppor
             metadata: { eventId: eventRow.id, rsvpUrl },
             idempotencyKey
           });
+          maybeLogSmsForNotification(database, {
+            userId,
+            eventId: eventRow.id,
+            eventType: row.eventType,
+            messageText: `${title}. ${body}`,
+            urgent: false
+          });
 
           const contact = contactMap.get(userId);
           const emailKey = `event_published_email:${payload.revisionId}:${userId}`;
@@ -3123,6 +3896,13 @@ function processNotificationQueue(database, { limit = 50, supportEmail = "suppor
             metadata: { eventId: eventRow.id },
             idempotencyKey
           });
+          maybeLogSmsForNotification(database, {
+            userId,
+            eventId: eventRow.id,
+            eventType: row.eventType,
+            messageText: `${title}. ${body}`,
+            urgent: false
+          });
 
           const contact = contactMap.get(userId);
           const emailKey = `event_updated_email:${payload.revisionId}:${userId}`;
@@ -3180,6 +3960,13 @@ function processNotificationQueue(database, { limit = 50, supportEmail = "suppor
             body: `The event "${eventTitle}" has been cancelled. If you had registered, your registration is no longer active.`,
             metadata: { eventId: payload.eventId, eventTitle },
             idempotencyKey: cancelKey
+          });
+          maybeLogSmsForNotification(database, {
+            userId,
+            eventId: payload.eventId,
+            eventType: row.eventType,
+            messageText: `Event cancelled: ${eventTitle}. Check the member portal for details.`,
+            urgent: true
           });
 
           const contact = contactMap.get(userId);
@@ -4639,9 +5426,21 @@ export async function startApiServer(config) {
       }
 
       const includeInternal = canEditEvent(database, auth.user, eventId, { eventRow });
-      const items = listEventDocuments(database, eventId).map((item) =>
-        toEventDocumentResponseItem(item, { includeInternal })
-      );
+      const items = listEventDocuments(database, eventId)
+        .filter((item) => {
+          if (includeInternal) {
+            return true;
+          }
+          if (!isEventDocumentPublished(item)) {
+            return false;
+          }
+          return canMemberDownloadEventDocument(database, {
+            eventId,
+            userId: auth.user.id,
+            documentRow: item
+          });
+        })
+        .map((item) => toEventDocumentResponseItem(item, { includeInternal }));
       writeJson(response, 200, { items }, corsHeaders);
       return;
     }
@@ -4719,8 +5518,22 @@ export async function startApiServer(config) {
         const safeFileName = sanitizeEventDocumentFileName(formData.file.filename);
         const fileBuffer = formData.file.buffer;
         const mimeType = String(formData.file.mimeType || "application/octet-stream").trim();
+        if (!isAllowedEventDocumentUpload(safeFileName, mimeType)) {
+          writeJson(
+            response,
+            400,
+            {
+              error: "validation_error",
+              message: "Unsupported file type. Upload a document format such as PDF, Word, Excel, PowerPoint, CSV, or TXT."
+            },
+            corsHeaders
+          );
+          return;
+        }
         const sizeBytes = Number(fileBuffer.byteLength || 0);
         const checksumSha256 = createHash("sha256").update(fileBuffer).digest("hex");
+        const publishNow = parseBooleanInput(formData.fields.publishNow, true);
+        const memberAccessScope = normalizeEventDocumentMemberAccessScope(formData.fields.memberAccessScope, "all_visible");
         const availableFrom = resolveEventDocumentAvailability(
           eventRow,
           availabilityMode,
@@ -4751,9 +5564,12 @@ export async function startApiServer(config) {
               sharepoint_web_url,
               availability_mode,
               available_from,
+              published_at,
+              published_by_user_id,
+              member_access_scope,
               uploaded_by_user_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `
           )
           .run(
@@ -4769,6 +5585,9 @@ export async function startApiServer(config) {
             uploaded.webUrl || null,
             availabilityMode,
             availableFrom,
+            publishNow ? new Date().toISOString() : null,
+            publishNow ? auth.user.id : null,
+            memberAccessScope,
             auth.user.id
           );
 
@@ -4789,7 +5608,9 @@ export async function startApiServer(config) {
               fileName: safeFileName,
               sizeBytes,
               availabilityMode,
-              availableFrom
+              availableFrom,
+              publishedNow: publishNow,
+              memberAccessScope
             })
           );
 
@@ -4844,8 +5665,28 @@ export async function startApiServer(config) {
       }
 
       const canEdit = canEditEvent(database, auth.user, eventId, { eventRow });
+      if (!canEdit && !isEventDocumentPublished(documentRow)) {
+        writeJson(response, 403, { error: "forbidden", message: "Document is not published yet." }, corsHeaders);
+        return;
+      }
       if (!isEventDocumentAvailable(documentRow) && !canEdit) {
         writeJson(response, 403, { error: "forbidden", message: "Document is not available yet." }, corsHeaders);
+        return;
+      }
+      if (
+        !canEdit &&
+        !canMemberDownloadEventDocument(database, {
+          eventId,
+          userId: auth.user.id,
+          documentRow
+        })
+      ) {
+        writeJson(
+          response,
+          403,
+          { error: "forbidden", message: "This document is restricted to invited members marked as attended." },
+          corsHeaders
+        );
         return;
       }
 
@@ -4961,6 +5802,270 @@ export async function startApiServer(config) {
       }
 
       writeJson(response, 200, { removed: result.changes > 0 }, corsHeaders);
+      return;
+    }
+
+    if (request.method === "POST" && /^\/api\/events\/\d+\/documents\/\d+\/publish$/.test(requestUrl.pathname)) {
+      const auth = requireAuth(database, request, response, corsHeaders);
+      if (!auth) {
+        return;
+      }
+      if (!requireRole(auth.user, INTERNAL_PORTAL_ROLES, response, corsHeaders)) {
+        return;
+      }
+
+      const parts = requestUrl.pathname.split("/");
+      const eventId = Number(parts[3]);
+      const documentId = Number(parts[5]);
+      if (!Number.isInteger(eventId) || !Number.isInteger(documentId)) {
+        writeJson(response, 400, { error: "validation_error", message: "Event and document id are required." }, corsHeaders);
+        return;
+      }
+
+      const eventRow = loadEvent(database, eventId);
+      if (!eventRow) {
+        writeJson(response, 404, { error: "not_found", message: "Event not found." }, corsHeaders);
+        return;
+      }
+      if (!canEditEvent(database, auth.user, eventId, { eventRow })) {
+        writeJson(response, 403, { error: "forbidden", message: "Insufficient permissions." }, corsHeaders);
+        return;
+      }
+
+      const documentRow = loadEventDocument(database, eventId, documentId);
+      if (!documentRow || documentRow.removedAt) {
+        writeJson(response, 404, { error: "not_found", message: "Document not found." }, corsHeaders);
+        return;
+      }
+
+      try {
+        const payload = await readJsonBody(request);
+        const memberAccessScope = normalizeEventDocumentMemberAccessScope(
+          payload.memberAccessScope,
+          documentRow.memberAccessScope || "all_visible"
+        );
+        const publishAtSource = String(payload.publishAt || "").trim();
+        const publishAt = publishAtSource ? new Date(publishAtSource).toISOString() : new Date().toISOString();
+        if (!Number.isFinite(Date.parse(publishAt))) {
+          writeJson(response, 400, { error: "validation_error", message: "publishAt must be a valid ISO date/time." }, corsHeaders);
+          return;
+        }
+        database
+          .prepare(
+            `
+            UPDATE event_documents
+            SET
+              published_at = ?,
+              published_by_user_id = ?,
+              member_access_scope = ?,
+              updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND event_id = ? AND removed_at IS NULL
+          `
+          )
+          .run(publishAt, auth.user.id, memberAccessScope, documentId, eventId);
+
+        database
+          .prepare(
+            `
+            INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+            VALUES (?, 'event_document_published', 'event_document', ?, ?)
+          `
+          )
+          .run(
+            auth.user.id,
+            String(documentId),
+            JSON.stringify({ eventId, memberAccessScope, publishAt })
+          );
+
+        const refreshed = loadEventDocument(database, eventId, documentId);
+        writeJson(
+          response,
+          200,
+          { published: true, item: toEventDocumentResponseItem(refreshed, { includeInternal: true }) },
+          corsHeaders
+        );
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 400),
+          { error: error.code || "invalid_json", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "GET" && /^\/api\/events\/\d+\/attendance$/.test(requestUrl.pathname)) {
+      const auth = requireAuth(database, request, response, corsHeaders);
+      if (!auth) {
+        return;
+      }
+      if (!requireRole(auth.user, INTERNAL_PORTAL_ROLES, response, corsHeaders)) {
+        return;
+      }
+
+      const parts = requestUrl.pathname.split("/");
+      const eventId = Number(parts[3]);
+      if (!Number.isInteger(eventId)) {
+        writeJson(response, 400, { error: "validation_error", message: "Event id is required." }, corsHeaders);
+        return;
+      }
+
+      const eventRow = loadEvent(database, eventId);
+      if (!eventRow) {
+        writeJson(response, 404, { error: "not_found", message: "Event not found." }, corsHeaders);
+        return;
+      }
+      if (!canEditEvent(database, auth.user, eventId, { eventRow })) {
+        writeJson(response, 403, { error: "forbidden", message: "Insufficient permissions." }, corsHeaders);
+        return;
+      }
+
+      const items = listEventAttendance(database, eventId).map((row) => ({
+        userId: Number(row.userId),
+        username: row.username || null,
+        email: row.email || null,
+        signupStatus: row.signupStatus || "pending",
+        attendanceStatus: row.attendanceStatus || "unmarked",
+        markedAt: row.markedAt || null,
+        updatedAt: row.updatedAt || null
+      }));
+      writeJson(response, 200, { eventId, items }, corsHeaders);
+      return;
+    }
+
+    if (request.method === "PUT" && /^\/api\/events\/\d+\/attendance$/.test(requestUrl.pathname)) {
+      const auth = requireAuth(database, request, response, corsHeaders);
+      if (!auth) {
+        return;
+      }
+      if (!requireRole(auth.user, INTERNAL_PORTAL_ROLES, response, corsHeaders)) {
+        return;
+      }
+
+      const parts = requestUrl.pathname.split("/");
+      const eventId = Number(parts[3]);
+      if (!Number.isInteger(eventId)) {
+        writeJson(response, 400, { error: "validation_error", message: "Event id is required." }, corsHeaders);
+        return;
+      }
+
+      const eventRow = loadEvent(database, eventId);
+      if (!eventRow) {
+        writeJson(response, 404, { error: "not_found", message: "Event not found." }, corsHeaders);
+        return;
+      }
+      if (!canEditEvent(database, auth.user, eventId, { eventRow })) {
+        writeJson(response, 403, { error: "forbidden", message: "Insufficient permissions." }, corsHeaders);
+        return;
+      }
+
+      try {
+        const payload = await readJsonBody(request);
+        const sourceRecords = Array.isArray(payload.records) ? payload.records : [payload];
+        if (!sourceRecords.length) {
+          writeJson(response, 400, { error: "validation_error", message: "At least one attendance record is required." }, corsHeaders);
+          return;
+        }
+
+        const normalizedRecords = sourceRecords.map((item) => {
+          const userId = Number(item?.userId);
+          const attendanceStatus = String(item?.attendanceStatus || "")
+            .trim()
+            .toLowerCase();
+          if (!Number.isInteger(userId) || userId <= 0) {
+            const error = new Error("Each attendance record must include a valid userId.");
+            error.httpStatus = 400;
+            error.code = "validation_error";
+            throw error;
+          }
+          if (!["attended", "absent", "excused"].includes(attendanceStatus)) {
+            const error = new Error("attendanceStatus must be attended, absent, or excused.");
+            error.httpStatus = 400;
+            error.code = "validation_error";
+            throw error;
+          }
+          return { userId, attendanceStatus };
+        });
+
+        runTransaction(
+          database,
+          () => {
+            const upsert = database.prepare(
+              `
+              INSERT INTO event_attendance (
+                event_id,
+                user_id,
+                attendance_status,
+                marked_by_user_id,
+                marked_at,
+                updated_at
+              )
+              VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+              ON CONFLICT(event_id, user_id) DO UPDATE SET
+                attendance_status = excluded.attendance_status,
+                marked_by_user_id = excluded.marked_by_user_id,
+                marked_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            `
+            );
+
+            for (const record of normalizedRecords) {
+              const signupRow = database
+                .prepare(
+                  `
+                  SELECT id
+                  FROM signups
+                  WHERE event_id = ? AND user_id = ?
+                  LIMIT 1
+                `
+                )
+                .get(eventId, record.userId);
+              if (!signupRow) {
+                const error = new Error(`User ${record.userId} has no RSVP record for this event.`);
+                error.httpStatus = 400;
+                error.code = "validation_error";
+                throw error;
+              }
+              upsert.run(eventId, record.userId, record.attendanceStatus, auth.user.id);
+            }
+          },
+          { immediate: true }
+        );
+
+        database
+          .prepare(
+            `
+            INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+            VALUES (?, 'event_attendance_updated', 'event', ?, ?)
+          `
+          )
+          .run(
+            auth.user.id,
+            String(eventId),
+            JSON.stringify({
+              records: normalizedRecords
+            })
+          );
+
+        const items = listEventAttendance(database, eventId).map((row) => ({
+          userId: Number(row.userId),
+          username: row.username || null,
+          email: row.email || null,
+          signupStatus: row.signupStatus || "pending",
+          attendanceStatus: row.attendanceStatus || "unmarked",
+          markedAt: row.markedAt || null,
+          updatedAt: row.updatedAt || null
+        }));
+        writeJson(response, 200, { eventId, updated: normalizedRecords.length, items }, corsHeaders);
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 400),
+          { error: error.code || "invalid_json", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
       return;
     }
 
@@ -5094,6 +6199,325 @@ export async function startApiServer(config) {
           corsHeaders
         );
       }
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/notifications/sms-settings") {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, INTERNAL_PORTAL_ROLES, response, corsHeaders)) {
+          return;
+        }
+        if (!requireActivationClear(auth.user, response, corsHeaders)) {
+          return;
+        }
+
+        const existing = loadSmsPreference(database, auth.user.id);
+        const fallbackPhoneRow = database
+          .prepare(
+            `
+            SELECT phone
+            FROM member_profiles
+            WHERE user_id = ?
+            LIMIT 1
+          `
+          )
+          .get(auth.user.id);
+        let fallbackPhone = "";
+        try {
+          fallbackPhone = normalizeSmsPhone(fallbackPhoneRow?.phone || "");
+        } catch {
+          fallbackPhone = "";
+        }
+        const payload = toSmsPreferenceResponse(
+          existing || {
+            userId: auth.user.id,
+            enabled: 0,
+            phoneNumber: fallbackPhone || "",
+            dailyLimit: 3,
+            perEventLimit: 1,
+            quietHoursStart: "21:00",
+            quietHoursEnd: "07:00",
+            allowUrgent: 1
+          },
+          auth.user.id
+        );
+
+        writeJson(
+          response,
+          200,
+          {
+            item: payload,
+            limits: {
+              daily: SMS_DAILY_LIMIT_RANGE,
+              perEvent: SMS_PER_EVENT_LIMIT_RANGE
+            }
+          },
+          corsHeaders
+        );
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 500),
+          { error: error.code || "internal_error", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "PUT" && requestUrl.pathname === "/api/notifications/sms-settings") {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, INTERNAL_PORTAL_ROLES, response, corsHeaders)) {
+          return;
+        }
+        if (!requireActivationClear(auth.user, response, corsHeaders)) {
+          return;
+        }
+
+        const payload = await readJsonBody(request);
+        const existing = loadSmsPreference(database, auth.user.id);
+        const next = resolveSmsPreferencePayload(payload, existing || null);
+        upsertSmsPreference(database, auth.user.id, next);
+
+        database
+          .prepare(
+            `
+            INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+            VALUES (?, 'sms_preferences_updated', 'user', ?, ?)
+          `
+          )
+          .run(
+            auth.user.id,
+            String(auth.user.id),
+            JSON.stringify({
+              enabled: Boolean(next.enabled),
+              dailyLimit: next.dailyLimit,
+              perEventLimit: next.perEventLimit,
+              quietHoursStart: next.quietHoursStart,
+              quietHoursEnd: next.quietHoursEnd,
+              allowUrgent: Boolean(next.allowUrgent)
+            })
+          );
+
+        const refreshed = loadSmsPreference(database, auth.user.id);
+        writeJson(response, 200, { updated: true, item: toSmsPreferenceResponse(refreshed, auth.user.id) }, corsHeaders);
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 400),
+          { error: error.code || "invalid_json", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/social/celebrations") {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, INTERNAL_PORTAL_ROLES, response, corsHeaders)) {
+          return;
+        }
+        if (!requireActivationClear(auth.user, response, corsHeaders)) {
+          return;
+        }
+
+        const limit = Math.min(Math.max(Number(requestUrl.searchParams.get("limit") || 80), 1), 200);
+        const canModerate = canModerateSocial(database, auth.user);
+        const items = listSocialCelebrationPosts(database, { limit }).map((row) => ({
+          id: Number(row.id),
+          authorUserId: Number(row.authorUserId),
+          authorUsername: row.authorUsername || "",
+          authorEmail: row.authorEmail || "",
+          bodyText: row.bodyText || "",
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+          canDelete: canModerate
+        }));
+        writeJson(
+          response,
+          200,
+          {
+            rules: SOCIAL_POST_RULES,
+            canModerate,
+            items
+          },
+          corsHeaders
+        );
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 500),
+          { error: error.code || "internal_error", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/social/celebrations") {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, INTERNAL_PORTAL_ROLES, response, corsHeaders)) {
+          return;
+        }
+        if (!requireActivationClear(auth.user, response, corsHeaders)) {
+          return;
+        }
+
+        const payload = await readJsonBody(request);
+        if (!parseBooleanInput(payload.acknowledgeRules, false)) {
+          writeJson(
+            response,
+            400,
+            { error: "validation_error", message: "Please acknowledge the community posting rules." },
+            corsHeaders
+          );
+          return;
+        }
+        if (!parseBooleanInput(payload.relevantToIwfsa, false)) {
+          writeJson(
+            response,
+            400,
+            { error: "validation_error", message: "Posts must be relevant to IWFSA activities." },
+            corsHeaders
+          );
+          return;
+        }
+        const bodyText = normalizeSocialPostBody(payload.bodyText);
+
+        const result = database
+          .prepare(
+            `
+            INSERT INTO social_celebration_posts (author_user_id, body_text, created_at, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          `
+          )
+          .run(auth.user.id, bodyText);
+
+        database
+          .prepare(
+            `
+            INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+            VALUES (?, 'social_post_created', 'social_post', ?, ?)
+          `
+          )
+          .run(
+            auth.user.id,
+            String(result.lastInsertRowid),
+            JSON.stringify({ length: bodyText.length })
+          );
+
+        const created = database
+          .prepare(
+            `
+            SELECT
+              social_celebration_posts.id,
+              social_celebration_posts.author_user_id AS authorUserId,
+              social_celebration_posts.body_text AS bodyText,
+              social_celebration_posts.created_at AS createdAt,
+              social_celebration_posts.updated_at AS updatedAt,
+              users.username AS authorUsername,
+              users.email AS authorEmail
+            FROM social_celebration_posts
+            JOIN users ON users.id = social_celebration_posts.author_user_id
+            WHERE social_celebration_posts.id = ?
+            LIMIT 1
+          `
+          )
+          .get(result.lastInsertRowid);
+
+        writeJson(
+          response,
+          201,
+          {
+            created: true,
+            item: {
+              id: Number(created.id),
+              authorUserId: Number(created.authorUserId),
+              authorUsername: created.authorUsername || "",
+              authorEmail: created.authorEmail || "",
+              bodyText: created.bodyText || "",
+              createdAt: created.createdAt,
+              updatedAt: created.updatedAt,
+              canDelete: canModerateSocial(database, auth.user)
+            }
+          },
+          corsHeaders
+        );
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 400),
+          { error: error.code || "invalid_json", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "DELETE" && /^\/api\/social\/celebrations\/\d+$/.test(requestUrl.pathname)) {
+      const auth = requireAuth(database, request, response, corsHeaders);
+      if (!auth) {
+        return;
+      }
+      if (!requireRole(auth.user, INTERNAL_PORTAL_ROLES, response, corsHeaders)) {
+        return;
+      }
+      if (!requireActivationClear(auth.user, response, corsHeaders)) {
+        return;
+      }
+      if (!canModerateSocial(database, auth.user)) {
+        writeJson(response, 403, { error: "forbidden", message: "Moderator permissions are required." }, corsHeaders);
+        return;
+      }
+
+      const parts = requestUrl.pathname.split("/");
+      const postId = Number(parts[4]);
+      if (!Number.isInteger(postId)) {
+        writeJson(response, 400, { error: "validation_error", message: "Post id is required." }, corsHeaders);
+        return;
+      }
+
+      const result = database
+        .prepare(
+          `
+          UPDATE social_celebration_posts
+          SET removed_at = CURRENT_TIMESTAMP,
+              removed_by_user_id = ?,
+              removed_reason = ?,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ? AND removed_at IS NULL
+        `
+        )
+        .run(auth.user.id, "moderator_action", postId);
+
+      if (result.changes > 0) {
+        database
+          .prepare(
+            `
+            INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+            VALUES (?, 'social_post_removed', 'social_post', ?, ?)
+          `
+          )
+          .run(auth.user.id, String(postId), JSON.stringify({ reason: "moderator_action" }));
+      }
+
+      writeJson(response, 200, { removed: result.changes > 0 }, corsHeaders);
       return;
     }
 
@@ -5489,6 +6913,242 @@ export async function startApiServer(config) {
           response,
           500,
           { error: "internal_error", message: "Unable to load queue.", details: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/admin/reports/dashboard") {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, ["admin", "chief_admin"], response, corsHeaders)) {
+          return;
+        }
+
+        const windowDays = Number(requestUrl.searchParams.get("days") || 30);
+        const report = buildAdminEngagementReport(database, windowDays);
+        writeJson(response, 200, report, corsHeaders);
+      } catch (error) {
+        writeJson(
+          response,
+          500,
+          { error: "internal_error", message: "Unable to load reporting dashboard.", details: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/admin/reports/dashboard.csv") {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, ["admin", "chief_admin"], response, corsHeaders)) {
+          return;
+        }
+
+        const windowDays = Number(requestUrl.searchParams.get("days") || 30);
+        const report = buildAdminEngagementReport(database, windowDays);
+        const header = [
+          "window_days",
+          "since_utc",
+          "active_members",
+          "sms_opt_in_members",
+          "sms_sent",
+          "sms_blocked",
+          "sms_failed",
+          "social_posts",
+          "social_removed",
+          "published_events",
+          "confirmed_signups",
+          "waitlisted_signups",
+          "attended_members",
+          "published_documents",
+          "restricted_documents"
+        ];
+        const values = [
+          report.windowDays,
+          report.sinceIso,
+          report.summary.activeMembers,
+          report.summary.smsOptInMembers,
+          report.summary.smsSent,
+          report.summary.smsBlocked,
+          report.summary.smsFailed,
+          report.summary.socialPosts,
+          report.summary.socialRemoved,
+          report.summary.publishedEvents,
+          report.summary.confirmedSignups,
+          report.summary.waitlistedSignups,
+          report.summary.attendedMembers,
+          report.summary.publishedDocuments,
+          report.summary.restrictedDocuments
+        ];
+        const csv = `${header.map(escapeCsvCell).join(",")}\r\n${values.map(escapeCsvCell).join(",")}\r\n`;
+        response.writeHead(200, {
+          ...corsHeaders,
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition": `attachment; filename="admin-dashboard-${report.windowDays}d.csv"`
+        });
+        response.end(csv);
+      } catch (error) {
+        writeJson(
+          response,
+          500,
+          { error: "internal_error", message: "Unable to export dashboard report.", details: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/admin/social/moderators") {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, ["admin", "chief_admin"], response, corsHeaders)) {
+          return;
+        }
+        const items = loadSocialModerators(database).map((row) => ({
+          userId: Number(row.userId),
+          username: row.username || "",
+          email: row.email || "",
+          assignedByUserId: Number(row.assignedByUserId || 0) || null,
+          createdAt: row.createdAt
+        }));
+        writeJson(response, 200, { items }, corsHeaders);
+      } catch (error) {
+        writeJson(
+          response,
+          500,
+          { error: "internal_error", message: "Unable to load moderators.", details: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/admin/social/moderators") {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, ["admin", "chief_admin"], response, corsHeaders)) {
+          return;
+        }
+        const payload = await readJsonBody(request);
+        const userId = Number(payload.userId);
+        if (!Number.isInteger(userId) || userId <= 0) {
+          writeJson(response, 400, { error: "validation_error", message: "userId is required." }, corsHeaders);
+          return;
+        }
+
+        const userRow = database
+          .prepare(
+            `
+            SELECT id, role, status
+            FROM users
+            WHERE id = ?
+            LIMIT 1
+          `
+          )
+          .get(userId);
+        if (!userRow || userRow.status !== "active") {
+          writeJson(response, 404, { error: "not_found", message: "User not found." }, corsHeaders);
+          return;
+        }
+        if (!INTERNAL_PORTAL_ROLES.includes(String(userRow.role || ""))) {
+          writeJson(
+            response,
+            400,
+            { error: "validation_error", message: "Moderator must be an internal portal role." },
+            corsHeaders
+          );
+          return;
+        }
+
+        database
+          .prepare(
+            `
+            INSERT INTO social_moderators (user_id, assigned_by_user_id, created_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(user_id) DO UPDATE SET
+              assigned_by_user_id = excluded.assigned_by_user_id
+          `
+          )
+          .run(userId, auth.user.id);
+
+        database
+          .prepare(
+            `
+            INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+            VALUES (?, 'social_moderator_assigned', 'user', ?, ?)
+          `
+          )
+          .run(auth.user.id, String(userId), JSON.stringify({}));
+
+        writeJson(response, 200, { assigned: true, userId }, corsHeaders);
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 400),
+          { error: error.code || "invalid_json", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "DELETE" && /^\/api\/admin\/social\/moderators\/\d+$/.test(requestUrl.pathname)) {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, ["admin", "chief_admin"], response, corsHeaders)) {
+          return;
+        }
+        const parts = requestUrl.pathname.split("/");
+        const userId = Number(parts[5]);
+        if (!Number.isInteger(userId) || userId <= 0) {
+          writeJson(response, 400, { error: "validation_error", message: "userId is required." }, corsHeaders);
+          return;
+        }
+
+        const result = database
+          .prepare(
+            `
+            DELETE FROM social_moderators
+            WHERE user_id = ?
+          `
+          )
+          .run(userId);
+
+        if (result.changes > 0) {
+          database
+            .prepare(
+              `
+              INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+              VALUES (?, 'social_moderator_removed', 'user', ?, ?)
+            `
+            )
+            .run(auth.user.id, String(userId), JSON.stringify({}));
+        }
+
+        writeJson(response, 200, { removed: result.changes > 0, userId }, corsHeaders);
+      } catch (error) {
+        writeJson(
+          response,
+          500,
+          { error: "internal_error", message: "Unable to remove moderator.", details: String(error.message || error) },
           corsHeaders
         );
       }

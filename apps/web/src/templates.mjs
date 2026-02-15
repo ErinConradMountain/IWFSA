@@ -140,8 +140,15 @@ export function renderPublicPage(config) {
         </ul>
         <div class="member-actions">
           <a class="ghost" href="${config.appBaseUrl}/member">Go to Member Portal</a>
-          <a class="ghost" href="${config.appBaseUrl}/member#dashboard">Test the Member Portal (demo)</a>
+          <a class="ghost" href="${config.appBaseUrl}/member#events">Member Events</a>
+          <a class="ghost" href="${config.appBaseUrl}/member#birthdays">Member Birthdays</a>
+          <a class="ghost" href="${config.appBaseUrl}/member#sms">Member SMS Settings</a>
+          <a class="ghost" href="${config.appBaseUrl}/member#celebrations">Member Celebrations</a>
           <a class="ghost" href="${config.appBaseUrl}/admin">Admin Console (authorised only)</a>
+          <a class="ghost" href="${config.appBaseUrl}/admin#members">Admin Members</a>
+          <a class="ghost" href="${config.appBaseUrl}/admin#imports">Admin Imports</a>
+          <a class="ghost" href="${config.appBaseUrl}/admin#notifications">Admin Notifications</a>
+          <a class="ghost" href="${config.appBaseUrl}/admin#reports">Admin Reports</a>
         </div>
       </section>
       </div>
@@ -160,20 +167,30 @@ export function renderMemberPage(config) {
     buildTracker: config.buildTracker,
     currentPath: "/member",
     body: `
-      <section class="panel">
-        <h2>Member Event Directory</h2>
-        <p>Sign in to browse published member events and register while spaces are available.</p>
+      <nav class="module-nav" aria-label="Member modules">
+        <a href="#dashboard" class="module-nav-link" data-member-module-link="dashboard">Dashboard</a>
+        <a href="#events" class="module-nav-link" data-member-module-link="events">Events</a>
+        <a href="#birthdays" class="module-nav-link" data-member-module-link="birthdays">Birthdays</a>
+        <a href="#notifications" class="module-nav-link" data-member-module-link="notifications">Notifications</a>
+        <a href="#sms" class="module-nav-link" data-member-module-link="sms">SMS Settings</a>
+        <a href="#celebrations" class="module-nav-link" data-member-module-link="celebrations">Celebrations</a>
+      </nav>
+      <section class="panel module-section" id="member-module-dashboard" data-member-module="dashboard">
+        <h2>Dashboard</h2>
+        <p>Sign in to access events, birthdays, and notification updates.</p>
         <form id="member-login-form" class="login-form">
           <label for="member-username">Username</label>
           <input id="member-username" name="username" autocomplete="username" />
           <label for="member-password">Password</label>
           <input id="member-password" type="password" name="password" autocomplete="current-password" />
-          <button id="member-fill-demo" type="button" class="ghost">Use mock login</button>
           <button type="submit">Sign in</button>
           <button id="member-logout" type="button" class="ghost" disabled>Sign out</button>
         </form>
-        <p class="muted">Mock credentials: <strong>demo_member1 / memberpass</strong> and <strong>demo_member2 / member2pass</strong>.</p>
         <p id="member-login-status" class="muted">Not signed in.</p>
+      </section>
+      <section class="panel module-section" id="member-module-events" data-member-module="events">
+        <h2>Member Event Directory</h2>
+        <p>Browse published member events and register while spaces are available.</p>
         <div class="member-actions">
           <label for="member-event-view" class="muted">Event window</label>
           <select id="member-event-view" disabled>
@@ -184,30 +201,26 @@ export function renderMemberPage(config) {
           </select>
           <button id="member-refresh-events" type="button" disabled>Refresh events</button>
         </div>
-        <div class="member-layout">
-          <div id="event-list" class="event-grid">
-            <p class="muted">Sign in to load events.</p>
-          </div>
-          <aside class="sidebar-card sidebar-card-accent">
-            <div class="sidebar-header">
-              <h3>Upcoming Birthdays</h3>
-              <div class="member-actions member-actions-tight">
-                <label for="birthday-window" class="muted">Window</label>
-                <select id="birthday-window" disabled>
-                  <option value="7">7 days</option>
-                  <option value="14" selected>14 days</option>
-                  <option value="30">30 days</option>
-                </select>
-                <button id="refresh-birthdays" type="button" class="ghost" disabled>Refresh</button>
-              </div>
-            </div>
-            <div id="birthday-list" class="birthday-list">
-              <p class="muted">Sign in to load birthdays.</p>
-            </div>
-          </aside>
+        <div id="event-list" class="event-grid">
+          <p class="muted">Sign in to load events.</p>
         </div>
       </section>
-      <section class="panel">
+      <section class="panel module-section" id="member-module-birthdays" data-member-module="birthdays">
+        <h2>Upcoming Birthdays</h2>
+        <div class="member-actions member-actions-tight">
+          <label for="birthday-window" class="muted">Window</label>
+          <select id="birthday-window" disabled>
+            <option value="7">7 days</option>
+            <option value="14" selected>14 days</option>
+            <option value="30">30 days</option>
+          </select>
+          <button id="refresh-birthdays" type="button" class="ghost" disabled>Refresh</button>
+        </div>
+        <div id="birthday-list" class="birthday-list">
+          <p class="muted">Sign in to load birthdays.</p>
+        </div>
+      </section>
+      <section class="panel module-section" id="member-module-notifications" data-member-module="notifications">
         <h2>Notification Center</h2>
         <p class="muted">Updates about events, registrations, and invitations.</p>
         <div class="member-actions">
@@ -218,14 +231,90 @@ export function renderMemberPage(config) {
           <p class="muted">Sign in to load notifications.</p>
         </div>
       </section>
+      <section class="panel module-section" id="member-module-sms" data-member-module="sms">
+        <h2>SMS Settings</h2>
+        <p class="muted">Control SMS delivery with personal limits and quiet-hour safety windows.</p>
+        <form id="sms-settings-form" class="login-form">
+          <label class="inline-checkbox" for="sms-enabled">
+            <input id="sms-enabled" type="checkbox" />
+            Enable SMS updates
+          </label>
+          <label for="sms-phone">Phone (+country code)</label>
+          <input id="sms-phone" type="tel" placeholder="+27123456789" />
+          <label for="sms-daily-limit">Daily limit (1-20)</label>
+          <input id="sms-daily-limit" type="number" min="1" max="20" value="3" />
+          <label for="sms-per-event-limit">Per-event limit (1-5)</label>
+          <input id="sms-per-event-limit" type="number" min="1" max="5" value="1" />
+          <label for="sms-quiet-start">Quiet hours start (UTC HH:MM)</label>
+          <input id="sms-quiet-start" type="time" value="21:00" />
+          <label for="sms-quiet-end">Quiet hours end (UTC HH:MM)</label>
+          <input id="sms-quiet-end" type="time" value="07:00" />
+          <label class="inline-checkbox" for="sms-allow-urgent">
+            <input id="sms-allow-urgent" type="checkbox" checked />
+            Allow urgent alerts during quiet hours
+          </label>
+          <button id="sms-save-button" type="submit" disabled>Save SMS settings</button>
+        </form>
+        <p id="sms-settings-status" class="muted">Sign in to load SMS settings.</p>
+      </section>
+      <section class="panel module-section" id="member-module-celebrations" data-member-module="celebrations">
+        <h2>Celebration Thread</h2>
+        <p class="muted">A shared organisation-wide space for relevant member celebrations and milestones.</p>
+        <div class="queue-help">
+          <p><strong>Posting rules</strong></p>
+          <ul id="celebration-rules" class="status-list">
+            <li>Be respectful and professional.</li>
+            <li>Keep posts relevant to IWFSA members or programmes.</li>
+            <li>No confidential or personal data without consent.</li>
+          </ul>
+        </div>
+        <form id="celebration-post-form" class="login-form">
+          <label for="celebration-body">New post</label>
+          <textarea id="celebration-body" rows="3" placeholder="Share a relevant celebration with the organisation..."></textarea>
+          <label class="inline-checkbox" for="celebration-ack-rules">
+            <input id="celebration-ack-rules" type="checkbox" />
+            I confirm this post follows the community rules.
+          </label>
+          <label class="inline-checkbox" for="celebration-relevant">
+            <input id="celebration-relevant" type="checkbox" />
+            I confirm this post is relevant to IWFSA.
+          </label>
+          <div class="member-actions">
+            <button id="celebration-post-button" type="submit" disabled>Post to thread</button>
+            <button id="celebration-refresh-button" type="button" class="ghost" disabled>Refresh thread</button>
+          </div>
+        </form>
+        <p id="celebration-status" class="muted">Sign in to load celebrations.</p>
+        <div id="celebration-list" class="event-grid">
+          <p class="muted">Sign in to load celebration posts.</p>
+        </div>
+      </section>
       <script>
         const container = document.getElementById("event-list");
         const birthdayList = document.getElementById("birthday-list");
         const notificationList = document.getElementById("notification-list");
+        const smsSettingsForm = document.getElementById("sms-settings-form");
+        const smsEnabledInput = document.getElementById("sms-enabled");
+        const smsPhoneInput = document.getElementById("sms-phone");
+        const smsDailyLimitInput = document.getElementById("sms-daily-limit");
+        const smsPerEventLimitInput = document.getElementById("sms-per-event-limit");
+        const smsQuietStartInput = document.getElementById("sms-quiet-start");
+        const smsQuietEndInput = document.getElementById("sms-quiet-end");
+        const smsAllowUrgentInput = document.getElementById("sms-allow-urgent");
+        const smsSaveButton = document.getElementById("sms-save-button");
+        const smsSettingsStatus = document.getElementById("sms-settings-status");
+        const celebrationRules = document.getElementById("celebration-rules");
+        const celebrationPostForm = document.getElementById("celebration-post-form");
+        const celebrationBodyInput = document.getElementById("celebration-body");
+        const celebrationAckRulesInput = document.getElementById("celebration-ack-rules");
+        const celebrationRelevantInput = document.getElementById("celebration-relevant");
+        const celebrationPostButton = document.getElementById("celebration-post-button");
+        const celebrationRefreshButton = document.getElementById("celebration-refresh-button");
+        const celebrationStatus = document.getElementById("celebration-status");
+        const celebrationList = document.getElementById("celebration-list");
         const loginForm = document.getElementById("member-login-form");
         const memberUsernameInput = document.getElementById("member-username");
         const memberPasswordInput = document.getElementById("member-password");
-        const memberFillDemoButton = document.getElementById("member-fill-demo");
         const loginStatus = document.getElementById("member-login-status");
         const logoutButton = document.getElementById("member-logout");
         const viewSelect = document.getElementById("member-event-view");
@@ -234,10 +323,14 @@ export function renderMemberPage(config) {
         const refreshBirthdaysButton = document.getElementById("refresh-birthdays");
         const refreshNotificationsButton = document.getElementById("member-refresh-notifications");
         const markNotificationsReadButton = document.getElementById("member-mark-read");
+        const memberModuleLinks = Array.from(document.querySelectorAll("[data-member-module-link]"));
+        const memberModuleSections = Array.from(document.querySelectorAll("[data-member-module]"));
         const draftAutosaveTimers = new Map();
         const localDraftOverrides = new Map();
         let serverSkewMs = 0;
         let currentEvents = [];
+        let celebrationCanModerate = false;
+        const MEMBER_MODULE_KEYS = new Set(["dashboard", "events", "birthdays", "notifications", "sms", "celebrations"]);
 
         function getToken() {
           return sessionStorage.getItem("iwfsa_token");
@@ -259,6 +352,39 @@ export function renderMemberPage(config) {
           refreshBirthdaysButton.disabled = !isSignedIn;
           refreshNotificationsButton.disabled = !isSignedIn;
           markNotificationsReadButton.disabled = !isSignedIn;
+          smsSaveButton.disabled = !isSignedIn;
+          celebrationPostButton.disabled = !isSignedIn;
+          celebrationRefreshButton.disabled = !isSignedIn;
+        }
+
+        function normalizeMemberModuleFromHash(hashValue) {
+          const key = String(hashValue || "")
+            .replace(/^#/, "")
+            .trim()
+            .toLowerCase();
+          if (MEMBER_MODULE_KEYS.has(key)) {
+            return key;
+          }
+          return "dashboard";
+        }
+
+        function setMemberModule(moduleKey, updateHash = false) {
+          const nextKey = MEMBER_MODULE_KEYS.has(moduleKey) ? moduleKey : "dashboard";
+          memberModuleLinks.forEach((link) => {
+            const isActive = link.getAttribute("data-member-module-link") === nextKey;
+            link.classList.toggle("active", isActive);
+            if (isActive) {
+              link.setAttribute("aria-current", "page");
+            } else {
+              link.removeAttribute("aria-current");
+            }
+          });
+          memberModuleSections.forEach((section) => {
+            section.classList.toggle("active", section.getAttribute("data-member-module") === nextKey);
+          });
+          if (updateHash && window.location.hash !== "#" + nextKey) {
+            window.location.hash = nextKey;
+          }
         }
 
         function nowWithServerSkew() {
@@ -372,15 +498,19 @@ export function renderMemberPage(config) {
 
               return (
                 "<div class='birthday-item'>" +
+                "<div class='iwfsa-watermark'>IWFSA</div>" +
                 avatar +
                 "<div class='birthday-meta'>" +
                 "<div class='birthday-name'>" +
                 name +
                 "</div>" +
-                "<div class='birthday-date muted'>" +
+                "<div class='birthday-date'>" +
                 dateLabel +
                 "</div>" +
                 roleBadges +
+                "</div>" +
+                "<div class='social-actions'>" +
+                "<button class='btn-social' onclick=\"alert('Social automation is feature-flagged for Phase 4. Use manual post for now.')\">Auto-Post to Social</button>" +
                 "</div>" +
                 "</div>"
               );
@@ -1003,6 +1133,217 @@ export function renderMemberPage(config) {
           }
         }
 
+        function renderCelebrationRulesList(rules) {
+          if (!celebrationRules) {
+            return;
+          }
+          const source = Array.isArray(rules) && rules.length > 0
+            ? rules
+            : [
+                "Posts must be respectful and professional.",
+                "Posts must be relevant to IWFSA members, events, milestones, or celebrations.",
+                "No harassment, abuse, or discriminatory language.",
+                "Do not post confidential or personal data without consent."
+              ];
+          celebrationRules.innerHTML = source
+            .map((rule) => "<li>" + escapeClientHtml(rule) + "</li>")
+            .join("");
+        }
+
+        async function deleteCelebrationPost(postId) {
+          const token = getToken();
+          if (!token) {
+            return;
+          }
+          if (!confirm("Delete this post from the celebration thread?")) {
+            return;
+          }
+          celebrationStatus.textContent = "Removing post...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/social/celebrations/" + postId, {
+              method: "DELETE",
+              headers: { Authorization: "Bearer " + token }
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+              celebrationStatus.textContent = payload.message || "Unable to remove post.";
+              return;
+            }
+            celebrationStatus.textContent = "Post removed.";
+            await loadCelebrations();
+          } catch {
+            celebrationStatus.textContent = "Unable to reach API to remove post.";
+          }
+        }
+
+        function renderCelebrations(items) {
+          if (!Array.isArray(items) || items.length === 0) {
+            celebrationList.innerHTML = "<p class='muted'>No celebration posts yet. Be the first to post.</p>";
+            return;
+          }
+
+          celebrationList.innerHTML = items
+            .map((item) => {
+              const canDelete = celebrationCanModerate && item.canDelete;
+              const postedAt = item.createdAt ? new Date(item.createdAt).toLocaleString() : "";
+              return (
+                "<article class='event-card'>" +
+                "<h3>" + escapeClientHtml(item.authorUsername || item.authorEmail || "Member") + "</h3>" +
+                "<p>" + escapeClientHtml(item.bodyText || "") + "</p>" +
+                "<p class='muted'>" + escapeClientHtml(postedAt) + "</p>" +
+                (canDelete
+                  ? "<div class='member-actions'><button data-social-delete='" + Number(item.id) + "' class='danger-link'>Delete post</button></div>"
+                  : "") +
+                "</article>"
+              );
+            })
+            .join("");
+
+          celebrationList.querySelectorAll("[data-social-delete]").forEach((button) => {
+            button.addEventListener("click", async () => {
+              const postId = Number(button.getAttribute("data-social-delete"));
+              if (Number.isInteger(postId)) {
+                await deleteCelebrationPost(postId);
+              }
+            });
+          });
+        }
+
+        async function loadCelebrations() {
+          const token = getToken();
+          if (!token) {
+            celebrationStatus.textContent = "Sign in to load celebrations.";
+            celebrationList.innerHTML = "<p class='muted'>Sign in to load celebration posts.</p>";
+            return;
+          }
+          celebrationStatus.textContent = "Loading celebration thread...";
+          celebrationList.innerHTML = "<p class='muted'>Loading celebration posts...</p>";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/social/celebrations?limit=80", {
+              headers: { Authorization: "Bearer " + token }
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+              celebrationStatus.textContent = payload.message || "Unable to load celebrations.";
+              celebrationList.innerHTML = "<p class='muted'>Unable to load celebration posts.</p>";
+              return;
+            }
+            celebrationCanModerate = payload.canModerate === true;
+            renderCelebrationRulesList(payload.rules || []);
+            renderCelebrations(payload.items || []);
+            celebrationStatus.textContent = celebrationCanModerate
+              ? "Moderator mode enabled. You can remove posts when needed."
+              : "Celebration thread loaded.";
+          } catch {
+            celebrationStatus.textContent = "Unable to reach API for celebrations.";
+            celebrationList.innerHTML = "<p class='muted'>Unable to reach API for celebration posts.</p>";
+          }
+        }
+
+        async function submitCelebrationPost() {
+          const token = getToken();
+          if (!token) {
+            celebrationStatus.textContent = "Sign in to post to celebrations.";
+            return;
+          }
+          const bodyText = String(celebrationBodyInput.value || "").trim();
+          celebrationStatus.textContent = "Posting...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/social/celebrations", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer " + token
+              },
+              body: JSON.stringify({
+                bodyText,
+                acknowledgeRules: celebrationAckRulesInput.checked,
+                relevantToIwfsa: celebrationRelevantInput.checked
+              })
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+              celebrationStatus.textContent = payload.message || "Unable to post.";
+              return;
+            }
+            celebrationBodyInput.value = "";
+            celebrationStatus.textContent = "Posted to the celebration thread.";
+            await loadCelebrations();
+          } catch {
+            celebrationStatus.textContent = "Unable to reach API to post.";
+          }
+        }
+
+        function applySmsSettings(item) {
+          const settings = item || {};
+          smsEnabledInput.checked = settings.enabled === true;
+          smsPhoneInput.value = settings.phoneNumber || "";
+          smsDailyLimitInput.value = String(settings.dailyLimit || 3);
+          smsPerEventLimitInput.value = String(settings.perEventLimit || 1);
+          smsQuietStartInput.value = settings.quietHoursStart || "21:00";
+          smsQuietEndInput.value = settings.quietHoursEnd || "07:00";
+          smsAllowUrgentInput.checked = settings.allowUrgent !== false;
+        }
+
+        async function loadSmsSettings() {
+          const token = getToken();
+          if (!token) {
+            smsSettingsStatus.textContent = "Sign in to load SMS settings.";
+            return;
+          }
+          smsSettingsStatus.textContent = "Loading SMS settings...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/notifications/sms-settings", {
+              headers: { Authorization: "Bearer " + token }
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+              smsSettingsStatus.textContent = payload.message || "Unable to load SMS settings.";
+              return;
+            }
+            applySmsSettings(payload.item || {});
+            smsSettingsStatus.textContent = "SMS settings loaded.";
+          } catch {
+            smsSettingsStatus.textContent = "Unable to reach API for SMS settings.";
+          }
+        }
+
+        async function saveSmsSettings() {
+          const token = getToken();
+          if (!token) {
+            smsSettingsStatus.textContent = "Sign in to save SMS settings.";
+            return;
+          }
+          smsSettingsStatus.textContent = "Saving SMS settings...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/notifications/sms-settings", {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer " + token
+              },
+              body: JSON.stringify({
+                enabled: smsEnabledInput.checked,
+                phoneNumber: String(smsPhoneInput.value || "").trim(),
+                dailyLimit: Number(smsDailyLimitInput.value || 3),
+                perEventLimit: Number(smsPerEventLimitInput.value || 1),
+                quietHoursStart: String(smsQuietStartInput.value || "21:00"),
+                quietHoursEnd: String(smsQuietEndInput.value || "07:00"),
+                allowUrgent: smsAllowUrgentInput.checked
+              })
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+              smsSettingsStatus.textContent = payload.message || "Unable to save SMS settings.";
+              return;
+            }
+            applySmsSettings(payload.item || {});
+            smsSettingsStatus.textContent = "SMS settings saved.";
+          } catch {
+            smsSettingsStatus.textContent = "Unable to reach API to save SMS settings.";
+          }
+        }
+
         async function loadEvents() {
           const token = getToken();
           if (!token) {
@@ -1040,13 +1381,6 @@ export function renderMemberPage(config) {
           }
         }
 
-        memberFillDemoButton.addEventListener("click", () => {
-          memberUsernameInput.value = "demo_member1";
-          memberPasswordInput.value = "memberpass";
-          loginStatus.textContent = "Mock credentials populated. Click Sign in.";
-          memberPasswordInput.focus();
-        });
-
         loginForm.addEventListener("submit", async (event) => {
           event.preventDefault();
           loginStatus.textContent = "Signing in...";
@@ -1075,6 +1409,8 @@ export function renderMemberPage(config) {
             await loadEvents();
             await loadBirthdays();
             await loadNotifications();
+            await loadSmsSettings();
+            await loadCelebrations();
           } catch {
             loginStatus.textContent = "Sign in failed: unable to reach API.";
           }
@@ -1098,107 +1434,15 @@ export function renderMemberPage(config) {
           container.innerHTML = "<p class='muted'>Sign in to load events.</p>";
           birthdayList.innerHTML = "<p class='muted'>Sign in to load birthdays.</p>";
           notificationList.innerHTML = "<p class='muted'>Sign in to load notifications.</p>";
+          celebrationList.innerHTML = "<p class='muted'>Sign in to load celebration posts.</p>";
+          celebrationStatus.textContent = "Sign in to load celebrations.";
+          smsSettingsStatus.textContent = "Sign in to load SMS settings.";
+          celebrationCanModerate = false;
         });
 
         refreshEventsButton.addEventListener("click", () => {
           loadEvents();
         });
-
-        if (createEventFab) {
-          createEventFab.addEventListener("click", () => {
-            resetEventFormState("Creating a new meeting.");
-            if (eventFormShell) {
-              eventFormShell.classList.remove("event-form-hidden");
-            }
-            eventTitleInput.focus();
-            eventForm.scrollIntoView({ behavior: "smooth", block: "start" });
-          });
-        }
-
-        if (bulkDeleteEventsButton) {
-          bulkDeleteEventsButton.addEventListener("click", async () => {
-            if (selectedEventIds.size === 0) {
-              return;
-            }
-            if (!confirm("Delete selected events? This cannot be undone.")) {
-              return;
-            }
-            eventStatus.textContent = "Deleting selected events...";
-            for (const eventId of Array.from(selectedEventIds)) {
-              const response = await fetch("${config.apiBaseUrl}/api/events/" + eventId, {
-                method: "DELETE",
-                headers: { Authorization: "Bearer " + authToken }
-              });
-              if (!response.ok) {
-                let message = "Unable to delete selected events.";
-                try {
-                  const json = await response.json();
-                  message = json.message || message;
-                } catch {
-                  // no-op
-                }
-                eventStatus.textContent = message;
-                return;
-              }
-            }
-            selectedEventIds = new Set();
-            eventStatus.textContent = "Selected events deleted.";
-            await loadEvents();
-          });
-        }
-
-        if (bulkExtendEventsButton) {
-          bulkExtendEventsButton.addEventListener("click", async () => {
-            if (selectedEventIds.size === 0) {
-              return;
-            }
-            const userIdInput = prompt("Enter user id to extend deadline for selected events");
-            if (userIdInput === null) {
-              return;
-            }
-            const userId = Number(userIdInput);
-            if (!Number.isInteger(userId)) {
-              eventStatus.textContent = "User id must be a whole number.";
-              return;
-            }
-            const closesAtInput = prompt(
-              "Enter override close time (ISO 8601)",
-              new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-            );
-            if (closesAtInput === null || !String(closesAtInput || "").trim()) {
-              eventStatus.textContent = "Close time is required.";
-              return;
-            }
-            const reason = String(prompt("Reason (optional)", "Batch extension") || "").trim();
-            eventStatus.textContent = "Applying overrides...";
-            for (const eventId of Array.from(selectedEventIds)) {
-              const response = await fetch(
-                "${config.apiBaseUrl}/api/events/" + eventId + "/registration-overrides",
-                {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    Authorization: "Bearer " + authToken
-                  },
-                  body: JSON.stringify({ userId, closesAt: String(closesAtInput).trim(), reason })
-                }
-              );
-              if (!response.ok) {
-                let message = "Unable to apply overrides.";
-                try {
-                  const json = await response.json();
-                  message = json.message || message;
-                } catch {
-                  // no-op
-                }
-                eventStatus.textContent = message;
-                return;
-              }
-            }
-            eventStatus.textContent = "Overrides applied to selected events.";
-            await loadEvents();
-          });
-        }
 
         refreshBirthdaysButton.addEventListener("click", () => {
           loadBirthdays();
@@ -1216,8 +1460,33 @@ export function renderMemberPage(config) {
           markAllNotificationsRead();
         });
 
+        smsSettingsForm.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          await saveSmsSettings();
+        });
+
+        celebrationPostForm.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          await submitCelebrationPost();
+        });
+
+        celebrationRefreshButton.addEventListener("click", () => {
+          loadCelebrations();
+        });
+
         viewSelect.addEventListener("change", () => {
           loadEvents();
+        });
+
+        memberModuleLinks.forEach((link) => {
+          link.addEventListener("click", (event) => {
+            event.preventDefault();
+            setMemberModule(String(link.getAttribute("data-member-module-link") || "dashboard"), true);
+          });
+        });
+
+        window.addEventListener("hashchange", () => {
+          setMemberModule(normalizeMemberModuleFromHash(window.location.hash));
         });
 
         setInterval(() => {
@@ -1229,10 +1498,13 @@ export function renderMemberPage(config) {
         }, 60 * 1000);
 
         syncServerTime();
+        setMemberModule(normalizeMemberModuleFromHash(window.location.hash));
         setSignedInState(Boolean(getToken()));
         loadEvents();
         loadBirthdays();
         loadNotifications();
+        loadSmsSettings();
+        loadCelebrations();
       </script>
     `
   });
@@ -1245,7 +1517,15 @@ export function renderAdminPage(config) {
     buildTracker: config.buildTracker,
     currentPath: "/admin",
     body: `
-      <section class="panel">
+      <nav class="module-nav" aria-label="Admin modules">
+        <a href="#overview" class="module-nav-link" data-admin-module-link="overview">Overview</a>
+        <a href="#members" class="module-nav-link" data-admin-module-link="members">Members</a>
+        <a href="#imports" class="module-nav-link" data-admin-module-link="imports">Imports</a>
+        <a href="#events" class="module-nav-link" data-admin-module-link="events">Events</a>
+        <a href="#notifications" class="module-nav-link" data-admin-module-link="notifications">Notifications</a>
+        <a href="#reports" class="module-nav-link" data-admin-module-link="reports">Reports</a>
+      </nav>
+      <section class="panel module-section" data-admin-module="overview">
         <h2>Admin Login</h2>
         <p>Admin login is restricted to authorised administrators.</p>
         <p class="muted">UI build: ${UI_BUILD}</p>
@@ -1258,7 +1538,7 @@ export function renderAdminPage(config) {
         </form>
         <p id="login-status" class="muted">Not signed in.</p>
       </section>
-      <section class="panel admin-card" data-admin-panel="member_directory">
+      <section class="panel admin-card module-section" data-admin-panel="member_directory" data-admin-module="members">
         <h2>Member Directory</h2>
         <p class="muted">Select members to send onboarding invite links or credential reset links.</p>
         <div class="member-actions">
@@ -1303,7 +1583,7 @@ export function renderAdminPage(config) {
           </table>
         </div>
       </section>
-      <section class="panel admin-card" data-admin-panel="member_import">
+      <section class="panel admin-card module-section" data-admin-panel="member_import" data-admin-module="imports">
         <h2>Member Import (Excel)</h2>
         <p class="muted">Run dry-run validation first, then apply the batch when blocking issues are zero.</p>
         <div class="import-workspace">
@@ -1481,7 +1761,7 @@ export function renderAdminPage(config) {
           </section>
         </article>
       </section>
-      <section class="panel admin-card" data-admin-panel="event_hub">
+      <section class="panel admin-card module-section" data-admin-panel="event_hub" data-admin-module="events">
         <h2>Event Hub</h2>
         <p class="muted">Members can create and publish meetings immediately, target group-based audiences, and manage planning communications.</p>
         <div id="event-form-shell" class="event-form-shell">
@@ -1572,7 +1852,7 @@ export function renderAdminPage(config) {
           <p class="muted">No events loaded.</p>
         </div>
       </section>
-      <section class="panel admin-card" data-admin-panel="delivery_report">
+      <section class="panel admin-card module-section" data-admin-panel="delivery_report" data-admin-module="notifications">
         <h2>Notification Delivery Report</h2>
         <p class="muted">Review which members were targeted by recent notifications and whether delivery succeeded.</p>
         <div class="member-actions">
@@ -1595,7 +1875,7 @@ export function renderAdminPage(config) {
           </table>
         </div>
       </section>
-      <section class="panel admin-card" data-admin-panel="queue_status">
+      <section class="panel admin-card module-section" data-admin-panel="queue_status" data-admin-module="notifications">
         <h2>Notification Queue Status</h2>
         <div class="queue-help">
           <p><strong>What this panel does:</strong> shows simple queue health so you know if notifications are flowing.</p>
@@ -1621,7 +1901,77 @@ export function renderAdminPage(config) {
           </table>
         </div>
       </section>
-      <section class="panel panel-accent">
+      <section class="panel admin-card module-section" data-admin-panel="reporting_dashboard" data-admin-module="reports">
+        <h2>Reporting and Exports Dashboard</h2>
+        <p class="muted">Operational snapshot across SMS usage, attendance, events, documents, and social moderation.</p>
+        <div class="member-actions">
+          <label for="report-window-days" class="muted">Window</label>
+          <select id="report-window-days" disabled>
+            <option value="14">14 days</option>
+            <option value="30" selected>30 days</option>
+            <option value="60">60 days</option>
+            <option value="90">90 days</option>
+          </select>
+          <button id="refresh-reports" type="button" disabled>Refresh report</button>
+          <button id="download-reports-csv" type="button" disabled>Export CSV</button>
+        </div>
+        <p id="report-status" class="muted">Sign in to load reports.</p>
+        <pre id="report-summary" class="muted"></pre>
+        <div class="table-shell">
+          <table class="member-table">
+            <thead>
+              <tr>
+                <th>Top Events</th>
+                <th>Confirmed</th>
+                <th>Waitlisted</th>
+                <th>Attended</th>
+              </tr>
+            </thead>
+            <tbody id="report-top-events-body">
+              <tr><td colspan="4" class="muted">Sign in to load report.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="table-shell">
+          <table class="member-table">
+            <thead>
+              <tr>
+                <th>Recent SMS</th>
+                <th>Status</th>
+                <th>Event Type</th>
+                <th>Time</th>
+              </tr>
+            </thead>
+            <tbody id="report-sms-log-body">
+              <tr><td colspan="4" class="muted">Sign in to load report.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h3>Celebration Moderators</h3>
+        <p class="muted">Admins can assign specific moderators who can delete posts from the celebration thread.</p>
+        <div class="member-actions">
+          <input id="moderator-user-id" type="number" min="1" placeholder="Moderator user id" />
+          <button id="assign-moderator" type="button" disabled>Assign moderator</button>
+          <button id="remove-moderator" type="button" disabled>Remove moderator</button>
+          <button id="refresh-moderators" type="button" disabled>Refresh moderators</button>
+        </div>
+        <p id="moderator-status" class="muted">Sign in to manage moderators.</p>
+        <div class="table-shell">
+          <table class="member-table">
+            <thead>
+              <tr>
+                <th>User ID</th>
+                <th>Username</th>
+                <th>Email</th>
+              </tr>
+            </thead>
+            <tbody id="moderator-table-body">
+              <tr><td colspan="3" class="muted">Sign in to load moderators.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <section class="panel panel-accent module-section" data-admin-module="overview">
         <h3>Current Baseline</h3>
         <p>Checkpoint 1.1 delivered: scaffold, migrations, CI gates, and environment validation.</p>
         <ol class="status-list">
@@ -1690,6 +2040,19 @@ export function renderAdminPage(config) {
         const queueTableBody = document.getElementById("queue-table-body");
         const queueSummary = document.getElementById("queue-summary");
         const refreshQueueButton = document.getElementById("refresh-queue");
+        const reportWindowDaysInput = document.getElementById("report-window-days");
+        const refreshReportsButton = document.getElementById("refresh-reports");
+        const downloadReportsCsvButton = document.getElementById("download-reports-csv");
+        const reportStatus = document.getElementById("report-status");
+        const reportSummary = document.getElementById("report-summary");
+        const reportTopEventsBody = document.getElementById("report-top-events-body");
+        const reportSmsLogBody = document.getElementById("report-sms-log-body");
+        const moderatorUserIdInput = document.getElementById("moderator-user-id");
+        const assignModeratorButton = document.getElementById("assign-moderator");
+        const removeModeratorButton = document.getElementById("remove-moderator");
+        const refreshModeratorsButton = document.getElementById("refresh-moderators");
+        const moderatorStatus = document.getElementById("moderator-status");
+        const moderatorTableBody = document.getElementById("moderator-table-body");
         const importSubmitButton = document.getElementById("import-submit");
         const importForm = document.getElementById("import-form");
         const importFileInput = document.getElementById("import-file");
@@ -1733,9 +2096,42 @@ export function renderAdminPage(config) {
         const importEditGroupsShell = document.getElementById("import-edit-groups");
         const importEditStatusText = document.getElementById("import-edit-status-text");
         const importEditSaveButton = document.getElementById("import-edit-save");
+        const adminModuleLinks = Array.from(document.querySelectorAll("[data-admin-module-link]"));
+        const adminModuleSections = Array.from(document.querySelectorAll("[data-admin-module]"));
+        const ADMIN_MODULE_KEYS = new Set(["overview", "members", "imports", "events", "notifications", "reports"]);
 
         if (importActivationPolicyInput && !importActivationPolicyInput.value) {
           importActivationPolicyInput.value = DEFAULT_IMPORT_ACTIVATION_POLICY;
+        }
+
+        function normalizeAdminModuleFromHash(hashValue) {
+          const key = String(hashValue || "")
+            .replace(/^#/, "")
+            .trim()
+            .toLowerCase();
+          if (ADMIN_MODULE_KEYS.has(key)) {
+            return key;
+          }
+          return "overview";
+        }
+
+        function setAdminModule(moduleKey, updateHash = false) {
+          const nextKey = ADMIN_MODULE_KEYS.has(moduleKey) ? moduleKey : "overview";
+          adminModuleLinks.forEach((link) => {
+            const isActive = link.getAttribute("data-admin-module-link") === nextKey;
+            link.classList.toggle("active", isActive);
+            if (isActive) {
+              link.setAttribute("aria-current", "page");
+            } else {
+              link.removeAttribute("aria-current");
+            }
+          });
+          adminModuleSections.forEach((section) => {
+            section.classList.toggle("active", section.getAttribute("data-admin-module") === nextKey);
+          });
+          if (updateHash && window.location.hash !== "#" + nextKey) {
+            window.location.hash = nextKey;
+          }
         }
 
         function toIsoStringFromLocalInput(value) {
@@ -2449,15 +2845,29 @@ export function renderAdminPage(config) {
           }
           refreshDeliveriesButton.disabled = !authToken;
           refreshQueueButton.disabled = !authToken;
+          reportWindowDaysInput.disabled = !authToken;
+          refreshReportsButton.disabled = !authToken;
+          downloadReportsCsvButton.disabled = !authToken;
+          assignModeratorButton.disabled = !authToken;
+          removeModeratorButton.disabled = !authToken;
+          refreshModeratorsButton.disabled = !authToken;
           if (!authToken) {
             importRestoreRequested = false;
             resetImportView("Sign in to run imports.");
             selectedEventIds = new Set();
             updateEventBulkBar();
+            reportStatus.textContent = "Sign in to load reports.";
+            moderatorStatus.textContent = "Sign in to manage moderators.";
+            reportSummary.textContent = "";
+            reportTopEventsBody.innerHTML = "<tr><td colspan='4' class='muted'>Sign in to load report.</td></tr>";
+            reportSmsLogBody.innerHTML = "<tr><td colspan='4' class='muted'>Sign in to load report.</td></tr>";
+            moderatorTableBody.innerHTML = "<tr><td colspan='3' class='muted'>Sign in to load moderators.</td></tr>";
           } else {
             importStatus.textContent = "Run dry-run to create a new batch, or load an existing batch id.";
             updateImportButtons();
             void restoreImportBatchContext();
+            void loadReportingDashboard();
+            void loadModerators();
           }
         }
 
@@ -2482,7 +2892,11 @@ export function renderAdminPage(config) {
           "refresh-events": "Refresh Event Hub cards from the API.",
           "dispatch-reminders": "Send due registration reminders now.",
           "refresh-deliveries": "Reload recent notification delivery outcomes.",
-          "refresh-queue": "Reload notification queue status rows."
+          "refresh-queue": "Reload notification queue status rows.",
+          "refresh-reports": "Refresh reporting dashboard metrics and trends.",
+          "download-reports-csv": "Export the current reporting snapshot as CSV.",
+          "assign-moderator": "Assign a selected user id as a celebration moderator.",
+          "remove-moderator": "Remove moderator access for a selected user id."
         };
 
         function safeParseJson(text) {
@@ -2934,6 +3348,259 @@ export function renderAdminPage(config) {
             if (queueSummary) {
               queueSummary.textContent = "Unable to reach API for queue summary.";
             }
+          }
+        }
+
+        function renderReportingSummary(report) {
+          const summary = report && report.summary ? report.summary : {};
+          const rows = [
+            "Window: " + String(report.windowDays || 30) + " day(s)",
+            "Since (UTC): " + String(report.sinceIso || ""),
+            "Active members: " + Number(summary.activeMembers || 0),
+            "SMS opt-in members: " + Number(summary.smsOptInMembers || 0),
+            "SMS sent / blocked / failed: " +
+              Number(summary.smsSent || 0) +
+              " / " +
+              Number(summary.smsBlocked || 0) +
+              " / " +
+              Number(summary.smsFailed || 0),
+            "Published events: " + Number(summary.publishedEvents || 0),
+            "Confirmed / waitlisted signups: " +
+              Number(summary.confirmedSignups || 0) +
+              " / " +
+              Number(summary.waitlistedSignups || 0),
+            "Attended members: " + Number(summary.attendedMembers || 0),
+            "Published / restricted documents: " +
+              Number(summary.publishedDocuments || 0) +
+              " / " +
+              Number(summary.restrictedDocuments || 0),
+            "Social posts / removed: " +
+              Number(summary.socialPosts || 0) +
+              " / " +
+              Number(summary.socialRemoved || 0)
+          ];
+          reportSummary.textContent = rows.join("\n");
+        }
+
+        function renderTopEventRows(items) {
+          if (!Array.isArray(items) || items.length === 0) {
+            reportTopEventsBody.innerHTML = "<tr><td colspan='4' class='muted'>No events in selected window.</td></tr>";
+            return;
+          }
+          reportTopEventsBody.innerHTML = items
+            .map((item) => {
+              return (
+                "<tr>" +
+                "<td>" + escapeClientHtml(item.title || "Untitled Event") + "</td>" +
+                "<td>" + escapeClientHtml(String(Number(item.confirmedCount || 0))) + "</td>" +
+                "<td>" + escapeClientHtml(String(Number(item.waitlistedCount || 0))) + "</td>" +
+                "<td>" + escapeClientHtml(String(Number(item.attendedCount || 0))) + "</td>" +
+                "</tr>"
+              );
+            })
+            .join("");
+        }
+
+        function renderSmsLogRows(items) {
+          if (!Array.isArray(items) || items.length === 0) {
+            reportSmsLogBody.innerHTML = "<tr><td colspan='4' class='muted'>No SMS logs recorded yet.</td></tr>";
+            return;
+          }
+          reportSmsLogBody.innerHTML = items
+            .map((item) => {
+              const memberLabel = item.username || item.email || ("User " + Number(item.userId || 0));
+              const createdAt = item.createdAt ? new Date(item.createdAt).toLocaleString() : "";
+              const statusLabel = item.blockedReason
+                ? String(item.status || "") + " (" + String(item.blockedReason || "") + ")"
+                : String(item.status || "");
+              return (
+                "<tr>" +
+                "<td>" + escapeClientHtml(memberLabel) + "</td>" +
+                "<td>" + escapeClientHtml(statusLabel) + "</td>" +
+                "<td>" + escapeClientHtml(String(item.eventType || "")) + "</td>" +
+                "<td>" + escapeClientHtml(createdAt) + "</td>" +
+                "</tr>"
+              );
+            })
+            .join("");
+        }
+
+        async function loadReportingDashboard() {
+          if (!authToken) {
+            reportStatus.textContent = "Sign in to load reports.";
+            reportSummary.textContent = "";
+            reportTopEventsBody.innerHTML = "<tr><td colspan='4' class='muted'>Sign in to load report.</td></tr>";
+            reportSmsLogBody.innerHTML = "<tr><td colspan='4' class='muted'>Sign in to load report.</td></tr>";
+            return;
+          }
+          const days = Number(reportWindowDaysInput.value || 30);
+          reportStatus.textContent = "Loading report...";
+          reportTopEventsBody.innerHTML = "<tr><td colspan='4' class='muted'>Loading report...</td></tr>";
+          reportSmsLogBody.innerHTML = "<tr><td colspan='4' class='muted'>Loading report...</td></tr>";
+          try {
+            const response = await fetch(
+              "${config.apiBaseUrl}/api/admin/reports/dashboard?days=" + encodeURIComponent(String(days)),
+              { headers: { Authorization: "Bearer " + authToken } }
+            );
+            const payload = await response.json();
+            if (!response.ok) {
+              reportStatus.textContent = payload.message || "Unable to load report.";
+              reportSummary.textContent = "";
+              reportTopEventsBody.innerHTML = "<tr><td colspan='4' class='muted'>Unable to load report.</td></tr>";
+              reportSmsLogBody.innerHTML = "<tr><td colspan='4' class='muted'>Unable to load report.</td></tr>";
+              return;
+            }
+            renderReportingSummary(payload);
+            renderTopEventRows(payload.topEvents || []);
+            renderSmsLogRows(payload.recentSms || []);
+            reportStatus.textContent = "Reporting dashboard loaded.";
+          } catch {
+            reportStatus.textContent = "Unable to reach API for reports.";
+            reportSummary.textContent = "";
+            reportTopEventsBody.innerHTML = "<tr><td colspan='4' class='muted'>Unable to reach API.</td></tr>";
+            reportSmsLogBody.innerHTML = "<tr><td colspan='4' class='muted'>Unable to reach API.</td></tr>";
+          }
+        }
+
+        async function downloadReportingCsv() {
+          if (!authToken) {
+            reportStatus.textContent = "Sign in to export reports.";
+            return;
+          }
+          const days = Number(reportWindowDaysInput.value || 30);
+          reportStatus.textContent = "Downloading report CSV...";
+          try {
+            const response = await fetch(
+              "${config.apiBaseUrl}/api/admin/reports/dashboard.csv?days=" + encodeURIComponent(String(days)),
+              { headers: { Authorization: "Bearer " + authToken } }
+            );
+            if (!response.ok) {
+              let message = "Unable to download report.";
+              try {
+                const payload = await response.json();
+                message = payload.message || message;
+              } catch {
+                // no-op
+              }
+              reportStatus.textContent = message;
+              return;
+            }
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement("a");
+            anchor.href = url;
+            anchor.download = "admin-dashboard-" + days + "d.csv";
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            URL.revokeObjectURL(url);
+            reportStatus.textContent = "Report CSV downloaded.";
+          } catch {
+            reportStatus.textContent = "Unable to reach API for report export.";
+          }
+        }
+
+        function renderModerators(items) {
+          if (!Array.isArray(items) || items.length === 0) {
+            moderatorTableBody.innerHTML = "<tr><td colspan='3' class='muted'>No moderators assigned.</td></tr>";
+            return;
+          }
+          moderatorTableBody.innerHTML = items
+            .map((item) => {
+              return (
+                "<tr>" +
+                "<td>" + escapeClientHtml(String(Number(item.userId || 0))) + "</td>" +
+                "<td>" + escapeClientHtml(item.username || "") + "</td>" +
+                "<td>" + escapeClientHtml(item.email || "") + "</td>" +
+                "</tr>"
+              );
+            })
+            .join("");
+        }
+
+        async function loadModerators() {
+          if (!authToken) {
+            moderatorStatus.textContent = "Sign in to manage moderators.";
+            moderatorTableBody.innerHTML = "<tr><td colspan='3' class='muted'>Sign in to load moderators.</td></tr>";
+            return;
+          }
+          moderatorStatus.textContent = "Loading moderators...";
+          moderatorTableBody.innerHTML = "<tr><td colspan='3' class='muted'>Loading moderators...</td></tr>";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/admin/social/moderators", {
+              headers: { Authorization: "Bearer " + authToken }
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+              moderatorStatus.textContent = payload.message || "Unable to load moderators.";
+              moderatorTableBody.innerHTML = "<tr><td colspan='3' class='muted'>Unable to load moderators.</td></tr>";
+              return;
+            }
+            renderModerators(payload.items || []);
+            moderatorStatus.textContent = "Moderator list loaded.";
+          } catch {
+            moderatorStatus.textContent = "Unable to reach API for moderators.";
+            moderatorTableBody.innerHTML = "<tr><td colspan='3' class='muted'>Unable to reach API.</td></tr>";
+          }
+        }
+
+        async function assignModerator() {
+          if (!authToken) {
+            moderatorStatus.textContent = "Sign in to assign moderators.";
+            return;
+          }
+          const userId = Number(moderatorUserIdInput.value || 0);
+          if (!Number.isInteger(userId) || userId <= 0) {
+            moderatorStatus.textContent = "Provide a valid moderator user id.";
+            return;
+          }
+          moderatorStatus.textContent = "Assigning moderator...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/admin/social/moderators", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer " + authToken
+              },
+              body: JSON.stringify({ userId })
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+              moderatorStatus.textContent = payload.message || "Unable to assign moderator.";
+              return;
+            }
+            moderatorStatus.textContent = "Moderator assigned.";
+            await loadModerators();
+          } catch {
+            moderatorStatus.textContent = "Unable to reach API to assign moderator.";
+          }
+        }
+
+        async function removeModerator() {
+          if (!authToken) {
+            moderatorStatus.textContent = "Sign in to remove moderators.";
+            return;
+          }
+          const userId = Number(moderatorUserIdInput.value || 0);
+          if (!Number.isInteger(userId) || userId <= 0) {
+            moderatorStatus.textContent = "Provide a valid moderator user id.";
+            return;
+          }
+          moderatorStatus.textContent = "Removing moderator...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/admin/social/moderators/" + userId, {
+              method: "DELETE",
+              headers: { Authorization: "Bearer " + authToken }
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+              moderatorStatus.textContent = payload.message || "Unable to remove moderator.";
+              return;
+            }
+            moderatorStatus.textContent = payload.removed ? "Moderator removed." : "Moderator was not assigned.";
+            await loadModerators();
+          } catch {
+            moderatorStatus.textContent = "Unable to reach API to remove moderator.";
           }
         }
 
@@ -4768,6 +5435,38 @@ export function renderAdminPage(config) {
           renderEvents(currentEvents);
         });
 
+        refreshDeliveriesButton.addEventListener("click", () => {
+          loadDeliveries();
+        });
+
+        refreshQueueButton.addEventListener("click", () => {
+          loadQueueStatus();
+        });
+
+        refreshReportsButton.addEventListener("click", () => {
+          loadReportingDashboard();
+        });
+
+        reportWindowDaysInput.addEventListener("change", () => {
+          loadReportingDashboard();
+        });
+
+        downloadReportsCsvButton.addEventListener("click", () => {
+          downloadReportingCsv();
+        });
+
+        refreshModeratorsButton.addEventListener("click", () => {
+          loadModerators();
+        });
+
+        assignModeratorButton.addEventListener("click", () => {
+          assignModerator();
+        });
+
+        removeModeratorButton.addEventListener("click", () => {
+          removeModerator();
+        });
+
         resetButton.addEventListener("click", async () => {
           const ids = selectedIds();
           if (ids.length === 0) {
@@ -4849,21 +5548,35 @@ export function renderAdminPage(config) {
             await loadEvents();
             await loadDeliveries();
             await loadQueueStatus();
+            await loadReportingDashboard();
+            await loadModerators();
           } catch {
             status.textContent = "Sign in failed: unable to reach API.";
           }
         }
 
         form.addEventListener("submit", handleLogin);
+        adminModuleLinks.forEach((link) => {
+          link.addEventListener("click", (event) => {
+            event.preventDefault();
+            setAdminModule(String(link.getAttribute("data-admin-module-link") || "overview"), true);
+          });
+        });
+        window.addEventListener("hashchange", () => {
+          setAdminModule(normalizeAdminModuleFromHash(window.location.hash));
+        });
 
         renderMemberGroupOptions();
         persistHelpAndTooltips();
         persistPanelConfiguration();
+        setAdminModule(normalizeAdminModuleFromHash(window.location.hash));
         setAuthToken(authToken, authRole);
         loadMembers();
         loadEvents();
         loadDeliveries();
         loadQueueStatus();
+        loadReportingDashboard();
+        loadModerators();
       </script>
     `
   });
@@ -5022,41 +5735,47 @@ export function renderMeetingRsvpPage(config) {
     body: `
       <section class="panel">
         <h2>Confirm meeting participation</h2>
-        <p>Confirming is an explicit action to protect against accidental auto-clicks.</p>
+        <p>Select your response for this invitation.</p>
         <div class="member-actions">
           <button id="rsvp-confirm-button" type="button">Confirm participation</button>
+          <button id="rsvp-decline-button" type="button" class="ghost">Cannot attend</button>
         </div>
-        <p id="rsvp-status" class="muted">Ready to confirm.</p>
+        <p id="rsvp-status" class="muted">Ready to record your RSVP.</p>
       </section>
       <script>
         const apiBaseUrl = ${JSON.stringify(config.apiBaseUrl || "")};
         const rsvpStatus = document.getElementById("rsvp-status");
         const rsvpConfirmButton = document.getElementById("rsvp-confirm-button");
+        const rsvpDeclineButton = document.getElementById("rsvp-decline-button");
         const rsvpParams = new URLSearchParams(window.location.search || "");
         const rsvpToken = String(rsvpParams.get("token") || "").trim();
+        const defaultAction = String(rsvpParams.get("action") || "").trim().toLowerCase();
 
-        if (!rsvpToken) {
-          rsvpStatus.textContent = "RSVP token is missing.";
-          rsvpConfirmButton.disabled = true;
-        }
-
-        rsvpConfirmButton.addEventListener("click", async () => {
+        async function submitRsvp(action) {
           if (!rsvpToken) {
             return;
           }
 
           rsvpConfirmButton.disabled = true;
-          rsvpStatus.textContent = "Confirming RSVP...";
+          rsvpDeclineButton.disabled = true;
+          rsvpStatus.textContent = action === "decline" ? "Recording decline..." : "Confirming RSVP...";
           try {
             const response = await fetch(apiBaseUrl + "/api/meetings/rsvp", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ token: rsvpToken })
+              body: JSON.stringify({ token: rsvpToken, action })
             });
             const payload = await response.json();
             if (!response.ok) {
-              rsvpStatus.textContent = payload.message || "Unable to confirm RSVP.";
+              rsvpStatus.textContent = payload.message || "Unable to record RSVP.";
               rsvpConfirmButton.disabled = false;
+              rsvpDeclineButton.disabled = false;
+              return;
+            }
+
+            if (payload.status === "declined") {
+              rsvpStatus.textContent =
+                "You indicated you cannot attend " + String(payload.eventTitle || "this meeting") + ".";
               return;
             }
 
@@ -5066,8 +5785,27 @@ export function renderMeetingRsvpPage(config) {
           } catch {
             rsvpStatus.textContent = "Unable to reach API.";
             rsvpConfirmButton.disabled = false;
+            rsvpDeclineButton.disabled = false;
           }
+        }
+
+        if (!rsvpToken) {
+          rsvpStatus.textContent = "RSVP token is missing.";
+          rsvpConfirmButton.disabled = true;
+          rsvpDeclineButton.disabled = true;
+        }
+
+        rsvpConfirmButton.addEventListener("click", async () => {
+          await submitRsvp("confirm");
         });
+
+        rsvpDeclineButton.addEventListener("click", async () => {
+          await submitRsvp("decline");
+        });
+
+        if (defaultAction === "decline" && rsvpToken) {
+          rsvpStatus.textContent = "Ready to record that you cannot attend.";
+        }
       </script>
     `
   });

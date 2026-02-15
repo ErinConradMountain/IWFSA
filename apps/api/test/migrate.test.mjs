@@ -27,7 +27,8 @@ test("runMigrations applies baseline exactly once", () => {
       "0010_event_collaboration.sql",
       "0011_event_documents_sharepoint.sql",
       "0012_teams_graph_automation.sql",
-      "0013_calendar_sync.sql"
+      "0013_calendar_sync.sql",
+      "0014_phase4_communications_social_reports.sql"
     ]);
     assert.equal(firstRun.bootstrapAdminCreated, true);
     assert.equal(firstRun.bootstrapAdminUsername, "akeida");
@@ -40,7 +41,7 @@ test("runMigrations applies baseline exactly once", () => {
     try {
       const tables = database
         .prepare(
-          "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('users', 'events', 'signups', 'audit_logs', 'sessions', 'event_editor_grants', 'member_import_batches', 'member_import_rows', 'member_roles', 'member_role_assignments', 'member_invite_tokens', 'password_reset_tokens', 'event_registration_overrides', 'registration_drafts', 'registration_reminder_preferences', 'registration_reminder_sends', 'event_alerts', 'notification_queue', 'notifications', 'notification_deliveries', 'event_revisions', 'event_revision_rollbacks', 'meeting_rsvp_tokens', 'meeting_planning_messages', 'event_internal_comments', 'event_documents', 'event_online_meetings', 'calendar_sync_connections', 'calendar_sync_oauth_states', 'calendar_sync_mappings', 'calendar_sync_failures')"
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('users', 'events', 'signups', 'audit_logs', 'sessions', 'event_editor_grants', 'member_import_batches', 'member_import_rows', 'member_roles', 'member_role_assignments', 'member_invite_tokens', 'password_reset_tokens', 'event_registration_overrides', 'registration_drafts', 'registration_reminder_preferences', 'registration_reminder_sends', 'event_alerts', 'notification_queue', 'notifications', 'notification_deliveries', 'event_revisions', 'event_revision_rollbacks', 'meeting_rsvp_tokens', 'meeting_planning_messages', 'event_internal_comments', 'event_documents', 'event_online_meetings', 'calendar_sync_connections', 'calendar_sync_oauth_states', 'calendar_sync_mappings', 'calendar_sync_failures', 'sms_notification_preferences', 'sms_delivery_logs', 'event_attendance', 'social_moderators', 'social_celebration_posts')"
         )
         .all()
         .map((row) => row.name)
@@ -53,6 +54,7 @@ test("runMigrations applies baseline exactly once", () => {
         "calendar_sync_mappings",
         "calendar_sync_oauth_states",
         "event_alerts",
+        "event_attendance",
         "event_documents",
         "event_editor_grants",
         "event_internal_comments",
@@ -77,6 +79,10 @@ test("runMigrations applies baseline exactly once", () => {
         "registration_reminder_sends",
         "sessions",
         "signups",
+        "sms_delivery_logs",
+        "sms_notification_preferences",
+        "social_celebration_posts",
+        "social_moderators",
         "users"
       ]);
 

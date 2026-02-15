@@ -36,6 +36,7 @@
 - Event status changes: published → postponed/rescheduled/cancelled
 - Time/date changes
 - Venue changes (including switching to/from online)
+- RSVP invite responses can be either **Confirm participation** or **Cannot attend**; decline responses are recorded immediately for planning visibility and potential waitlist promotion.
 - Capacity changes that affect waitlist promotion
 - Waitlist promotion (waitlisted → confirmed)
 - New event document published (optional): agenda/minutes/materials become available
