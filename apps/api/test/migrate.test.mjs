@@ -24,7 +24,9 @@ test("runMigrations applies baseline exactly once", () => {
       "0007_member_import_row_editing.sql",
       "0008_member_import_membership_set.sql",
       "0009_meeting_management.sql",
-      "0010_event_collaboration.sql"
+      "0010_event_collaboration.sql",
+      "0011_event_documents_sharepoint.sql",
+      "0012_teams_graph_automation.sql"
     ]);
     assert.equal(firstRun.bootstrapAdminCreated, true);
     assert.equal(firstRun.bootstrapAdminUsername, "akeida");
@@ -37,7 +39,7 @@ test("runMigrations applies baseline exactly once", () => {
     try {
       const tables = database
         .prepare(
-          "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('users', 'events', 'signups', 'audit_logs', 'sessions', 'event_editor_grants', 'member_import_batches', 'member_import_rows', 'member_roles', 'member_role_assignments', 'member_invite_tokens', 'password_reset_tokens', 'event_registration_overrides', 'registration_drafts', 'registration_reminder_preferences', 'registration_reminder_sends', 'event_alerts', 'notification_queue', 'notifications', 'notification_deliveries', 'event_revisions', 'event_revision_rollbacks', 'meeting_rsvp_tokens', 'meeting_planning_messages', 'event_internal_comments')"
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('users', 'events', 'signups', 'audit_logs', 'sessions', 'event_editor_grants', 'member_import_batches', 'member_import_rows', 'member_roles', 'member_role_assignments', 'member_invite_tokens', 'password_reset_tokens', 'event_registration_overrides', 'registration_drafts', 'registration_reminder_preferences', 'registration_reminder_sends', 'event_alerts', 'notification_queue', 'notifications', 'notification_deliveries', 'event_revisions', 'event_revision_rollbacks', 'meeting_rsvp_tokens', 'meeting_planning_messages', 'event_internal_comments', 'event_documents', 'event_online_meetings')"
         )
         .all()
         .map((row) => row.name)
@@ -46,8 +48,10 @@ test("runMigrations applies baseline exactly once", () => {
       assert.deepEqual(tables, [
         "audit_logs",
         "event_alerts",
+        "event_documents",
         "event_editor_grants",
         "event_internal_comments",
+        "event_online_meetings",
         "event_registration_overrides",
         "event_revision_rollbacks",
         "event_revisions",

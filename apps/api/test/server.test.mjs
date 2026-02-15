@@ -43,7 +43,65 @@ function extractTokenFromText(text, pathSegment) {
   return match ? match[1] : "";
 }
 
-async function createRunningServer() {
+function createFakeSharePointClient() {
+  let sequence = 1;
+  const files = new Map();
+
+  return {
+    async uploadEventDocument({ fileName, mimeType, fileBuffer }) {
+      const itemId = `fake-item-${sequence}`;
+      sequence += 1;
+      files.set(itemId, {
+        buffer: Buffer.from(fileBuffer),
+        mimeType: String(mimeType || "application/octet-stream"),
+        fileName: String(fileName || "document.bin")
+      });
+      return {
+        siteId: "fake-site",
+        driveId: "fake-drive",
+        itemId,
+        webUrl: `https://sharepoint.local/${itemId}`
+      };
+    },
+    async downloadEventDocument({ itemId }) {
+      const item = files.get(String(itemId || ""));
+      if (!item) {
+        return new Response("missing", { status: 404 });
+      }
+      return new Response(item.buffer, {
+        status: 200,
+        headers: { "content-type": item.mimeType }
+      });
+    }
+  };
+}
+
+function createFakeTeamsGraphClient() {
+  let sequence = 1;
+  const meetings = new Map();
+
+  return {
+    async createOnlineMeetingEvent({ title, description, startAt, endAt }) {
+      const meetingId = `teams-meeting-${sequence}`;
+      const joinUrl = `https://teams.microsoft.com/l/meetup-join/${meetingId}`;
+      sequence += 1;
+      meetings.set(meetingId, { title, description, startAt, endAt, joinUrl });
+      return { meetingId, joinUrl, organizerUpn: "events@iwfsa.local" };
+    },
+    async updateOnlineMeetingEvent({ meetingId, title, description, startAt, endAt }) {
+      const existing = meetings.get(String(meetingId || ""));
+      if (!existing) {
+        throw new Error("meeting_not_found");
+      }
+      const nextJoinUrl = existing.joinUrl.replace(/$/, "-updated");
+      const nextValue = { title, description, startAt, endAt, joinUrl: nextJoinUrl };
+      meetings.set(String(meetingId), nextValue);
+      return { meetingId: String(meetingId), joinUrl: nextJoinUrl, organizerUpn: "events@iwfsa.local" };
+    }
+  };
+}
+
+async function createRunningServer(options = {}) {
   const workingDirectory = mkdtempSync(path.join(tmpdir(), "iwfsa-api-"));
   const databasePath = path.join(workingDirectory, "test.db");
 
@@ -176,7 +234,16 @@ async function createRunningServer() {
     port: 0,
     databasePath,
     appBaseUrl: "http://127.0.0.1:3000",
-    notificationDispatchIntervalMs: 25
+    notificationDispatchIntervalMs: 25,
+    sharePointClient: options.sharePointClient,
+    teamsGraphClient: options.teamsGraphClient,
+    teamsGraph: {
+      enabled: options.enableTeamsGraph === true,
+      tenantId: "test-tenant",
+      clientId: "test-client",
+      clientSecret: "test-secret",
+      organizerUpn: "events@iwfsa.local"
+    }
   });
 
   return {
@@ -1397,6 +1464,53 @@ test("GET /api/birthdays respects consent and window filtering", async () => {
   }
 });
 
+test("GET /api/birthdays includes photoUrl", async () => {
+  const { server, workingDirectory, databasePath, memberId } = await createRunningServer();
+
+  try {
+    const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const memberPayload = await memberLogin.json();
+    assert.equal(memberLogin.status, 200);
+
+    const database = openDatabase(databasePath);
+    const now = new Date();
+    const tomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+    const photoUrl = "https://example.com/mypic.jpg";
+
+    database
+      .prepare(
+        `
+        INSERT INTO member_profiles (user_id, full_name, birthday_month, birthday_day, birthday_visibility, photo_url)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+          photo_url = excluded.photo_url,
+          birthday_month = excluded.birthday_month,
+          birthday_day = excluded.birthday_day,
+          birthday_visibility = excluded.birthday_visibility
+      `
+      )
+      .run(memberId, "Member With Photo", tomorrow.getUTCMonth() + 1, tomorrow.getUTCDate(), "members_only", photoUrl);
+    database.close();
+
+    const response = await fetch(`http://${server.host}:${server.port}/api/birthdays?window=14`, {
+      headers: { Authorization: `Bearer ${memberPayload.token}` }
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    const memberItem = payload.items.find(i => i.userId === memberId);
+    assert.ok(memberItem, "Member should be found");
+    assert.equal(memberItem.photoUrl, photoUrl, "photoUrl should be returned");
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
 test("Event editor can publish own draft and can edit after publish for own events", async () => {
   const { server, workingDirectory } = await createRunningServer();
 
@@ -1736,6 +1850,10 @@ test("Meeting invitations include RSVP email links and RSVP tokens confirm parti
     );
     assert.ok(inviteEmail, "RSVP invite email should be sent to member2");
     assert.ok(String(inviteEmail.text || "").includes(expectedRsvpUrl));
+    assert.ok(String(inviteEmail.text || "").includes("Starts:"));
+    assert.ok(String(inviteEmail.text || "").includes("Ends:"));
+    assert.ok(String(inviteEmail.text || "").includes("Venue:"));
+    assert.ok(String(inviteEmail.text || "").includes("Use this link to confirm participation or select 'Cannot attend'."));
 
     const rsvpGetResponse = await fetch(
       `http://${server.host}:${server.port}/api/meetings/rsvp?token=${encodeURIComponent(tokenRow.token)}`
@@ -1771,6 +1889,211 @@ test("Meeting invitations include RSVP email links and RSVP tokens confirm parti
     assert.equal(["confirmed", "waitlisted"].includes(invitedMeeting.mySignupStatus), true);
   } finally {
     delete globalThis[EMAIL_OUTBOX_GLOBAL_KEY];
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Meeting RSVP supports explicit decline from invite links", async () => {
+  globalThis[EMAIL_OUTBOX_GLOBAL_KEY] = [];
+  const { server, workingDirectory, databasePath, member2Id } = await createRunningServer();
+
+  try {
+    const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const memberPayload = await memberLogin.json();
+    assert.equal(memberLogin.status, 200);
+
+    const createResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${memberPayload.token}`
+      },
+      body: JSON.stringify({
+        title: "RSVP Decline Meeting",
+        description: "Decline action test.",
+        startAt: isoDaysFromNow(9),
+        endAt: isoDaysFromNow(9, 2),
+        venueType: "physical",
+        venueName: "IWFSA HQ",
+        venueAddress: "Cape Town",
+        capacity: 20,
+        audienceType: "all_members"
+      })
+    });
+    const createPayload = await createResponse.json();
+    assert.equal(createResponse.status, 201);
+
+    const submitResponse = await fetch(
+      `http://${server.host}:${server.port}/api/events/${createPayload.id}/submit`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${memberPayload.token}` }
+      }
+    );
+    assert.equal(submitResponse.status, 200);
+
+    const tokenRow = await waitFor(
+      async () => {
+        const database = openDatabase(databasePath);
+        try {
+          return database
+            .prepare(
+              `
+              SELECT token
+              FROM meeting_rsvp_tokens
+              WHERE event_id = ? AND user_id = ?
+              ORDER BY id DESC
+              LIMIT 1
+            `
+            )
+            .get(createPayload.id, member2Id);
+        } finally {
+          database.close();
+        }
+      },
+      { label: "meeting RSVP decline token dispatch" }
+    );
+    assert.ok(tokenRow?.token);
+
+    const declineResponse = await fetch(`http://${server.host}:${server.port}/api/meetings/rsvp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: tokenRow.token, action: "decline" })
+    });
+    const declinePayload = await declineResponse.json();
+    assert.equal(declineResponse.status, 200);
+    assert.equal(declinePayload.declined, true);
+    assert.equal(declinePayload.status, "declined");
+
+    const member2Login = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member2", password: "member2pass" })
+    });
+    const member2Payload = await member2Login.json();
+    assert.equal(member2Login.status, 200);
+
+    const eventsResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      headers: { Authorization: `Bearer ${member2Payload.token}` }
+    });
+    const eventsPayload = await eventsResponse.json();
+    assert.equal(eventsResponse.status, 200);
+    const declinedMeeting = (eventsPayload.items || []).find((item) => item.id === createPayload.id);
+    assert.equal(declinedMeeting?.mySignupStatus, "cancelled");
+
+    const declineAgainResponse = await fetch(`http://${server.host}:${server.port}/api/meetings/rsvp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: tokenRow.token, action: "decline" })
+    });
+    const declineAgainPayload = await declineAgainResponse.json();
+    assert.equal(declineAgainResponse.status, 200);
+    assert.equal(declineAgainPayload.status, "declined");
+    assert.equal(declineAgainPayload.idempotent, true);
+  } finally {
+    delete globalThis[EMAIL_OUTBOX_GLOBAL_KEY];
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("A member can register for multiple different events", async () => {
+  const { server, workingDirectory } = await createRunningServer();
+
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+    });
+    const adminPayload = await adminLogin.json();
+    assert.equal(adminLogin.status, 200);
+
+    const createEvent = async (title, dayOffset) => {
+      const createResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${adminPayload.token}`
+        },
+        body: JSON.stringify({
+          title,
+          description: `${title} details`,
+          startAt: isoDaysFromNow(dayOffset),
+          endAt: isoDaysFromNow(dayOffset, 2),
+          venueType: "physical",
+          venueName: "IWFSA HQ",
+          venueAddress: "Cape Town",
+          capacity: 10,
+          registrationClosesAt: isoDaysFromNow(dayOffset - 1),
+          audienceType: "all_members"
+        })
+      });
+      const createPayload = await createResponse.json();
+      assert.equal(createResponse.status, 201);
+
+      const submitResponse = await fetch(
+        `http://${server.host}:${server.port}/api/events/${createPayload.id}/submit`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${adminPayload.token}` }
+        }
+      );
+      assert.equal(submitResponse.status, 200);
+      return createPayload.id;
+    };
+
+    const eventOneId = await createEvent("Multi-event A", 10);
+    const eventTwoId = await createEvent("Multi-event B", 12);
+
+    const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const memberPayload = await memberLogin.json();
+    assert.equal(memberLogin.status, 200);
+
+    const registerOne = await fetch(`http://${server.host}:${server.port}/api/events/${eventOneId}/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${memberPayload.token}`
+      },
+      body: JSON.stringify({})
+    });
+    const registerOnePayload = await registerOne.json();
+    assert.equal(registerOne.status, 200);
+    assert.equal(registerOnePayload.status, "confirmed");
+
+    const registerTwo = await fetch(`http://${server.host}:${server.port}/api/events/${eventTwoId}/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${memberPayload.token}`
+      },
+      body: JSON.stringify({})
+    });
+    const registerTwoPayload = await registerTwo.json();
+    assert.equal(registerTwo.status, 200);
+    assert.equal(registerTwoPayload.status, "confirmed");
+
+    const eventsResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      headers: { Authorization: `Bearer ${memberPayload.token}` }
+    });
+    const eventsPayload = await eventsResponse.json();
+    assert.equal(eventsResponse.status, 200);
+
+    const eventOne = (eventsPayload.items || []).find((item) => item.id === eventOneId);
+    const eventTwo = (eventsPayload.items || []).find((item) => item.id === eventTwoId);
+    assert.equal(eventOne?.mySignupStatus, "confirmed");
+    assert.equal(eventTwo?.mySignupStatus, "confirmed");
+  } finally {
     await server.close();
     rmSync(workingDirectory, { recursive: true, force: true });
   }
@@ -2141,6 +2464,290 @@ test("Registration enforces one-signup, atomic capacity, and waitlist promotion"
     const eventSnapshot = adminEventsPayload.items.find((item) => item.id === createPayload.id);
     assert.equal(eventSnapshot.confirmedCount, 1);
     assert.equal(eventSnapshot.waitlistedCount, 0);
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Waitlist promotion remains FIFO across repeated cancellations", async () => {
+  const { server, workingDirectory, databasePath } = await createRunningServer();
+
+  try {
+    const database = openDatabase(databasePath);
+    try {
+      const now = new Date().toISOString();
+      database
+        .prepare(
+          `
+          INSERT INTO users (username, email, password_hash, role, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, 'active', ?, ?)
+        `
+        )
+        .run("member3", "member3@iwfsa.local", hashPassword("member3pass"), "member", now, now);
+    } finally {
+      database.close();
+    }
+
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+    });
+    const adminPayload = await adminLogin.json();
+
+    const createResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({
+        title: "FIFO Promotion Event",
+        description: "Validate deterministic waitlist promotions.",
+        startAt: isoDaysFromNow(6),
+        endAt: isoDaysFromNow(6, 2),
+        venueType: "physical",
+        capacity: 1,
+        registrationClosesAt: isoDaysFromNow(5),
+        audienceType: "all_members"
+      })
+    });
+    const createPayload = await createResponse.json();
+    assert.equal(createResponse.status, 201);
+
+    const submitResponse = await fetch(
+      `http://${server.host}:${server.port}/api/events/${createPayload.id}/submit`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${adminPayload.token}` }
+      }
+    );
+    assert.equal(submitResponse.status, 200);
+
+    const member1Login = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const member1Payload = await member1Login.json();
+
+    const member2Login = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member2", password: "member2pass" })
+    });
+    const member2Payload = await member2Login.json();
+
+    const member3Login = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member3", password: "member3pass" })
+    });
+    const member3Payload = await member3Login.json();
+
+    const register1 = await fetch(`http://${server.host}:${server.port}/api/events/${createPayload.id}/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${member1Payload.token}`
+      },
+      body: JSON.stringify({})
+    });
+    const register1Payload = await register1.json();
+    assert.equal(register1.status, 200);
+    assert.equal(register1Payload.status, "confirmed");
+
+    const register2 = await fetch(`http://${server.host}:${server.port}/api/events/${createPayload.id}/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${member2Payload.token}`
+      },
+      body: JSON.stringify({})
+    });
+    const register2Payload = await register2.json();
+    assert.equal(register2.status, 200);
+    assert.equal(register2Payload.status, "waitlisted");
+
+    const register3 = await fetch(`http://${server.host}:${server.port}/api/events/${createPayload.id}/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${member3Payload.token}`
+      },
+      body: JSON.stringify({})
+    });
+    const register3Payload = await register3.json();
+    assert.equal(register3.status, 200);
+    assert.equal(register3Payload.status, "waitlisted");
+
+    const cancelFirst = await fetch(
+      `http://${server.host}:${server.port}/api/events/${createPayload.id}/cancel-registration`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${member1Payload.token}` }
+      }
+    );
+    const cancelFirstPayload = await cancelFirst.json();
+    assert.equal(cancelFirst.status, 200);
+    assert.equal(Number(cancelFirstPayload.promotedUserId), Number(member2Payload.user.id));
+
+    const cancelSecond = await fetch(
+      `http://${server.host}:${server.port}/api/events/${createPayload.id}/cancel-registration`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${member2Payload.token}` }
+      }
+    );
+    const cancelSecondPayload = await cancelSecond.json();
+    assert.equal(cancelSecond.status, 200);
+    assert.equal(Number(cancelSecondPayload.promotedUserId), Number(member3Payload.user.id));
+
+    const member3EventsResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      headers: { Authorization: `Bearer ${member3Payload.token}` }
+    });
+    const member3EventsPayload = await member3EventsResponse.json();
+    assert.equal(member3EventsResponse.status, 200);
+    const member3Event = (member3EventsPayload.items || []).find((item) => item.id === createPayload.id);
+    assert.equal(member3Event?.mySignupStatus, "confirmed");
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("High-concurrency registrations do not oversubscribe capacity", async () => {
+  const { server, workingDirectory, databasePath } = await createRunningServer();
+
+  try {
+    const database = openDatabase(databasePath);
+    try {
+      const now = new Date().toISOString();
+      const insertUser = database.prepare(
+        `
+        INSERT INTO users (username, email, password_hash, role, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'active', ?, ?)
+      `
+      );
+      for (let index = 3; index <= 8; index += 1) {
+        insertUser.run(
+          `member${index}`,
+          `member${index}@iwfsa.local`,
+          hashPassword(`member${index}pass`),
+          "member",
+          now,
+          now
+        );
+      }
+    } finally {
+      database.close();
+    }
+
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+    });
+    const adminPayload = await adminLogin.json();
+
+    const createResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({
+        title: "High Concurrency Capacity Event",
+        description: "Stress registration race.",
+        startAt: isoDaysFromNow(7),
+        endAt: isoDaysFromNow(7, 2),
+        venueType: "physical",
+        capacity: 3,
+        registrationClosesAt: isoDaysFromNow(6),
+        audienceType: "all_members"
+      })
+    });
+    const createPayload = await createResponse.json();
+    assert.equal(createResponse.status, 201);
+
+    const submitResponse = await fetch(
+      `http://${server.host}:${server.port}/api/events/${createPayload.id}/submit`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${adminPayload.token}` }
+      }
+    );
+    assert.equal(submitResponse.status, 200);
+
+    const memberCredentials = [
+      { username: "member1", password: "memberpass" },
+      { username: "member2", password: "member2pass" },
+      { username: "member3", password: "member3pass" },
+      { username: "member4", password: "member4pass" },
+      { username: "member5", password: "member5pass" },
+      { username: "member6", password: "member6pass" },
+      { username: "member7", password: "member7pass" },
+      { username: "member8", password: "member8pass" }
+    ];
+
+    const memberTokens = [];
+    for (const credential of memberCredentials) {
+      const loginResponse = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(credential)
+      });
+      const loginPayload = await loginResponse.json();
+      assert.equal(loginResponse.status, 200);
+      memberTokens.push(loginPayload.token);
+    }
+
+    const registrationResponses = await Promise.all(
+      memberTokens.map((token) =>
+        fetch(`http://${server.host}:${server.port}/api/events/${createPayload.id}/register`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({})
+        })
+      )
+    );
+    const registrationPayloads = await Promise.all(registrationResponses.map((response) => response.json()));
+    for (const response of registrationResponses) {
+      assert.equal(response.status, 200);
+    }
+
+    const confirmedCount = registrationPayloads.filter((item) => item.status === "confirmed").length;
+    const waitlistedCount = registrationPayloads.filter((item) => item.status === "waitlisted").length;
+    assert.equal(confirmedCount, 3);
+    assert.equal(waitlistedCount, 5);
+
+    const verifyDatabase = openDatabase(databasePath);
+    try {
+      const summary = verifyDatabase
+        .prepare(
+          `
+          SELECT
+            COUNT(*) AS totalRows,
+            COUNT(DISTINCT user_id) AS distinctUsers,
+            COALESCE(SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END), 0) AS confirmedCount,
+            COALESCE(SUM(CASE WHEN status = 'waitlisted' THEN 1 ELSE 0 END), 0) AS waitlistedCount
+          FROM signups
+          WHERE event_id = ?
+        `
+        )
+        .get(createPayload.id);
+
+      assert.equal(Number(summary.totalRows || 0), 8);
+      assert.equal(Number(summary.distinctUsers || 0), 8);
+      assert.equal(Number(summary.confirmedCount || 0), 3);
+      assert.equal(Number(summary.waitlistedCount || 0), 5);
+    } finally {
+      verifyDatabase.close();
+    }
   } finally {
     await server.close();
     rmSync(workingDirectory, { recursive: true, force: true });
@@ -3757,6 +4364,1476 @@ test("Credential reset requires token redemption", async () => {
     assert.equal(reloginPayload.user.username, "member1");
   } finally {
     delete globalThis[EMAIL_OUTBOX_GLOBAL_KEY];
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+// ======================================================================
+// Checkpoint 1.6 - Notifications and Audit Trail validation tests
+// ======================================================================
+
+test("Checkpoint 1.6: one in-app send per user/channel/version (idempotency)", async () => {
+  const { server, workingDirectory, databasePath, memberId } = await createRunningServer();
+
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+    });
+    const adminPayload = await adminLogin.json();
+
+    const createResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({
+        title: "Idempotency Check Event",
+        description: "Verify one send per user/channel/version.",
+        startAt: isoDaysFromNow(15),
+        endAt: isoDaysFromNow(15, 2),
+        venueType: "physical",
+        venueName: "Pretoria",
+        capacity: 30,
+        registrationClosesAt: isoDaysFromNow(14),
+        audienceType: "all_members"
+      })
+    });
+    const createPayload = await createResponse.json();
+    assert.equal(createResponse.status, 201);
+
+    await fetch(`http://${server.host}:${server.port}/api/events/${createPayload.id}/submit`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${adminPayload.token}` }
+    });
+
+    // Wait for first queue dispatch
+    await waitFor(
+      async () => {
+        const queueResponse = await fetch(
+          `http://${server.host}:${server.port}/api/admin/notification-queue?limit=50`,
+          { headers: { Authorization: `Bearer ${adminPayload.token}` } }
+        );
+        const queuePayload = await queueResponse.json();
+        const row = (queuePayload.items || []).find(
+          (item) => item.eventType === "event_published" && (item.status === "sent" || item.status === "failed")
+        );
+        return row || null;
+      },
+      { label: "idempotency first dispatch" }
+    );
+
+    // Manually insert a duplicate queue entry for the same event
+    const database = openDatabase(databasePath);
+    const revisionRow = database
+      .prepare("SELECT id FROM event_revisions WHERE event_id = ? AND revision_type = 'publish' ORDER BY id DESC LIMIT 1")
+      .get(createPayload.id);
+    database
+      .prepare("INSERT INTO notification_queue (idempotency_key, event_type, payload_json, status) VALUES (?, 'event_published', ?, 'pending')")
+      .run(`duplicate_idempotency_check:${Date.now()}`, JSON.stringify({ eventId: createPayload.id, revisionId: revisionRow.id }));
+    database.close();
+
+    await waitFor(
+      async () => {
+        const queueResponse = await fetch(
+          `http://${server.host}:${server.port}/api/admin/notification-queue?limit=100`,
+          { headers: { Authorization: `Bearer ${adminPayload.token}` } }
+        );
+        const queuePayload = await queueResponse.json();
+        const published = (queuePayload.items || []).filter((item) => item.eventType === "event_published");
+        if (published.some((item) => item.status === "pending" || item.status === "processing")) return null;
+        return published;
+      },
+      { label: "duplicate dispatch completes" }
+    );
+
+    // Verify: member still has exactly 1 in-app notification for this event
+    const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const memberPayload = await memberLogin.json();
+
+    const notifResponse = await fetch(`http://${server.host}:${server.port}/api/notifications?limit=100`, {
+      headers: { Authorization: `Bearer ${memberPayload.token}` }
+    });
+    const notifPayload = await notifResponse.json();
+    const memberPublished = (notifPayload.items || []).filter(
+      (item) => item.eventType === "event_published" && item.metadata && item.metadata.eventId === createPayload.id
+    );
+    assert.equal(memberPublished.length, 1, "Exactly one in-app notification per user/event/version");
+
+    // Verify delivery records: exactly 1 in_app + 1 email per member per version
+    const deliveryResponse = await fetch(
+      `http://${server.host}:${server.port}/api/admin/notification-deliveries?limit=200`,
+      { headers: { Authorization: `Bearer ${adminPayload.token}` } }
+    );
+    const deliveries = await deliveryResponse.json();
+    const memberDeliveries = (deliveries.items || []).filter(
+      (item) => item.eventType === "event_published" && item.userId === memberId
+    );
+    const inAppCount = memberDeliveries.filter((d) => d.channel === "in_app").length;
+    const emailCount = memberDeliveries.filter((d) => d.channel === "email").length;
+    assert.equal(inAppCount, 1, "Exactly one in_app delivery per user/version");
+    assert.equal(emailCount, 1, "Exactly one email delivery per user/version");
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Checkpoint 1.6: event cancellation notifies registered participants", async () => {
+  const { server, workingDirectory, memberId, member2Id } = await createRunningServer();
+
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+    });
+    const adminPayload = await adminLogin.json();
+
+    // Create and publish event
+    const createResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({
+        title: "Cancellation Notify Test",
+        description: "Cancel and verify participants are notified.",
+        startAt: isoDaysFromNow(20),
+        endAt: isoDaysFromNow(20, 2),
+        venueType: "physical",
+        venueName: "Durban",
+        capacity: 25,
+        registrationClosesAt: isoDaysFromNow(19),
+        audienceType: "all_members"
+      })
+    });
+    const createPayload = await createResponse.json();
+    assert.equal(createResponse.status, 201);
+
+    await fetch(`http://${server.host}:${server.port}/api/events/${createPayload.id}/submit`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${adminPayload.token}` }
+    });
+
+    // Wait for publish notifications to complete
+    await waitFor(
+      async () => {
+        const qr = await fetch(`http://${server.host}:${server.port}/api/admin/notification-queue?limit=50`, {
+          headers: { Authorization: `Bearer ${adminPayload.token}` }
+        });
+        const qp = await qr.json();
+        const row = (qp.items || []).find((item) => item.eventType === "event_published" && item.status === "sent");
+        return row || null;
+      },
+      { label: "publish dispatch for cancel test" }
+    );
+
+    // Register member1
+    const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const memberPayload = await memberLogin.json();
+
+    await fetch(`http://${server.host}:${server.port}/api/events/${createPayload.id}/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${memberPayload.token}`
+      },
+      body: JSON.stringify({})
+    });
+
+    // Delete/cancel the event
+    const deleteResponse = await fetch(`http://${server.host}:${server.port}/api/events/${createPayload.id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${adminPayload.token}` }
+    });
+    const deletePayload = await deleteResponse.json();
+    assert.equal(deleteResponse.status, 200);
+    assert.equal(deletePayload.deleted, true);
+
+    // Verify member1 received cancellation in-app notification
+    const notifResponse = await fetch(`http://${server.host}:${server.port}/api/notifications?limit=100`, {
+      headers: { Authorization: `Bearer ${memberPayload.token}` }
+    });
+    const notifPayload = await notifResponse.json();
+    const cancelNotifs = (notifPayload.items || []).filter(
+      (item) => item.eventType === "event_cancelled" && item.metadata && item.metadata.eventId === createPayload.id
+    );
+    assert.equal(cancelNotifs.length, 1, "Member receives event_cancelled in-app notification");
+
+    // Verify cancellation delivery records exist
+    const deliveryResponse = await fetch(
+      `http://${server.host}:${server.port}/api/admin/notification-deliveries?limit=200`,
+      { headers: { Authorization: `Bearer ${adminPayload.token}` } }
+    );
+    const deliveries = await deliveryResponse.json();
+    const cancelDeliveries = (deliveries.items || []).filter(
+      (item) => item.eventType === "event_cancelled" && item.userId === memberId
+    );
+    assert.ok(cancelDeliveries.length >= 2, "Cancellation generates at least in_app + email delivery records");
+    const channels = new Set(cancelDeliveries.map((d) => d.channel));
+    assert.ok(channels.has("in_app"), "Cancellation delivery includes in_app");
+    assert.ok(channels.has("email"), "Cancellation delivery includes email");
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Checkpoint 1.6: admin notification-queue returns health summary with counts", async () => {
+  const { server, workingDirectory } = await createRunningServer();
+
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+    });
+    const adminPayload = await adminLogin.json();
+
+    const response = await fetch(`http://${server.host}:${server.port}/api/admin/notification-queue?limit=50`, {
+      headers: { Authorization: `Bearer ${adminPayload.token}` }
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.ok(typeof payload.health === "string", "Queue response includes health label");
+    assert.ok(["Healthy", "Degraded", "Attention needed"].includes(payload.health), "Health label is valid");
+    assert.ok(typeof payload.counts === "object", "Queue response includes counts object");
+    assert.ok(typeof payload.counts.pending === "number", "Counts include pending");
+    assert.ok(typeof payload.counts.processing === "number", "Counts include processing");
+    assert.ok(typeof payload.counts.sent === "number", "Counts include sent");
+    assert.ok(typeof payload.counts.failed === "number", "Counts include failed");
+    assert.ok(typeof payload.counts.total === "number", "Counts include total");
+    assert.ok(Array.isArray(payload.items), "Queue response includes items array");
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Checkpoint 1.6: admin delivery report includes member-centric data", async () => {
+  const { server, workingDirectory, databasePath, memberId } = await createRunningServer();
+
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+    });
+    const adminPayload = await adminLogin.json();
+
+    // Populate member profile data for member1
+    const database = openDatabase(databasePath);
+    database
+      .prepare(
+        `
+        INSERT INTO member_profiles (user_id, full_name, company, phone, created_at, updated_at)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id) DO UPDATE SET
+          full_name = excluded.full_name,
+          company = excluded.company,
+          phone = excluded.phone,
+          updated_at = CURRENT_TIMESTAMP
+      `
+      )
+      .run(memberId, "Member One", "TestCorp", "+27123456789");
+    database.close();
+
+    // Create and publish an event to generate deliveries
+    const createResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({
+        title: "Delivery Report Enrichment Test",
+        description: "Verify delivery report includes member data.",
+        startAt: isoDaysFromNow(25),
+        endAt: isoDaysFromNow(25, 2),
+        venueType: "physical",
+        venueName: "Stellenbosch",
+        capacity: 30,
+        registrationClosesAt: isoDaysFromNow(24),
+        audienceType: "all_members"
+      })
+    });
+    assert.equal(createResponse.status, 201);
+    const createPayload = await createResponse.json();
+
+    await fetch(`http://${server.host}:${server.port}/api/events/${createPayload.id}/submit`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${adminPayload.token}` }
+    });
+
+    await waitFor(
+      async () => {
+        const qr = await fetch(`http://${server.host}:${server.port}/api/admin/notification-queue?limit=50`, {
+          headers: { Authorization: `Bearer ${adminPayload.token}` }
+        });
+        const qp = await qr.json();
+        const row = (qp.items || []).find(
+          (item) => item.eventType === "event_published" && (item.status === "sent" || item.status === "failed")
+        );
+        return row || null;
+      },
+      { label: "delivery enrichment dispatch" }
+    );
+
+    const deliveryResponse = await fetch(
+      `http://${server.host}:${server.port}/api/admin/notification-deliveries?limit=200`,
+      { headers: { Authorization: `Bearer ${adminPayload.token}` } }
+    );
+    const deliveries = await deliveryResponse.json();
+    assert.equal(deliveryResponse.status, 200);
+
+    const memberDelivery = (deliveries.items || []).find(
+      (item) => item.userId === memberId && item.eventType === "event_published"
+    );
+    assert.ok(memberDelivery, "Delivery record exists for member");
+    assert.equal(memberDelivery.fullName, "Member One", "Delivery includes member full name");
+    assert.equal(memberDelivery.organisation, "TestCorp", "Delivery includes organisation");
+    assert.equal(memberDelivery.phone, "+27123456789", "Delivery includes phone");
+    assert.equal(memberDelivery.email, "member1@iwfsa.local", "Delivery includes email");
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Checkpoint 1.6: waitlist promotion creates in-app notification and email delivery", async () => {
+  const { server, workingDirectory, databasePath, memberId, member2Id } = await createRunningServer();
+
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+    });
+    const adminPayload = await adminLogin.json();
+
+    // Create event with capacity 1 to force waitlist
+    const createResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({
+        title: "Waitlist Promotion Notification Test",
+        description: "Verify waitlist promotion creates in-app notification.",
+        startAt: isoDaysFromNow(30),
+        endAt: isoDaysFromNow(30, 2),
+        venueType: "physical",
+        venueName: "Cape Town",
+        capacity: 1,
+        registrationClosesAt: isoDaysFromNow(29),
+        audienceType: "all_members"
+      })
+    });
+    const createPayload = await createResponse.json();
+    assert.equal(createResponse.status, 201);
+
+    await fetch(`http://${server.host}:${server.port}/api/events/${createPayload.id}/submit`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${adminPayload.token}` }
+    });
+
+    await waitFor(
+      async () => {
+        const qr = await fetch(`http://${server.host}:${server.port}/api/admin/notification-queue?limit=50`, {
+          headers: { Authorization: `Bearer ${adminPayload.token}` }
+        });
+        const qp = await qr.json();
+        const row = (qp.items || []).find(
+          (item) => item.eventType === "event_published" && (item.status === "sent" || item.status === "failed")
+        );
+        return row || null;
+      },
+      { label: "waitlist test publish dispatch" }
+    );
+
+    // Member1 registers (fills capacity)
+    const member1Login = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const member1Payload = await member1Login.json();
+
+    const reg1 = await fetch(`http://${server.host}:${server.port}/api/events/${createPayload.id}/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${member1Payload.token}`
+      },
+      body: JSON.stringify({})
+    });
+    assert.equal(reg1.status, 200);
+
+    // Member2 registers (should be waitlisted)
+    const member2Login = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member2", password: "member2pass" })
+    });
+    const member2Payload = await member2Login.json();
+
+    const reg2 = await fetch(`http://${server.host}:${server.port}/api/events/${createPayload.id}/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${member2Payload.token}`
+      },
+      body: JSON.stringify({})
+    });
+    const reg2Payload = await reg2.json();
+    assert.equal(reg2.status, 200);
+    assert.equal(reg2Payload.status, "waitlisted");
+
+    // Member1 cancels -> member2 should be promoted
+    const cancelResponse = await fetch(
+      `http://${server.host}:${server.port}/api/events/${createPayload.id}/cancel-registration`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${member1Payload.token}` }
+      }
+    );
+    const cancelPayload = await cancelResponse.json();
+    assert.equal(cancelResponse.status, 200);
+    assert.equal(cancelPayload.cancelled, true);
+
+    // Check member2 has in-app notification for waitlist promotion
+    const notifResponse = await fetch(`http://${server.host}:${server.port}/api/notifications?limit=100`, {
+      headers: { Authorization: `Bearer ${member2Payload.token}` }
+    });
+    const notifPayload = await notifResponse.json();
+    const promotionNotifs = (notifPayload.items || []).filter(
+      (item) => item.eventType === "waitlist_promoted"
+    );
+    assert.equal(promotionNotifs.length, 1, "Promoted member receives in-app waitlist_promoted notification");
+
+    // Check delivery records for promotion (in_app + email)
+    const deliveryResponse = await fetch(
+      `http://${server.host}:${server.port}/api/admin/notification-deliveries?limit=200`,
+      { headers: { Authorization: `Bearer ${adminPayload.token}` } }
+    );
+    const deliveries = await deliveryResponse.json();
+    const promoDeliveries = (deliveries.items || []).filter(
+      (item) => item.eventType === "waitlist_promoted" && item.userId === member2Id
+    );
+    const promoChannels = new Set(promoDeliveries.map((d) => d.channel));
+    assert.ok(promoChannels.has("in_app"), "Waitlist promotion has in_app delivery record");
+    assert.ok(promoChannels.has("email"), "Waitlist promotion has email delivery record");
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Checkpoint 1.6: event revision snapshots and rollback with notification", async () => {
+  const { server, workingDirectory, memberId } = await createRunningServer();
+
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+    });
+    const adminPayload = await adminLogin.json();
+
+    // Create, publish, register member, then update
+    const createResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({
+        title: "Revision Snapshot Test",
+        description: "Test revision snapshot creation.",
+        startAt: isoDaysFromNow(18),
+        endAt: isoDaysFromNow(18, 2),
+        venueType: "physical",
+        venueName: "Bloemfontein",
+        capacity: 20,
+        registrationClosesAt: isoDaysFromNow(17),
+        audienceType: "all_members"
+      })
+    });
+    const createPayload = await createResponse.json();
+    assert.equal(createResponse.status, 201);
+
+    await fetch(`http://${server.host}:${server.port}/api/events/${createPayload.id}/submit`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${adminPayload.token}` }
+    });
+
+    await waitFor(
+      async () => {
+        const qr = await fetch(`http://${server.host}:${server.port}/api/admin/notification-queue?limit=50`, {
+          headers: { Authorization: `Bearer ${adminPayload.token}` }
+        });
+        const qp = await qr.json();
+        const row = (qp.items || []).find(
+          (item) => item.eventType === "event_published" && (item.status === "sent" || item.status === "failed")
+        );
+        return row || null;
+      },
+      { label: "revision test publish dispatch" }
+    );
+
+    // Register member
+    const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const memberPayload = await memberLogin.json();
+
+    await fetch(`http://${server.host}:${server.port}/api/events/${createPayload.id}/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${memberPayload.token}`
+      },
+      body: JSON.stringify({})
+    });
+
+    // Patch event title
+    await fetch(`http://${server.host}:${server.port}/api/events/${createPayload.id}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({ title: "Revision Snapshot Updated" })
+    });
+
+    // Verify revisions exist (publish + update)
+    const revisionsResponse = await fetch(
+      `http://${server.host}:${server.port}/api/admin/events/${createPayload.id}/revisions`,
+      { headers: { Authorization: `Bearer ${adminPayload.token}` } }
+    );
+    const revisionsPayload = await revisionsResponse.json();
+    assert.equal(revisionsResponse.status, 200);
+    const publishRevision = (revisionsPayload.items || []).find((item) => item.revisionType === "publish");
+    const updateRevision = (revisionsPayload.items || []).find((item) => item.revisionType === "update");
+    assert.ok(publishRevision, "Publish revision exists");
+    assert.ok(updateRevision, "Update revision exists");
+
+    // Wait for update notification to process
+    await waitFor(
+      async () => {
+        const dr = await fetch(
+          `http://${server.host}:${server.port}/api/admin/notification-deliveries?limit=200`,
+          { headers: { Authorization: `Bearer ${adminPayload.token}` } }
+        );
+        const dp = await dr.json();
+        const items = (dp.items || []).filter(
+          (item) => item.eventType === "event_updated" && item.userId === memberId
+        );
+        return items.length >= 2 ? items : null;
+      },
+      { label: "update notification deliveries" }
+    );
+
+    // Rollback to publish revision
+    const rollbackResponse = await fetch(
+      `http://${server.host}:${server.port}/api/admin/events/${createPayload.id}/revisions/${updateRevision.id}/rollback`,
+      { method: "POST", headers: { Authorization: `Bearer ${adminPayload.token}` } }
+    );
+    assert.equal(rollbackResponse.status, 200);
+
+    // Verify event title is restored
+    const eventsResponse = await fetch(`http://${server.host}:${server.port}/api/admin/events`, {
+      headers: { Authorization: `Bearer ${adminPayload.token}` }
+    });
+    const eventsPayload = await eventsResponse.json();
+    const rolledBack = (eventsPayload.items || []).find((item) => item.id === createPayload.id);
+    assert.equal(rolledBack.title, "Revision Snapshot Test", "Title restored after rollback");
+
+    // Verify rollback notification arrives for registered member
+    await waitFor(
+      async () => {
+        const nr = await fetch(`http://${server.host}:${server.port}/api/notifications?limit=100`, {
+          headers: { Authorization: `Bearer ${memberPayload.token}` }
+        });
+        const np = await nr.json();
+        const items = (np.items || []).filter(
+          (item) =>
+            item.eventType === "event_updated" &&
+            item.metadata &&
+            item.metadata.eventId === createPayload.id &&
+            String(item.body || "").includes("Event rolled back")
+        );
+        return items.length > 0 ? items[0] : null;
+      },
+      { label: "rollback notification for participant" }
+    );
+
+    // Verify rollback revision created
+    const revisionsAfter = await fetch(
+      `http://${server.host}:${server.port}/api/admin/events/${createPayload.id}/revisions`,
+      { headers: { Authorization: `Bearer ${adminPayload.token}` } }
+    );
+    const revisionsAfterPayload = await revisionsAfter.json();
+    const rollbackRevision = (revisionsAfterPayload.items || []).find((item) => item.revisionType === "rollback");
+    assert.ok(rollbackRevision, "Rollback creates a new revision record");
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Checkpoint 1.6: mark-read works for individual and markAll", async () => {
+  const { server, workingDirectory } = await createRunningServer();
+
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+    });
+    const adminPayload = await adminLogin.json();
+
+    // Create and publish event to generate notifications for members
+    const createResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({
+        title: "Mark Read Test",
+        description: "For testing mark-read.",
+        startAt: isoDaysFromNow(22),
+        endAt: isoDaysFromNow(22, 2),
+        venueType: "physical",
+        venueName: "Port Elizabeth",
+        capacity: 10,
+        registrationClosesAt: isoDaysFromNow(21),
+        audienceType: "all_members"
+      })
+    });
+    const createPayload = await createResponse.json();
+    assert.equal(createResponse.status, 201);
+
+    await fetch(`http://${server.host}:${server.port}/api/events/${createPayload.id}/submit`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${adminPayload.token}` }
+    });
+
+    await waitFor(
+      async () => {
+        const qr = await fetch(`http://${server.host}:${server.port}/api/admin/notification-queue?limit=50`, {
+          headers: { Authorization: `Bearer ${adminPayload.token}` }
+        });
+        const qp = await qr.json();
+        const row = (qp.items || []).find(
+          (item) => item.eventType === "event_published" && (item.status === "sent" || item.status === "failed")
+        );
+        return row || null;
+      },
+      { label: "mark-read test dispatch" }
+    );
+
+    const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const memberPayload = await memberLogin.json();
+
+    // Get unread notifications
+    const notifResponse = await fetch(`http://${server.host}:${server.port}/api/notifications?limit=100`, {
+      headers: { Authorization: `Bearer ${memberPayload.token}` }
+    });
+    const notifPayload = await notifResponse.json();
+    const unread = (notifPayload.items || []).filter((item) => !item.readAt);
+    assert.ok(unread.length > 0, "Member has unread notifications");
+
+    // Mark one as read
+    const markOneResponse = await fetch(`http://${server.host}:${server.port}/api/notifications/mark-read`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${memberPayload.token}`
+      },
+      body: JSON.stringify({ notificationIds: [unread[0].id] })
+    });
+    const markOnePayload = await markOneResponse.json();
+    assert.equal(markOneResponse.status, 200);
+    assert.equal(markOnePayload.updated, 1);
+
+    // Mark all as read
+    const markAllResponse = await fetch(`http://${server.host}:${server.port}/api/notifications/mark-read`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${memberPayload.token}`
+      },
+      body: JSON.stringify({ markAll: true })
+    });
+    const markAllPayload = await markAllResponse.json();
+    assert.equal(markAllResponse.status, 200);
+
+    // Verify all are now read
+    const afterResponse = await fetch(`http://${server.host}:${server.port}/api/notifications?limit=100`, {
+      headers: { Authorization: `Bearer ${memberPayload.token}` }
+    });
+    const afterPayload = await afterResponse.json();
+    const stillUnread = (afterPayload.items || []).filter((item) => !item.readAt);
+    assert.equal(stillUnread.length, 0, "All notifications marked as read");
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+// ────────────────────────────────────────────────────────────────
+// Checkpoint 1.7 – Calendar Actions and Teams Fallback
+// ────────────────────────────────────────────────────────────────
+
+test("Checkpoint 1.7: create online event with Teams link and provider", async () => {
+  const { server, workingDirectory } = await createRunningServer();
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "admin1", password: "adminpass" })
+    });
+    const adminPayload = await adminLogin.json();
+
+    // Create an online event with a Teams join link
+    const createResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminPayload.token}` },
+      body: JSON.stringify({
+        title: "Virtual Strategy Session",
+        description: "Online quarterly planning meeting.",
+        startAt: "2026-04-01T09:00:00Z",
+        endAt: "2026-04-01T11:00:00Z",
+        venueType: "online",
+        onlineProvider: "Microsoft Teams",
+        onlineJoinUrl: "https://teams.microsoft.com/l/meetup-join/abc123",
+        hostName: "Admin One",
+        capacity: 100,
+        registrationClosesAt: "2026-03-31T23:59:59Z"
+      })
+    });
+    const createPayload = await createResponse.json();
+    assert.equal(createResponse.status, 201, "Online event created");
+    assert.ok(createPayload.id, "Event id returned");
+
+    // Fetch the event and verify online fields are present
+    const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const memberPayload = await memberLogin.json();
+
+    // Publish it first
+    await fetch(`http://${server.host}:${server.port}/api/events/${createPayload.id}/submit`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${adminPayload.token}` }
+    });
+
+    const eventsResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      headers: { Authorization: `Bearer ${memberPayload.token}` }
+    });
+    const eventsPayload = await eventsResponse.json();
+    const onlineEvent = (eventsPayload.items || []).find((e) => e.title === "Virtual Strategy Session");
+    assert.ok(onlineEvent, "Online event visible to member");
+    assert.equal(onlineEvent.onlineProvider, "Microsoft Teams");
+    assert.equal(onlineEvent.onlineJoinUrl, "https://teams.microsoft.com/l/meetup-join/abc123");
+    assert.equal(onlineEvent.venueType, "online");
+    // Verify all calendar-link-building fields are present
+    assert.ok(onlineEvent.startAt, "startAt present");
+    assert.ok(onlineEvent.endAt, "endAt present");
+    assert.ok(onlineEvent.title, "title present");
+    assert.ok(onlineEvent.description, "description present");
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Checkpoint 1.7: ICS download for online event includes join URL, provider, and correct location", async () => {
+  const { server, workingDirectory } = await createRunningServer();
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "admin1", password: "adminpass" })
+    });
+    const adminPayload = await adminLogin.json();
+
+    // Create and publish an online event with Teams
+    const createResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminPayload.token}` },
+      body: JSON.stringify({
+        title: "ICS Online Test Event",
+        description: "Testing ICS generation for online events.",
+        startAt: "2026-05-10T14:00:00Z",
+        endAt: "2026-05-10T16:00:00Z",
+        venueType: "online",
+        onlineProvider: "Microsoft Teams",
+        onlineJoinUrl: "https://teams.microsoft.com/l/meetup-join/ics-test-789",
+        hostName: "Test Host",
+        capacity: 50,
+        registrationClosesAt: "2026-05-09T23:59:59Z"
+      })
+    });
+    const createPayload = await createResponse.json();
+    assert.equal(createResponse.status, 201);
+
+    await fetch(`http://${server.host}:${server.port}/api/events/${createPayload.id}/submit`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${adminPayload.token}` }
+    });
+
+    // Download the ICS as a member
+    const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const memberPayload = await memberLogin.json();
+
+    const icsResponse = await fetch(
+      `http://${server.host}:${server.port}/api/events/${createPayload.id}/calendar.ics`,
+      { headers: { Authorization: `Bearer ${memberPayload.token}` } }
+    );
+    assert.equal(icsResponse.status, 200);
+    assert.match(icsResponse.headers.get("content-type") || "", /text\/calendar/);
+
+    const icsText = await icsResponse.text();
+    assert.match(icsText, /BEGIN:VCALENDAR/, "ICS starts correctly");
+    assert.match(icsText, /BEGIN:VEVENT/, "Contains VEVENT block");
+    assert.match(icsText, /DTSTART:20260510T140000Z/, "Correct start time");
+    assert.match(icsText, /DTEND:20260510T160000Z/, "Correct end time");
+    assert.match(icsText, /SUMMARY:ICS Online Test Event/, "Correct title");
+    assert.match(icsText, /LOCATION:Online/, "Location is Online for online venue");
+    assert.match(icsText, /teams\.microsoft\.com/, "Join URL in ICS description");
+    assert.match(icsText, /Provider: Microsoft Teams/, "Provider in ICS description");
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Checkpoint 1.7: ICS for physical event includes venue in LOCATION", async () => {
+  const { server, workingDirectory } = await createRunningServer();
+  try {
+    // The seed data already has a physical event "Leadership Roundtable" in Johannesburg
+    const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const memberPayload = await memberLogin.json();
+
+    const eventsResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      headers: { Authorization: `Bearer ${memberPayload.token}` }
+    });
+    const eventsPayload = await eventsResponse.json();
+    const physicalEvent = (eventsPayload.items || []).find((e) => e.title === "Leadership Roundtable");
+    assert.ok(physicalEvent, "Physical event found");
+
+    const icsResponse = await fetch(
+      `http://${server.host}:${server.port}/api/events/${physicalEvent.id}/calendar.ics`,
+      { headers: { Authorization: `Bearer ${memberPayload.token}` } }
+    );
+    assert.equal(icsResponse.status, 200);
+    const icsText = await icsResponse.text();
+    assert.match(icsText, /LOCATION:Johannesburg/, "Physical venue appears in LOCATION");
+    assert.ok(!icsText.includes("LOCATION:Online"), "Not marked as Online");
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Checkpoint 1.7: invalid onlineJoinUrl is rejected on create and update", async () => {
+  const { server, workingDirectory } = await createRunningServer();
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "admin1", password: "adminpass" })
+    });
+    const adminPayload = await adminLogin.json();
+
+    // Create with invalid URL
+    const createBadUrl = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminPayload.token}` },
+      body: JSON.stringify({
+        title: "Bad Link Event",
+        startAt: "2026-06-01T09:00:00Z",
+        endAt: "2026-06-01T11:00:00Z",
+        venueType: "online",
+        onlineJoinUrl: "not-a-valid-url",
+        capacity: 10
+      })
+    });
+    assert.equal(createBadUrl.status, 400);
+    const createBadPayload = await createBadUrl.json();
+    assert.match(String(createBadPayload.message || ""), /Online join URL must start with http/i);
+
+    // Create a valid event first, then try to update with invalid URL
+    const createOk = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminPayload.token}` },
+      body: JSON.stringify({
+        title: "Good Link Event",
+        startAt: "2026-06-02T09:00:00Z",
+        endAt: "2026-06-02T11:00:00Z",
+        venueType: "online",
+        onlineJoinUrl: "https://teams.microsoft.com/valid",
+        capacity: 10
+      })
+    });
+    const createdEvent = await createOk.json();
+    assert.equal(createOk.status, 201);
+
+    // Update with invalid URL
+    const patchBadUrl = await fetch(`http://${server.host}:${server.port}/api/events/${createdEvent.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminPayload.token}` },
+      body: JSON.stringify({ onlineJoinUrl: "ftp://bad-protocol" })
+    });
+    assert.equal(patchBadUrl.status, 400);
+    const patchBadPayload = await patchBadUrl.json();
+    assert.match(String(patchBadPayload.message || ""), /Online join URL must start with http/i);
+
+    // Update with valid URL succeeds
+    const patchOk = await fetch(`http://${server.host}:${server.port}/api/events/${createdEvent.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminPayload.token}` },
+      body: JSON.stringify({ onlineJoinUrl: "https://zoom.us/j/updated-link" })
+    });
+    assert.equal(patchOk.status, 200);
+
+    // Clearing the URL (empty string) should work
+    const patchClear = await fetch(`http://${server.host}:${server.port}/api/events/${createdEvent.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminPayload.token}` },
+      body: JSON.stringify({ onlineJoinUrl: "" })
+    });
+    assert.equal(patchClear.status, 200);
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Checkpoint 1.7: update Teams link is reflected in subsequent ICS download", async () => {
+  const { server, workingDirectory } = await createRunningServer();
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "admin1", password: "adminpass" })
+    });
+    const adminPayload = await adminLogin.json();
+    const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const memberPayload = await memberLogin.json();
+
+    // Create and publish online event
+    const createResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminPayload.token}` },
+      body: JSON.stringify({
+        title: "Link Update Test",
+        startAt: "2026-07-01T10:00:00Z",
+        endAt: "2026-07-01T12:00:00Z",
+        venueType: "online",
+        onlineProvider: "Zoom",
+        onlineJoinUrl: "https://zoom.us/j/original-link",
+        capacity: 30,
+        registrationClosesAt: "2026-06-30T23:59:59Z"
+      })
+    });
+    const createPayload = await createResponse.json();
+    assert.equal(createResponse.status, 201);
+
+    await fetch(`http://${server.host}:${server.port}/api/events/${createPayload.id}/submit`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${adminPayload.token}` }
+    });
+
+    // ICS should contain original link
+    const ics1Response = await fetch(
+      `http://${server.host}:${server.port}/api/events/${createPayload.id}/calendar.ics`,
+      { headers: { Authorization: `Bearer ${memberPayload.token}` } }
+    );
+    const ics1 = await ics1Response.text();
+    assert.match(ics1, /original-link/, "ICS contains original link");
+
+    // Update the Teams link
+    await fetch(`http://${server.host}:${server.port}/api/events/${createPayload.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminPayload.token}` },
+      body: JSON.stringify({
+        onlineProvider: "Microsoft Teams",
+        onlineJoinUrl: "https://teams.microsoft.com/l/meetup-join/updated-link"
+      })
+    });
+
+    // ICS should now reflect the updated link and provider
+    const ics2Response = await fetch(
+      `http://${server.host}:${server.port}/api/events/${createPayload.id}/calendar.ics`,
+      { headers: { Authorization: `Bearer ${memberPayload.token}` } }
+    );
+    const ics2 = await ics2Response.text();
+    assert.match(ics2, /updated-link/, "ICS contains updated link");
+    assert.match(ics2, /Provider: Microsoft Teams/, "ICS contains updated provider");
+    assert.ok(!ics2.includes("original-link"), "Original link no longer in ICS");
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Checkpoint 1.7: Teams join link is displayed to members in event listing", async () => {
+  const { server, workingDirectory } = await createRunningServer();
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "admin1", password: "adminpass" })
+    });
+    const adminPayload = await adminLogin.json();
+    const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const memberPayload = await memberLogin.json();
+
+    // Create and publish with a Teams link
+    const createResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminPayload.token}` },
+      body: JSON.stringify({
+        title: "Teams Display Test",
+        description: "Checking Teams link visibility.",
+        startAt: "2026-08-01T14:00:00Z",
+        endAt: "2026-08-01T16:00:00Z",
+        venueType: "online",
+        onlineProvider: "Microsoft Teams",
+        onlineJoinUrl: "https://teams.microsoft.com/l/meetup-join/display-test-456",
+        hostName: "Display Host",
+        capacity: 25,
+        registrationClosesAt: "2026-07-31T23:59:59Z"
+      })
+    });
+    const createPayload = await createResponse.json();
+    assert.equal(createResponse.status, 201);
+
+    await fetch(`http://${server.host}:${server.port}/api/events/${createPayload.id}/submit`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${adminPayload.token}` }
+    });
+
+    // Member fetches events and sees the Teams link
+    const eventsResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      headers: { Authorization: `Bearer ${memberPayload.token}` }
+    });
+    const eventsPayload = await eventsResponse.json();
+    const teamsEvent = (eventsPayload.items || []).find((e) => e.title === "Teams Display Test");
+    assert.ok(teamsEvent, "Event visible in listing");
+    assert.equal(teamsEvent.onlineJoinUrl, "https://teams.microsoft.com/l/meetup-join/display-test-456");
+    assert.equal(teamsEvent.onlineProvider, "Microsoft Teams");
+    assert.equal(teamsEvent.venueType, "online");
+    assert.equal(teamsEvent.hostName, "Display Host");
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Checkpoint 3.1: authorized upload and member download for event documents", async () => {
+  const fakeSharePoint = createFakeSharePointClient();
+  const { server, workingDirectory } = await createRunningServer({ sharePointClient: fakeSharePoint });
+
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "admin1", password: "adminpass" })
+    });
+    const adminPayload = await adminLogin.json();
+
+    const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const memberPayload = await memberLogin.json();
+
+    const form = new FormData();
+    form.set("documentType", "agenda");
+    form.set("availabilityMode", "immediate");
+    form.set("file", new Blob(["Agenda content"], { type: "text/plain" }), "agenda.txt");
+
+    const uploadResponse = await fetch(`http://${server.host}:${server.port}/api/events/1/documents`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${adminPayload.token}` },
+      body: form
+    });
+    const uploadPayload = await uploadResponse.json();
+    assert.equal(uploadResponse.status, 201);
+    assert.equal(uploadPayload.item.documentType, "agenda");
+    assert.equal(uploadPayload.item.fileName, "agenda.txt");
+
+    const listResponse = await fetch(`http://${server.host}:${server.port}/api/events/1/documents`, {
+      headers: { Authorization: `Bearer ${memberPayload.token}` }
+    });
+    const listPayload = await listResponse.json();
+    assert.equal(listResponse.status, 200);
+    assert.equal(Array.isArray(listPayload.items), true);
+    assert.equal(listPayload.items.length, 1);
+    assert.equal(listPayload.items[0].available, true);
+
+    const downloadResponse = await fetch(
+      `http://${server.host}:${server.port}/api/events/1/documents/${uploadPayload.item.id}/download`,
+      {
+        headers: { Authorization: `Bearer ${memberPayload.token}` }
+      }
+    );
+    const downloadedText = await downloadResponse.text();
+    assert.equal(downloadResponse.status, 200);
+    assert.equal(downloadedText, "Agenda content");
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Checkpoint 3.1: after_event documents are blocked for members until availability window", async () => {
+  const fakeSharePoint = createFakeSharePointClient();
+  const { server, workingDirectory } = await createRunningServer({ sharePointClient: fakeSharePoint });
+
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "admin1", password: "adminpass" })
+    });
+    const adminPayload = await adminLogin.json();
+
+    const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const memberPayload = await memberLogin.json();
+
+    const form = new FormData();
+    form.set("documentType", "minutes");
+    form.set("availabilityMode", "after_event");
+    form.set("file", new Blob(["Minutes content"], { type: "text/plain" }), "minutes.txt");
+
+    const uploadResponse = await fetch(`http://${server.host}:${server.port}/api/events/1/documents`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${adminPayload.token}` },
+      body: form
+    });
+    const uploadPayload = await uploadResponse.json();
+    assert.equal(uploadResponse.status, 201);
+
+    const memberDownload = await fetch(
+      `http://${server.host}:${server.port}/api/events/1/documents/${uploadPayload.item.id}/download`,
+      {
+        headers: { Authorization: `Bearer ${memberPayload.token}` }
+      }
+    );
+    assert.equal(memberDownload.status, 403);
+
+    const adminDownload = await fetch(
+      `http://${server.host}:${server.port}/api/events/1/documents/${uploadPayload.item.id}/download`,
+      {
+        headers: { Authorization: `Bearer ${adminPayload.token}` }
+      }
+    );
+    const adminText = await adminDownload.text();
+    assert.equal(adminDownload.status, 200);
+    assert.equal(adminText, "Minutes content");
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Checkpoint 3.1: audience restrictions apply to event document access", async () => {
+  const fakeSharePoint = createFakeSharePointClient();
+  const { server, workingDirectory } = await createRunningServer({ sharePointClient: fakeSharePoint });
+
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "admin1", password: "adminpass" })
+    });
+    const adminPayload = await adminLogin.json();
+
+    const outsiderLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member2", password: "member2pass" })
+    });
+    const outsiderPayload = await outsiderLogin.json();
+
+    const form = new FormData();
+    form.set("documentType", "attachment");
+    form.set("availabilityMode", "immediate");
+    form.set("file", new Blob(["Board packet"], { type: "text/plain" }), "board.txt");
+
+    const uploadResponse = await fetch(`http://${server.host}:${server.port}/api/events/2/documents`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${adminPayload.token}` },
+      body: form
+    });
+    assert.equal(uploadResponse.status, 201);
+
+    const listResponse = await fetch(`http://${server.host}:${server.port}/api/events/2/documents`, {
+      headers: { Authorization: `Bearer ${outsiderPayload.token}` }
+    });
+    assert.equal(listResponse.status, 404);
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Checkpoint 3.2: publish online event auto-creates Teams meeting when feature is enabled", async () => {
+  const fakeTeams = createFakeTeamsGraphClient();
+  const { server, workingDirectory } = await createRunningServer({
+    teamsGraphClient: fakeTeams,
+    enableTeamsGraph: true
+  });
+
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "admin1", password: "adminpass" })
+    });
+    const adminPayload = await adminLogin.json();
+    assert.equal(adminLogin.status, 200);
+
+    const createResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({
+        title: "Auto Teams Meeting",
+        description: "Graph automation create test",
+        startAt: "2026-10-10T10:00:00Z",
+        endAt: "2026-10-10T11:00:00Z",
+        venueType: "online",
+        onlineProvider: "",
+        onlineJoinUrl: "",
+        capacity: 40,
+        audienceType: "all_members"
+      })
+    });
+    const createPayload = await createResponse.json();
+    assert.equal(createResponse.status, 201);
+
+    const submitResponse = await fetch(
+      `http://${server.host}:${server.port}/api/events/${createPayload.id}/submit`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${adminPayload.token}` }
+      }
+    );
+    const submitPayload = await submitResponse.json();
+    assert.equal(submitResponse.status, 200);
+    assert.equal(submitPayload.status, "published");
+    assert.equal(submitPayload.teamsAutomation.automated, true);
+    assert.equal(submitPayload.teamsAutomation.mode, "created");
+
+    const eventsResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      headers: { Authorization: `Bearer ${adminPayload.token}` }
+    });
+    const eventsPayload = await eventsResponse.json();
+    const created = (eventsPayload.items || []).find((item) => item.id === createPayload.id);
+    assert.equal(created.onlineProvider, "Microsoft Teams");
+    assert.match(String(created.onlineJoinUrl || ""), /teams\.microsoft\.com\/l\/meetup-join/);
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Checkpoint 3.2: patching published online event updates existing Teams meeting", async () => {
+  const fakeTeams = createFakeTeamsGraphClient();
+  const { server, workingDirectory } = await createRunningServer({
+    teamsGraphClient: fakeTeams,
+    enableTeamsGraph: true
+  });
+
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "admin1", password: "adminpass" })
+    });
+    const adminPayload = await adminLogin.json();
+    assert.equal(adminLogin.status, 200);
+
+    const createResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({
+        title: "Auto Teams Patch Meeting",
+        description: "Graph automation patch test",
+        startAt: "2026-11-10T10:00:00Z",
+        endAt: "2026-11-10T11:00:00Z",
+        venueType: "online",
+        onlineProvider: "",
+        onlineJoinUrl: "",
+        capacity: 40,
+        audienceType: "all_members"
+      })
+    });
+    const createPayload = await createResponse.json();
+    assert.equal(createResponse.status, 201);
+
+    const submitResponse = await fetch(
+      `http://${server.host}:${server.port}/api/events/${createPayload.id}/submit`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${adminPayload.token}` }
+      }
+    );
+    assert.equal(submitResponse.status, 200);
+
+    const beforePatchEventsResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      headers: { Authorization: `Bearer ${adminPayload.token}` }
+    });
+    const beforePatchPayload = await beforePatchEventsResponse.json();
+    const beforeItem = (beforePatchPayload.items || []).find((item) => item.id === createPayload.id);
+    const beforeJoinUrl = String(beforeItem?.onlineJoinUrl || "");
+    assert.ok(beforeJoinUrl);
+
+    const patchResponse = await fetch(`http://${server.host}:${server.port}/api/events/${createPayload.id}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({
+        title: "Auto Teams Patch Meeting v2",
+        startAt: "2026-11-10T12:00:00Z",
+        endAt: "2026-11-10T13:00:00Z"
+      })
+    });
+    const patchPayload = await patchResponse.json();
+    assert.equal(patchResponse.status, 200);
+    assert.equal(patchPayload.teamsAutomation.automated, true);
+    assert.equal(patchPayload.teamsAutomation.mode, "patched");
+
+    const afterPatchEventsResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      headers: { Authorization: `Bearer ${adminPayload.token}` }
+    });
+    const afterPatchPayload = await afterPatchEventsResponse.json();
+    const afterItem = (afterPatchPayload.items || []).find((item) => item.id === createPayload.id);
+    assert.ok(afterItem.onlineJoinUrl);
+    assert.notEqual(String(afterItem.onlineJoinUrl), beforeJoinUrl);
+    assert.match(String(afterItem.onlineJoinUrl), /-updated$/);
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Checkpoint 3.2: manual join link fallback remains active when present", async () => {
+  const fakeTeams = createFakeTeamsGraphClient();
+  const { server, workingDirectory } = await createRunningServer({
+    teamsGraphClient: fakeTeams,
+    enableTeamsGraph: true
+  });
+
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "admin1", password: "adminpass" })
+    });
+    const adminPayload = await adminLogin.json();
+    assert.equal(adminLogin.status, 200);
+
+    const manualJoinUrl = "https://teams.microsoft.com/l/meetup-join/manual-link";
+    const createResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({
+        title: "Manual Teams Fallback",
+        description: "Manual URL should be preserved.",
+        startAt: "2026-12-10T10:00:00Z",
+        endAt: "2026-12-10T11:00:00Z",
+        venueType: "online",
+        onlineProvider: "Microsoft Teams",
+        onlineJoinUrl: manualJoinUrl,
+        capacity: 40,
+        audienceType: "all_members"
+      })
+    });
+    const createPayload = await createResponse.json();
+    assert.equal(createResponse.status, 201);
+
+    const submitResponse = await fetch(
+      `http://${server.host}:${server.port}/api/events/${createPayload.id}/submit`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${adminPayload.token}` }
+      }
+    );
+    const submitPayload = await submitResponse.json();
+    assert.equal(submitResponse.status, 200);
+    assert.equal(submitPayload.teamsAutomation.automated, false);
+    assert.equal(submitPayload.teamsAutomation.reason, "manual_join_link");
+
+    const eventsResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      headers: { Authorization: `Bearer ${adminPayload.token}` }
+    });
+    const eventsPayload = await eventsResponse.json();
+    const created = (eventsPayload.items || []).find((item) => item.id === createPayload.id);
+    assert.equal(created.onlineJoinUrl, manualJoinUrl);
+    assert.equal(created.onlineProvider, "Microsoft Teams");
+  } finally {
     await server.close();
     rmSync(workingDirectory, { recursive: true, force: true });
   }

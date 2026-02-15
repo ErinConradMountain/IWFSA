@@ -1,11 +1,14 @@
 import http from "node:http";
 import { createHash, randomBytes } from "node:crypto";
+import { Readable } from "node:stream";
 import Busboy from "busboy";
 import * as XLSX from "xlsx";
 import { hashPassword, verifyPassword } from "./auth/passwords.mjs";
 import { openDatabase } from "./db/client.mjs";
 import { sendTransactionalEmail } from "./notifications/email.mjs";
 import { listUpcomingBirthdays } from "./birthdays.mjs";
+import { createSharePointClient } from "./integrations/sharepoint.mjs";
+import { createTeamsGraphClient } from "./integrations/teams-graph.mjs";
 
 const REGISTRATION_WARNING_WINDOW_MINUTES = 15;
 const EVENT_SUMMARY_CACHE_TTL_MS = 10 * 1000;
@@ -43,6 +46,10 @@ const EVENT_AUDIENCE_CODE_BY_GROUP = new Map(
 EVENT_AUDIENCE_CODE_BY_GROUP.set("board", "board_of_directors");
 const IMPORT_BLOCKING_REASON_CODES = new Set(["missing_required_field", "invalid_email", "duplicate_email_in_file"]);
 const DEFAULT_ACTIVATION_POLICY = "password_change_required";
+const EVENT_DOCUMENT_TYPES = new Set(["agenda", "minutes", "attachment"]);
+const EVENT_DOCUMENT_AVAILABILITY_MODES = new Set(["immediate", "after_event", "scheduled"]);
+const EVENT_DOCUMENT_MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
+const TEAMS_GRAPH_PROVIDER_LABEL = "Microsoft Teams";
 
 function writeJson(response, statusCode, payload, extraHeaders = {}) {
   response.writeHead(statusCode, {
@@ -626,6 +633,28 @@ function escapeIcsText(value) {
     .replace(/,/g, "\\,");
 }
 
+function formatInviteDateTime(value) {
+  const ms = Date.parse(String(value || ""));
+  if (!Number.isFinite(ms)) {
+    return "TBA";
+  }
+  return new Date(ms).toISOString();
+}
+
+function formatInviteVenue(eventRow) {
+  const venueName = eventRow?.venue_name || eventRow?.venueName || "";
+  const venueAddress = eventRow?.venue_address || eventRow?.venueAddress || "";
+  const venueType = eventRow?.venue_type || eventRow?.venueType || "";
+  const onlineJoinUrl = eventRow?.online_join_url || eventRow?.onlineJoinUrl || "";
+  if (venueName || venueAddress) {
+    return [venueName, venueAddress].filter(Boolean).join(" - ");
+  }
+  if (venueType === "online" || onlineJoinUrl) {
+    return "Online";
+  }
+  return "TBA";
+}
+
 function buildIcsForEvent(eventRow, { appBaseUrl = "" } = {}) {
   const dtStart = formatIcsDateTime(eventRow?.start_at || eventRow?.startAt);
   const dtEnd = formatIcsDateTime(eventRow?.end_at || eventRow?.endAt);
@@ -638,6 +667,10 @@ function buildIcsForEvent(eventRow, { appBaseUrl = "" } = {}) {
   const title = escapeIcsText(eventRow.title);
   const descriptionParts = [];
   if (eventRow.description) descriptionParts.push(String(eventRow.description));
+  const provider = eventRow.online_provider || eventRow.onlineProvider;
+  if (provider) {
+    descriptionParts.push(`Provider: ${provider}`);
+  }
   if (eventRow.online_join_url || eventRow.onlineJoinUrl) {
     descriptionParts.push(`Join link: ${eventRow.online_join_url || eventRow.onlineJoinUrl}`);
   }
@@ -2112,6 +2145,299 @@ function loadEvent(database, eventId) {
     .get(eventId);
 }
 
+function sanitizeEventDocumentFileName(fileName) {
+  const cleaned = String(fileName || "")
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, " ");
+  return cleaned || `event-document-${Date.now()}.bin`;
+}
+
+function buildEventDocumentFolderPath(eventRow, eventId) {
+  const startMs = parseIsoToMs(eventRow?.start_at || eventRow?.startAt);
+  const year = Number.isFinite(startMs) ? new Date(startMs).getUTCFullYear() : new Date().getUTCFullYear();
+  const normalizedId = String(eventId).padStart(6, "0");
+  return `${year}/EVT-${normalizedId}`;
+}
+
+function resolveEventDocumentAvailability(eventRow, mode, scheduledAt, offsetMinutes = 0) {
+  if (mode === "scheduled") {
+    const scheduledMs = parseIsoToMs(scheduledAt);
+    if (scheduledMs === null) {
+      const error = new Error("Provide a valid scheduled availability date/time.");
+      error.httpStatus = 400;
+      error.code = "validation_error";
+      throw error;
+    }
+    return new Date(scheduledMs).toISOString();
+  }
+
+  if (mode === "after_event") {
+    const endMs = parseIsoToMs(eventRow?.end_at || eventRow?.endAt);
+    if (endMs === null) {
+      const error = new Error("Event end time is required for after-event availability.");
+      error.httpStatus = 409;
+      error.code = "invalid_state";
+      throw error;
+    }
+    const safeOffset = Number.isInteger(Number(offsetMinutes)) ? Number(offsetMinutes) : 0;
+    return new Date(endMs + Math.max(0, safeOffset) * 60 * 1000).toISOString();
+  }
+
+  return new Date().toISOString();
+}
+
+function canUserViewEvent(database, user, eventRow, eventId) {
+  if (!user || !eventRow) {
+    return false;
+  }
+  if (isAdminRole(user.role)) {
+    return true;
+  }
+  if (canEditEvent(database, user, eventId, { eventRow })) {
+    return true;
+  }
+  if (eventRow.status !== "published") {
+    return false;
+  }
+  if (eventRow.audience_type === "groups") {
+    return canUserAccessGroupedEvent(database, eventId, user.id);
+  }
+  return true;
+}
+
+function isEventDocumentAvailable(documentRow, { nowMs = Date.now() } = {}) {
+  const availableFromMs = parseIsoToMs(documentRow?.available_from || documentRow?.availableFrom);
+  if (availableFromMs === null) {
+    return true;
+  }
+  return availableFromMs <= nowMs;
+}
+
+function listEventDocuments(database, eventId, { includeRemoved = false } = {}) {
+  let sql = `
+    SELECT
+      id,
+      event_id AS eventId,
+      document_type AS documentType,
+      file_name AS fileName,
+      mime_type AS mimeType,
+      size_bytes AS sizeBytes,
+      checksum_sha256 AS checksumSha256,
+      sharepoint_site_id AS sharePointSiteId,
+      sharepoint_drive_id AS sharePointDriveId,
+      sharepoint_item_id AS sharePointItemId,
+      sharepoint_web_url AS sharePointWebUrl,
+      availability_mode AS availabilityMode,
+      available_from AS availableFrom,
+      uploaded_by_user_id AS uploadedByUserId,
+      removed_at AS removedAt,
+      removed_by_user_id AS removedByUserId,
+      created_at AS createdAt,
+      updated_at AS updatedAt
+    FROM event_documents
+    WHERE event_id = ?
+  `;
+  if (!includeRemoved) {
+    sql += " AND removed_at IS NULL";
+  }
+  sql += " ORDER BY datetime(created_at) DESC, id DESC";
+  return database.prepare(sql).all(eventId);
+}
+
+function loadEventDocument(database, eventId, documentId) {
+  return database
+    .prepare(
+      `
+      SELECT
+        id,
+        event_id AS eventId,
+        document_type AS documentType,
+        file_name AS fileName,
+        mime_type AS mimeType,
+        size_bytes AS sizeBytes,
+        checksum_sha256 AS checksumSha256,
+        sharepoint_site_id AS sharePointSiteId,
+        sharepoint_drive_id AS sharePointDriveId,
+        sharepoint_item_id AS sharePointItemId,
+        sharepoint_web_url AS sharePointWebUrl,
+        availability_mode AS availabilityMode,
+        available_from AS availableFrom,
+        uploaded_by_user_id AS uploadedByUserId,
+        removed_at AS removedAt,
+        removed_by_user_id AS removedByUserId,
+        created_at AS createdAt,
+        updated_at AS updatedAt
+      FROM event_documents
+      WHERE event_id = ? AND id = ?
+      LIMIT 1
+    `
+    )
+    .get(eventId, documentId);
+}
+
+function toEventDocumentResponseItem(item, { includeInternal = false, nowMs = Date.now() } = {}) {
+  const available = isEventDocumentAvailable(item, { nowMs });
+  const payload = {
+    id: item.id,
+    eventId: item.eventId,
+    documentType: item.documentType,
+    fileName: item.fileName,
+    mimeType: item.mimeType,
+    sizeBytes: Number(item.sizeBytes || 0),
+    availabilityMode: item.availabilityMode,
+    availableFrom: item.availableFrom,
+    available: Boolean(available),
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    removedAt: item.removedAt || null
+  };
+  if (includeInternal) {
+    payload.sharePoint = {
+      siteId: item.sharePointSiteId,
+      driveId: item.sharePointDriveId,
+      itemId: item.sharePointItemId,
+      webUrl: item.sharePointWebUrl || ""
+    };
+  }
+  return payload;
+}
+
+function loadEventOnlineMeeting(database, eventId) {
+  return database
+    .prepare(
+      `
+      SELECT
+        id,
+        event_id AS eventId,
+        provider,
+        organizer_upn AS organizerUpn,
+        external_meeting_id AS externalMeetingId,
+        join_url AS joinUrl,
+        created_at AS createdAt,
+        updated_at AS updatedAt
+      FROM event_online_meetings
+      WHERE event_id = ?
+      LIMIT 1
+    `
+    )
+    .get(eventId);
+}
+
+function upsertEventOnlineMeeting(database, eventId, payload) {
+  database
+    .prepare(
+      `
+      INSERT INTO event_online_meetings (
+        event_id,
+        provider,
+        organizer_upn,
+        external_meeting_id,
+        join_url,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ON CONFLICT(event_id) DO UPDATE SET
+        provider = excluded.provider,
+        organizer_upn = excluded.organizer_upn,
+        external_meeting_id = excluded.external_meeting_id,
+        join_url = excluded.join_url,
+        updated_at = CURRENT_TIMESTAMP
+    `
+    )
+    .run(
+      eventId,
+      String(payload.provider || "microsoft_teams_graph"),
+      String(payload.organizerUpn || ""),
+      String(payload.externalMeetingId || ""),
+      String(payload.joinUrl || "")
+    );
+}
+
+async function syncTeamsMeetingForEvent(database, {
+  teamsGraphClient,
+  eventId,
+  actorUserId = null
+}) {
+  if (!teamsGraphClient) {
+    return { attempted: false, automated: false, reason: "disabled" };
+  }
+
+  const eventRow = loadEvent(database, eventId);
+  if (!eventRow) {
+    return { attempted: false, automated: false, reason: "event_not_found" };
+  }
+  if (eventRow.status !== "published") {
+    return { attempted: false, automated: false, reason: "not_published" };
+  }
+  if (eventRow.venue_type !== "online") {
+    return { attempted: false, automated: false, reason: "not_online" };
+  }
+
+  const existing = loadEventOnlineMeeting(database, eventId);
+  const manualJoinUrl = String(eventRow.online_join_url || "").trim();
+  if (!existing && manualJoinUrl) {
+    return { attempted: false, automated: false, reason: "manual_join_link" };
+  }
+
+  const graphPayload = {
+    title: eventRow.title,
+    description: eventRow.description || "",
+    startAt: eventRow.start_at,
+    endAt: eventRow.end_at
+  };
+  const result = existing
+    ? await teamsGraphClient.updateOnlineMeetingEvent({
+        meetingId: existing.externalMeetingId,
+        ...graphPayload
+      })
+    : await teamsGraphClient.createOnlineMeetingEvent(graphPayload);
+
+  const joinUrl = String(result.joinUrl || "").trim();
+  if (!joinUrl || !/^https?:\/\//i.test(joinUrl)) {
+    const error = new Error("Teams automation returned an invalid join URL.");
+    error.code = "teams_graph_invalid_join_url";
+    error.httpStatus = 502;
+    throw error;
+  }
+
+  database
+    .prepare(
+      `
+      UPDATE events
+      SET online_provider = ?, online_join_url = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `
+    )
+    .run(TEAMS_GRAPH_PROVIDER_LABEL, joinUrl, eventId);
+
+  upsertEventOnlineMeeting(database, eventId, {
+    provider: "microsoft_teams_graph",
+    organizerUpn: result.organizerUpn || existing?.organizerUpn || "",
+    externalMeetingId: result.meetingId || existing?.externalMeetingId || "",
+    joinUrl
+  });
+
+  database
+    .prepare(
+      `
+      INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+      VALUES (?, 'event_teams_meeting_synced', 'event', ?, ?)
+    `
+    )
+    .run(
+      actorUserId,
+      String(eventId),
+      JSON.stringify({
+        mode: existing ? "patched" : "created",
+        provider: "microsoft_teams_graph"
+      })
+    );
+
+  return { attempted: true, automated: true, mode: existing ? "patched" : "created" };
+}
+
 function loadEventAudienceUserIds(database, eventId, audienceType) {
   if (audienceType === "groups") {
     const rows = database
@@ -2332,8 +2658,13 @@ function processNotificationQueue(database, { limit = 50, supportEmail = "suppor
           const rsvpUrl = buildMeetingRsvpUrl(appBaseUrl, tokenRecord.token);
           const idempotencyKey = `event_published:${payload.revisionId}:${userId}`;
           const title = `Meeting invitation: ${eventRow.title}`;
+          const startsAtLabel = formatInviteDateTime(eventRow.start_at);
+          const endsAtLabel = formatInviteDateTime(eventRow.end_at);
+          const venueLabel = formatInviteVenue(eventRow);
+          const hostLabel = eventRow.host_name || "TBA";
+          const descriptionLabel = eventRow.description ? String(eventRow.description) : "No description provided.";
           const body =
-            `Starts ${eventRow.start_at}. Venue: ${eventRow.venue_name || "TBA"}.` +
+            `Starts ${startsAtLabel}. Ends ${endsAtLabel}. Venue: ${venueLabel}. Host: ${hostLabel}.` +
             (rsvpUrl ? ` Confirm participation: ${rsvpUrl}` : "");
           createInAppNotification(database, {
             userId,
@@ -2364,9 +2695,14 @@ function processNotificationQueue(database, { limit = 50, supportEmail = "suppor
               to: contact.email,
               subject: title,
               text:
-                `${body}\n\n` +
+                `Meeting: ${eventRow.title}\n` +
+                `Starts: ${startsAtLabel}\n` +
+                `Ends: ${endsAtLabel}\n` +
+                `Venue: ${venueLabel}\n` +
+                `Host: ${hostLabel}\n` +
+                `Details: ${descriptionLabel}\n\n` +
                 (rsvpUrl
-                  ? `One-click RSVP: ${rsvpUrl}\n\n`
+                  ? `RSVP link: ${rsvpUrl}\nUse this link to confirm participation or select 'Cannot attend'.\n\n`
                   : "") +
                 "Open the member portal to view details and manage your response.",
               metadata: { template: "event_published" }
@@ -2452,6 +2788,67 @@ function processNotificationQueue(database, { limit = 50, supportEmail = "suppor
               errorMessage: String(error.message || error)
             });
             errors.push(`email_failed:${userId}`);
+          }
+        }
+      }
+
+      if (row.eventType === "event_cancelled") {
+        const eventTitle = payload.eventTitle || "Unknown event";
+        const userIds = Array.isArray(payload.userIds) ? payload.userIds : [];
+        const contactMap = loadUserContacts(database, userIds);
+        for (const userId of userIds) {
+          const cancelKey = `event_cancelled:${payload.eventId}:${userId}`;
+          createInAppNotification(database, {
+            userId,
+            eventType: row.eventType,
+            title: `Event cancelled: ${eventTitle}`,
+            body: `The event "${eventTitle}" has been cancelled. If you had registered, your registration is no longer active.`,
+            metadata: { eventId: payload.eventId, eventTitle },
+            idempotencyKey: cancelKey
+          });
+
+          const contact = contactMap.get(userId);
+          const emailKey = `event_cancelled_email:${payload.eventId}:${userId}`;
+          if (contact && contact.email) {
+            try {
+              sendTransactionalEmail({
+                to: contact.email,
+                subject: `IWFSA Event Cancelled – ${eventTitle}`,
+                text:
+                  `Hello ${contact.fullName || contact.username || "Member"},\n\n` +
+                  `The event "${eventTitle}" has been cancelled.\n` +
+                  `If you had registered, your registration is no longer active.\n\n` +
+                  `We apologise for any inconvenience.\n\nRegards,\nIWFSA Admin`,
+                metadata: { template: "event_cancelled" }
+              });
+              recordNotificationDelivery(database, {
+                userId,
+                channel: "email",
+                eventType: row.eventType,
+                status: "sent",
+                idempotencyKey: emailKey
+              });
+            } catch (emailError) {
+              recordNotificationDelivery(database, {
+                userId,
+                channel: "email",
+                eventType: row.eventType,
+                status: "failed",
+                idempotencyKey: emailKey,
+                errorMessage: String(emailError.message || emailError)
+              });
+              errors.push(`email_failed:${userId}`);
+            }
+          } else {
+            recordNotificationDelivery(database, {
+              userId,
+              channel: "email",
+              eventType: row.eventType,
+              status: "failed",
+              idempotencyKey: emailKey,
+              errorMessage: "missing_email"
+            });
+            errors.push(`missing_email:${userId}`);
           }
         }
       }
@@ -2938,7 +3335,9 @@ function notifyMeetingOrganizerAboutResponse(database, { eventRow, responderUser
   const detail =
     responseStatus === "waitlisted"
       ? `${responderName} joined the waitlist for "${eventRow.title}".`
-      : `${responderName} confirmed participation for "${eventRow.title}".`;
+      : responseStatus === "declined"
+        ? `${responderName} indicated they are unable to attend "${eventRow.title}".`
+        : `${responderName} confirmed participation for "${eventRow.title}".`;
   createInAppNotification(database, {
     userId: organizerUserId,
     eventType: "meeting_participation_confirmed",
@@ -2947,6 +3346,115 @@ function notifyMeetingOrganizerAboutResponse(database, { eventRow, responderUser
     metadata: { eventId: Number(eventRow.id), responderUserId: Number(responderUserId), responseStatus },
     idempotencyKey: `meeting_participation_confirmed:${eventRow.id}:${responderUserId}:${responseStatus}`
   });
+}
+
+function declineMeetingRsvpByToken(database, { token, summaryCache }) {
+  const normalizedToken = String(token || "").trim();
+  if (!normalizedToken) {
+    const error = new Error("RSVP token is required.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+
+  const tokenRecord = loadMeetingRsvpToken(database, normalizedToken);
+  if (!tokenRecord) {
+    const error = new Error("RSVP token is invalid.");
+    error.httpStatus = 403;
+    error.code = "invalid_token";
+    throw error;
+  }
+  const expiresAtMs = parseIsoToMs(tokenRecord.expiresAt);
+  if (expiresAtMs === null || expiresAtMs <= Date.now()) {
+    const error = new Error("RSVP token has expired.");
+    error.httpStatus = 403;
+    error.code = "expired_token";
+    throw error;
+  }
+
+  const eventRow = loadEvent(database, tokenRecord.eventId);
+  if (!eventRow) {
+    const error = new Error("Event not found.");
+    error.httpStatus = 404;
+    error.code = "not_found";
+    throw error;
+  }
+
+  const existingSignup = loadSignupRecord(database, tokenRecord.eventId, tokenRecord.userId);
+  let idempotent = true;
+  let promotedUserId = null;
+  let previousStatus = existingSignup?.status || "pending";
+
+  if (existingSignup && (existingSignup.status === "confirmed" || existingSignup.status === "waitlisted")) {
+    const cancellation = cancelMemberRegistration(database, {
+      eventId: tokenRecord.eventId,
+      userId: tokenRecord.userId,
+      summaryCache
+    });
+    idempotent = false;
+    promotedUserId = cancellation?.promoted?.userId || null;
+    previousStatus = existingSignup.status;
+  } else if (!existingSignup) {
+    database
+      .prepare(
+        `
+        INSERT INTO signups (event_id, user_id, status, created_at, updated_at)
+        VALUES (?, ?, 'cancelled', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `
+      )
+      .run(tokenRecord.eventId, tokenRecord.userId);
+    idempotent = false;
+    previousStatus = "pending";
+  } else if (existingSignup.status === "cancelled") {
+    previousStatus = "cancelled";
+  }
+
+  if (!tokenRecord.usedAt) {
+    markMeetingRsvpTokenUsed(database, tokenRecord.id);
+  }
+
+  createInAppNotification(database, {
+    userId: tokenRecord.userId,
+    eventType: "meeting_rsvp_declined",
+    title: "RSVP recorded",
+    body: `You indicated you are unable to attend "${eventRow.title}".`,
+    metadata: { eventId: Number(tokenRecord.eventId), status: "declined" },
+    idempotencyKey: `meeting_rsvp_declined:${tokenRecord.eventId}:${tokenRecord.userId}`
+  });
+
+  notifyMeetingOrganizerAboutResponse(database, {
+    eventRow,
+    responderUserId: tokenRecord.userId,
+    responseStatus: "declined"
+  });
+
+  database
+    .prepare(
+      `
+      INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+      VALUES (?, 'meeting_rsvp_declined', 'event', ?, ?)
+    `
+    )
+    .run(
+      tokenRecord.userId,
+      String(tokenRecord.eventId),
+      JSON.stringify({
+        previousStatus,
+        promotedUserId,
+        idempotent,
+        source: "email_link"
+      })
+    );
+
+  return {
+    eventId: tokenRecord.eventId,
+    userId: tokenRecord.userId,
+    eventTitle: eventRow.title,
+    startAt: eventRow.start_at,
+    status: "declined",
+    promotedUserId,
+    idempotent
+  };
 }
 
 function confirmMeetingRsvpByToken(database, { token, summaryCache }) {
@@ -3302,6 +3810,15 @@ function cancelMemberRegistration(database, { eventId, userId, summaryCache }) {
           )
           .get(promoted.userId);
         if (promotedMember) {
+          createInAppNotification(database, {
+            userId: promoted.userId,
+            eventType: "waitlist_promoted",
+            title: `Waitlist promotion: ${eventRow.title}`,
+            body: `A space has opened for "${eventRow.title}" and your registration is now confirmed.`,
+            metadata: { eventId },
+            idempotencyKey: `waitlist_promoted:${eventId}:${promoted.userId}`
+          });
+
           sendTransactionalEmail({
             to: promotedMember.email,
             subject: `IWFSA Waitlist Promotion - ${eventRow.title}`,
@@ -3316,7 +3833,7 @@ function cancelMemberRegistration(database, { eventId, userId, summaryCache }) {
             channel: "email",
             eventType: "waitlist_promoted",
             status: "sent",
-            idempotencyKey: `waitlist_promoted:${eventId}:${promoted?.userId || "unknown"}`
+            idempotencyKey: `waitlist_promoted_email:${eventId}:${promoted?.userId || "unknown"}`
           });
         }
       }
@@ -3379,6 +3896,16 @@ IWF Administrator`
 
 export async function startApiServer(config) {
   const database = openDatabase(config.databasePath);
+  const sharePointClient =
+    config.sharePointClient ||
+    createSharePointClient(config.sharePoint || {}, {
+      fetchImpl: config.fetchImpl || fetch
+    });
+  const teamsGraphClient =
+    config.teamsGraphClient ||
+    createTeamsGraphClient(config.teamsGraph || {}, {
+      fetchImpl: config.fetchImpl || fetch
+    });
   const eventSummaryCache = createEventSummaryCache();
   const reminderIntervalMs =
     Number.isFinite(config.reminderDispatchIntervalMs) && config.reminderDispatchIntervalMs > 0
@@ -3539,6 +4066,354 @@ export async function startApiServer(config) {
           corsHeaders
         );
       }
+      return;
+    }
+
+    if (request.method === "GET" && /^\/api\/events\/\d+\/documents$/.test(requestUrl.pathname)) {
+      const auth = requireAuth(database, request, response, corsHeaders);
+      if (!auth) {
+        return;
+      }
+      if (!requireRole(auth.user, INTERNAL_PORTAL_ROLES, response, corsHeaders)) {
+        return;
+      }
+
+      const parts = requestUrl.pathname.split("/");
+      const eventId = Number(parts[3]);
+      if (!Number.isInteger(eventId)) {
+        writeJson(response, 400, { error: "validation_error", message: "Event id is required." }, corsHeaders);
+        return;
+      }
+
+      const eventRow = loadEvent(database, eventId);
+      if (!eventRow || !canUserViewEvent(database, auth.user, eventRow, eventId)) {
+        writeJson(response, 404, { error: "not_found", message: "Event not found." }, corsHeaders);
+        return;
+      }
+
+      const includeInternal = canEditEvent(database, auth.user, eventId, { eventRow });
+      const items = listEventDocuments(database, eventId).map((item) =>
+        toEventDocumentResponseItem(item, { includeInternal })
+      );
+      writeJson(response, 200, { items }, corsHeaders);
+      return;
+    }
+
+    if (request.method === "POST" && /^\/api\/events\/\d+\/documents$/.test(requestUrl.pathname)) {
+      const auth = requireAuth(database, request, response, corsHeaders);
+      if (!auth) {
+        return;
+      }
+      if (!requireRole(auth.user, INTERNAL_PORTAL_ROLES, response, corsHeaders)) {
+        return;
+      }
+
+      const parts = requestUrl.pathname.split("/");
+      const eventId = Number(parts[3]);
+      if (!Number.isInteger(eventId)) {
+        writeJson(response, 400, { error: "validation_error", message: "Event id is required." }, corsHeaders);
+        return;
+      }
+
+      const eventRow = loadEvent(database, eventId);
+      if (!eventRow) {
+        writeJson(response, 404, { error: "not_found", message: "Event not found." }, corsHeaders);
+        return;
+      }
+      if (!canEditEvent(database, auth.user, eventId, { eventRow })) {
+        writeJson(response, 403, { error: "forbidden", message: "Insufficient permissions." }, corsHeaders);
+        return;
+      }
+
+      let formData;
+      try {
+        formData = await readMultipartForm(request, { maxFileSizeBytes: EVENT_DOCUMENT_MAX_FILE_SIZE_BYTES });
+      } catch (error) {
+        if (String(error.message || error) === "file_too_large") {
+          writeJson(response, 413, { error: "file_too_large", message: "Upload exceeds size limit." }, corsHeaders);
+          return;
+        }
+        writeJson(response, 400, { error: "invalid_form", message: "Unable to parse upload." }, corsHeaders);
+        return;
+      }
+
+      if (!formData.file?.buffer || !formData.file.filename) {
+        writeJson(response, 400, { error: "validation_error", message: "Document file is required." }, corsHeaders);
+        return;
+      }
+
+      const documentType = String(formData.fields.documentType || "attachment")
+        .trim()
+        .toLowerCase();
+      if (!EVENT_DOCUMENT_TYPES.has(documentType)) {
+        writeJson(
+          response,
+          400,
+          { error: "validation_error", message: "documentType must be agenda, minutes, or attachment." },
+          corsHeaders
+        );
+        return;
+      }
+
+      const availabilityMode = String(formData.fields.availabilityMode || "immediate")
+        .trim()
+        .toLowerCase();
+      if (!EVENT_DOCUMENT_AVAILABILITY_MODES.has(availabilityMode)) {
+        writeJson(
+          response,
+          400,
+          { error: "validation_error", message: "availabilityMode must be immediate, after_event, or scheduled." },
+          corsHeaders
+        );
+        return;
+      }
+
+      try {
+        const safeFileName = sanitizeEventDocumentFileName(formData.file.filename);
+        const fileBuffer = formData.file.buffer;
+        const mimeType = String(formData.file.mimeType || "application/octet-stream").trim();
+        const sizeBytes = Number(fileBuffer.byteLength || 0);
+        const checksumSha256 = createHash("sha256").update(fileBuffer).digest("hex");
+        const availableFrom = resolveEventDocumentAvailability(
+          eventRow,
+          availabilityMode,
+          formData.fields.availableFrom,
+          Number(formData.fields.availabilityOffsetMinutes || 0)
+        );
+
+        const uploaded = await sharePointClient.uploadEventDocument({
+          folderPath: buildEventDocumentFolderPath(eventRow, eventId),
+          fileName: safeFileName,
+          mimeType,
+          fileBuffer
+        });
+
+        const insertResult = database
+          .prepare(
+            `
+            INSERT INTO event_documents (
+              event_id,
+              document_type,
+              file_name,
+              mime_type,
+              size_bytes,
+              checksum_sha256,
+              sharepoint_site_id,
+              sharepoint_drive_id,
+              sharepoint_item_id,
+              sharepoint_web_url,
+              availability_mode,
+              available_from,
+              uploaded_by_user_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `
+          )
+          .run(
+            eventId,
+            documentType,
+            safeFileName,
+            mimeType,
+            sizeBytes,
+            checksumSha256,
+            uploaded.siteId,
+            uploaded.driveId,
+            uploaded.itemId,
+            uploaded.webUrl || null,
+            availabilityMode,
+            availableFrom,
+            auth.user.id
+          );
+
+        const documentId = Number(insertResult.lastInsertRowid);
+        database
+          .prepare(
+            `
+            INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+            VALUES (?, 'event_document_uploaded', 'event_document', ?, ?)
+          `
+          )
+          .run(
+            auth.user.id,
+            String(documentId),
+            JSON.stringify({
+              eventId,
+              documentType,
+              fileName: safeFileName,
+              sizeBytes,
+              availabilityMode,
+              availableFrom
+            })
+          );
+
+        const created = loadEventDocument(database, eventId, documentId);
+        writeJson(
+          response,
+          201,
+          { created: true, item: toEventDocumentResponseItem(created, { includeInternal: true }) },
+          corsHeaders
+        );
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 502),
+          {
+            error: error.code || "sharepoint_upload_failed",
+            message: String(error.message || "Unable to upload document.")
+          },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "GET" && /^\/api\/events\/\d+\/documents\/\d+\/download$/.test(requestUrl.pathname)) {
+      const auth = requireAuth(database, request, response, corsHeaders);
+      if (!auth) {
+        return;
+      }
+      if (!requireRole(auth.user, INTERNAL_PORTAL_ROLES, response, corsHeaders)) {
+        return;
+      }
+
+      const parts = requestUrl.pathname.split("/");
+      const eventId = Number(parts[3]);
+      const documentId = Number(parts[5]);
+      if (!Number.isInteger(eventId) || !Number.isInteger(documentId)) {
+        writeJson(response, 400, { error: "validation_error", message: "Event and document id are required." }, corsHeaders);
+        return;
+      }
+
+      const eventRow = loadEvent(database, eventId);
+      if (!eventRow || !canUserViewEvent(database, auth.user, eventRow, eventId)) {
+        writeJson(response, 404, { error: "not_found", message: "Event not found." }, corsHeaders);
+        return;
+      }
+
+      const documentRow = loadEventDocument(database, eventId, documentId);
+      if (!documentRow || documentRow.removedAt) {
+        writeJson(response, 404, { error: "not_found", message: "Document not found." }, corsHeaders);
+        return;
+      }
+
+      const canEdit = canEditEvent(database, auth.user, eventId, { eventRow });
+      if (!isEventDocumentAvailable(documentRow) && !canEdit) {
+        writeJson(response, 403, { error: "forbidden", message: "Document is not available yet." }, corsHeaders);
+        return;
+      }
+
+      try {
+        const upstream = await sharePointClient.downloadEventDocument({
+          siteId: documentRow.sharePointSiteId,
+          driveId: documentRow.sharePointDriveId,
+          itemId: documentRow.sharePointItemId
+        });
+        if (!upstream.ok || !upstream.body) {
+          writeJson(
+            response,
+            502,
+            { error: "sharepoint_download_failed", message: "Unable to retrieve document from SharePoint." },
+            corsHeaders
+          );
+          return;
+        }
+
+        database
+          .prepare(
+            `
+            INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+            VALUES (?, 'event_document_downloaded', 'event_document', ?, ?)
+          `
+          )
+          .run(auth.user.id, String(documentId), JSON.stringify({ eventId }));
+
+        response.writeHead(200, {
+          ...corsHeaders,
+          "Content-Type": documentRow.mimeType || upstream.headers.get("content-type") || "application/octet-stream",
+          "Content-Disposition": `attachment; filename="${sanitizeEventDocumentFileName(documentRow.fileName)}"`
+        });
+
+        const bodyStream =
+          typeof upstream.body.pipe === "function"
+            ? upstream.body
+            : Readable.fromWeb(upstream.body);
+        bodyStream.on("error", () => {
+          if (!response.writableEnded) {
+            response.end();
+          }
+        });
+        bodyStream.pipe(response);
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 502),
+          {
+            error: error.code || "sharepoint_download_failed",
+            message: String(error.message || "Unable to download document.")
+          },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "DELETE" && /^\/api\/events\/\d+\/documents\/\d+$/.test(requestUrl.pathname)) {
+      const auth = requireAuth(database, request, response, corsHeaders);
+      if (!auth) {
+        return;
+      }
+      if (!requireRole(auth.user, INTERNAL_PORTAL_ROLES, response, corsHeaders)) {
+        return;
+      }
+
+      const parts = requestUrl.pathname.split("/");
+      const eventId = Number(parts[3]);
+      const documentId = Number(parts[5]);
+      if (!Number.isInteger(eventId) || !Number.isInteger(documentId)) {
+        writeJson(response, 400, { error: "validation_error", message: "Event and document id are required." }, corsHeaders);
+        return;
+      }
+
+      const eventRow = loadEvent(database, eventId);
+      if (!eventRow) {
+        writeJson(response, 404, { error: "not_found", message: "Event not found." }, corsHeaders);
+        return;
+      }
+      if (!canEditEvent(database, auth.user, eventId, { eventRow })) {
+        writeJson(response, 403, { error: "forbidden", message: "Insufficient permissions." }, corsHeaders);
+        return;
+      }
+
+      const documentRow = loadEventDocument(database, eventId, documentId);
+      if (!documentRow || documentRow.removedAt) {
+        writeJson(response, 404, { error: "not_found", message: "Document not found." }, corsHeaders);
+        return;
+      }
+
+      const result = database
+        .prepare(
+          `
+          UPDATE event_documents
+          SET removed_at = CURRENT_TIMESTAMP,
+              removed_by_user_id = ?,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ? AND event_id = ? AND removed_at IS NULL
+        `
+        )
+        .run(auth.user.id, documentId, eventId);
+
+      if (result.changes > 0) {
+        database
+          .prepare(
+            `
+            INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+            VALUES (?, 'event_document_removed', 'event_document', ?, ?)
+          `
+          )
+          .run(auth.user.id, String(documentId), JSON.stringify({ eventId }));
+      }
+
+      writeJson(response, 200, { removed: result.changes > 0 }, corsHeaders);
       return;
     }
 
@@ -3977,9 +4852,13 @@ export async function startApiServer(config) {
               notification_deliveries.status,
               notification_deliveries.error_message AS errorMessage,
               notification_deliveries.created_at AS createdAt,
-              users.email AS email
+              users.email AS email,
+              member_profiles.full_name AS fullName,
+              member_profiles.phone AS phone,
+              member_profiles.company AS organisation
             FROM notification_deliveries
             LEFT JOIN users ON users.id = notification_deliveries.user_id
+            LEFT JOIN member_profiles ON member_profiles.user_id = notification_deliveries.user_id
             ORDER BY notification_deliveries.created_at DESC
             LIMIT ?
           `
@@ -4008,6 +4887,28 @@ export async function startApiServer(config) {
         }
 
         const limit = Math.min(Math.max(Number(requestUrl.searchParams.get("limit") || 50), 1), 200);
+
+        const counts = database
+          .prepare(
+            `
+            SELECT
+              COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) AS pending,
+              COALESCE(SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END), 0) AS processing,
+              COALESCE(SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END), 0) AS sent,
+              COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) AS failed
+            FROM notification_queue
+          `
+          )
+          .get();
+
+        const total = (counts.pending || 0) + (counts.processing || 0) + (counts.sent || 0) + (counts.failed || 0);
+        let healthLabel = "Healthy";
+        if ((counts.failed || 0) > 0 && (counts.failed || 0) >= (counts.sent || 1)) {
+          healthLabel = "Attention needed";
+        } else if ((counts.failed || 0) > 0 || (counts.processing || 0) > 5) {
+          healthLabel = "Degraded";
+        }
+
         const rows = database
           .prepare(
             `
@@ -4025,7 +4926,17 @@ export async function startApiServer(config) {
           `
           )
           .all(limit);
-        writeJson(response, 200, { items: rows }, corsHeaders);
+
+        writeJson(
+          response,
+          200,
+          {
+            health: healthLabel,
+            counts: { pending: counts.pending, processing: counts.processing, sent: counts.sent, failed: counts.failed, total },
+            items: rows
+          },
+          corsHeaders
+        );
       } catch (error) {
         writeJson(
           response,
@@ -4118,6 +5029,16 @@ export async function startApiServer(config) {
             response,
             400,
             { error: "validation_error", message: "Venue type must be either physical or online." },
+            corsHeaders
+          );
+          return;
+        }
+
+        if (onlineJoinUrl && !/^https?:\/\//i.test(onlineJoinUrl)) {
+          writeJson(
+            response,
+            400,
+            { error: "validation_error", message: "Online join URL must start with http:// or https://." },
             corsHeaders
           );
           return;
@@ -4272,7 +5193,7 @@ export async function startApiServer(config) {
         405,
         {
           error: "method_not_allowed",
-          message: "Use POST /api/meetings/rsvp to confirm participation."
+          message: "Use POST /api/meetings/rsvp to confirm or decline participation."
         },
         { ...corsHeaders, Allow: "POST" }
       );
@@ -4283,8 +5204,30 @@ export async function startApiServer(config) {
       try {
         const payload = await readJsonBody(request);
         const token = String(payload.token || "").trim();
-        const result = confirmMeetingRsvpByToken(database, { token, summaryCache: eventSummaryCache });
-        writeJson(response, 200, { confirmed: true, ...result }, corsHeaders);
+        const action = String(payload.action || "confirm").trim().toLowerCase();
+        if (action !== "confirm" && action !== "decline") {
+          writeJson(
+            response,
+            400,
+            { error: "validation_error", message: "RSVP action must be either 'confirm' or 'decline'." },
+            corsHeaders
+          );
+          return;
+        }
+        const result =
+          action === "decline"
+            ? declineMeetingRsvpByToken(database, { token, summaryCache: eventSummaryCache })
+            : confirmMeetingRsvpByToken(database, { token, summaryCache: eventSummaryCache });
+        writeJson(
+          response,
+          200,
+          {
+            confirmed: action === "confirm",
+            declined: action === "decline",
+            ...result
+          },
+          corsHeaders
+        );
       } catch (error) {
         const statusCode = Number(error.httpStatus || 400);
         writeJson(
@@ -4461,9 +5404,14 @@ export async function startApiServer(config) {
             });
             const rsvpUrl = buildMeetingRsvpUrl(config.appBaseUrl, tokenRecord.token);
             if (rsvpUrl) {
-              rsvpText = `\n\nConfirm participation: ${rsvpUrl}`;
+              rsvpText = `\n\nRSVP link: ${rsvpUrl} (confirm participation or select 'Cannot attend')`;
             }
           }
+
+          const startsAtLabel = formatInviteDateTime(snapshot.eventRow.start_at);
+          const endsAtLabel = formatInviteDateTime(snapshot.eventRow.end_at);
+          const venueLabel = formatInviteVenue(snapshot.eventRow);
+          const hostLabel = snapshot.eventRow.host_name || "TBA";
 
           try {
             sendTransactionalEmail({
@@ -4471,7 +5419,10 @@ export async function startApiServer(config) {
               subject: `Meeting update: ${snapshot.eventRow.title} - ${subject}`,
               text:
                 `${body}\n\n` +
-                `Meeting starts: ${snapshot.eventRow.start_at}.${rsvpText}\n\n` +
+                `Meeting starts: ${startsAtLabel}\n` +
+                `Meeting ends: ${endsAtLabel}\n` +
+                `Venue: ${venueLabel}\n` +
+                `Host: ${hostLabel}.${rsvpText}\n\n` +
                 "Open the member portal for full planning updates.",
               metadata: { template: "meeting_planning_update" }
             });
@@ -5259,6 +6210,16 @@ export async function startApiServer(config) {
           return;
         }
 
+        if (next.onlineJoinUrl && !/^https?:\/\//i.test(next.onlineJoinUrl)) {
+          writeJson(
+            response,
+            400,
+            { error: "validation_error", message: "Online join URL must start with http:// or https://." },
+            corsHeaders
+          );
+          return;
+        }
+
         if (next.registrationClosesAt && nextRegistrationClosesAtMs === null) {
           writeJson(
             response,
@@ -5371,7 +6332,24 @@ export async function startApiServer(config) {
           });
         }
 
-        writeJson(response, 200, { updated: true }, corsHeaders);
+        let teamsAutomation = { attempted: false, automated: false, reason: "not_applicable" };
+        if (eventRow.status === "published" && changes.length > 0 && next.venueType === "online") {
+          try {
+            teamsAutomation = await syncTeamsMeetingForEvent(database, {
+              teamsGraphClient,
+              eventId,
+              actorUserId: auth.user.id
+            });
+          } catch (teamsError) {
+            teamsAutomation = {
+              attempted: true,
+              automated: false,
+              reason: teamsError.code || "automation_failed"
+            };
+          }
+        }
+
+        writeJson(response, 200, { updated: true, teamsAutomation }, corsHeaders);
       } catch (error) {
         writeMutationError(response, error, corsHeaders, {
           validationMessage: "Event update payload failed validation."
@@ -5412,6 +6390,23 @@ export async function startApiServer(config) {
         return;
       }
 
+      // Collect participants before deletion so we can notify them
+      const participantUserIds =
+        eventRow.status === "published" ? loadEventParticipantUserIds(database, eventId) : [];
+      const participantContacts =
+        participantUserIds.length > 0 ? loadUserContacts(database, participantUserIds) : new Map();
+
+      // Snapshot before delete for audit / revision record
+      const preDeleteSnapshot = buildEventSnapshot(database, eventId);
+      if (eventRow.status === "published" && preDeleteSnapshot) {
+        insertEventRevision(database, {
+          eventId,
+          revisionType: "cancel",
+          snapshot: preDeleteSnapshot,
+          actorUserId: auth.user.id
+        });
+      }
+
       const result = database.prepare("DELETE FROM events WHERE id = ?").run(eventId);
       if (result.changes > 0) {
         eventSummaryCache.invalidate(eventId);
@@ -5427,6 +6422,61 @@ export async function startApiServer(config) {
             String(eventId),
             JSON.stringify({ title: eventRow.title, status: eventRow.status })
           );
+
+        // Notify registered participants about cancelled/deleted event
+        for (const userId of participantUserIds) {
+          const cancelKey = `event_cancelled:${eventId}:${userId}`;
+          createInAppNotification(database, {
+            userId,
+            eventType: "event_cancelled",
+            title: `Event cancelled: ${eventRow.title}`,
+            body: `The event "${eventRow.title}" has been cancelled. If you had registered, your registration is no longer active.`,
+            metadata: { eventId, eventTitle: eventRow.title },
+            idempotencyKey: cancelKey
+          });
+
+          const contact = participantContacts.get(userId);
+          const emailKey = `event_cancelled_email:${eventId}:${userId}`;
+          if (contact && contact.email) {
+            try {
+              sendTransactionalEmail({
+                to: contact.email,
+                subject: `IWFSA Event Cancelled – ${eventRow.title}`,
+                text:
+                  `Hello ${contact.fullName || contact.username || "Member"},\n\n` +
+                  `The event "${eventRow.title}" has been cancelled.\n` +
+                  `If you had registered, your registration is no longer active.\n\n` +
+                  `We apologise for any inconvenience.\n\nRegards,\nIWFSA Admin`,
+                metadata: { template: "event_cancelled" }
+              });
+              recordNotificationDelivery(database, {
+                userId,
+                channel: "email",
+                eventType: "event_cancelled",
+                status: "sent",
+                idempotencyKey: emailKey
+              });
+            } catch (emailError) {
+              recordNotificationDelivery(database, {
+                userId,
+                channel: "email",
+                eventType: "event_cancelled",
+                status: "failed",
+                idempotencyKey: emailKey,
+                errorMessage: String(emailError.message || emailError)
+              });
+            }
+          } else {
+            recordNotificationDelivery(database, {
+              userId,
+              channel: "email",
+              eventType: "event_cancelled",
+              status: "failed",
+              idempotencyKey: emailKey,
+              errorMessage: "missing_email"
+            });
+          }
+        }
       }
 
       writeJson(response, 200, { deleted: result.changes > 0, id: eventId }, corsHeaders);
@@ -5466,13 +6516,30 @@ export async function startApiServer(config) {
           actorUserId: auth.user.id,
           eventRow
         });
+        let teamsAutomation = { attempted: false, automated: false, reason: "not_applicable" };
+        if (submission.submitted && !submission.alreadyPublished) {
+          try {
+            teamsAutomation = await syncTeamsMeetingForEvent(database, {
+              teamsGraphClient,
+              eventId,
+              actorUserId: auth.user.id
+            });
+          } catch (teamsError) {
+            teamsAutomation = {
+              attempted: true,
+              automated: false,
+              reason: teamsError.code || "automation_failed"
+            };
+          }
+        }
         writeJson(
           response,
           200,
           {
             status: submission.status,
             alreadySubmitted: submission.alreadySubmitted,
-            alreadyPublished: submission.alreadyPublished
+            alreadyPublished: submission.alreadyPublished,
+            teamsAutomation
           },
           corsHeaders
         );
