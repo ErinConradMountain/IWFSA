@@ -9,6 +9,7 @@ import { sendTransactionalEmail } from "./notifications/email.mjs";
 import { listUpcomingBirthdays } from "./birthdays.mjs";
 import { createSharePointClient } from "./integrations/sharepoint.mjs";
 import { createTeamsGraphClient } from "./integrations/teams-graph.mjs";
+import { createCalendarSyncClient } from "./integrations/calendar-sync.mjs";
 
 const REGISTRATION_WARNING_WINDOW_MINUTES = 15;
 const EVENT_SUMMARY_CACHE_TTL_MS = 10 * 1000;
@@ -50,6 +51,7 @@ const EVENT_DOCUMENT_TYPES = new Set(["agenda", "minutes", "attachment"]);
 const EVENT_DOCUMENT_AVAILABILITY_MODES = new Set(["immediate", "after_event", "scheduled"]);
 const EVENT_DOCUMENT_MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
 const TEAMS_GRAPH_PROVIDER_LABEL = "Microsoft Teams";
+const CALENDAR_SYNC_PROVIDERS = new Set(["google", "outlook"]);
 
 function writeJson(response, statusCode, payload, extraHeaders = {}) {
   response.writeHead(statusCode, {
@@ -2355,6 +2357,379 @@ function upsertEventOnlineMeeting(database, eventId, payload) {
     );
 }
 
+function normalizeCalendarProvider(value) {
+  const provider = String(value || "").trim().toLowerCase();
+  if (!CALENDAR_SYNC_PROVIDERS.has(provider)) {
+    const error = new Error("Calendar provider must be google or outlook.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  return provider;
+}
+
+function listCalendarConnections(database, userId) {
+  return database
+    .prepare(
+      `
+      SELECT
+        provider,
+        status,
+        external_account_email AS externalAccountEmail,
+        token_expires_at AS tokenExpiresAt,
+        scope,
+        updated_at AS updatedAt,
+        revoked_at AS revokedAt
+      FROM calendar_sync_connections
+      WHERE user_id = ?
+      ORDER BY provider ASC
+    `
+    )
+    .all(userId);
+}
+
+function loadCalendarConnection(database, userId, provider) {
+  return database
+    .prepare(
+      `
+      SELECT
+        id,
+        provider,
+        status,
+        external_account_email AS externalAccountEmail,
+        access_token AS accessToken,
+        refresh_token AS refreshToken,
+        token_expires_at AS tokenExpiresAt,
+        scope,
+        updated_at AS updatedAt
+      FROM calendar_sync_connections
+      WHERE user_id = ? AND provider = ?
+      LIMIT 1
+    `
+    )
+    .get(userId, provider);
+}
+
+function upsertCalendarConnection(database, userId, provider, tokenData) {
+  const expiresAtIso =
+    Number.isFinite(tokenData?.expiresInSeconds) && Number(tokenData.expiresInSeconds) > 0
+      ? new Date(Date.now() + Number(tokenData.expiresInSeconds) * 1000).toISOString()
+      : null;
+  database
+    .prepare(
+      `
+      INSERT INTO calendar_sync_connections (
+        user_id,
+        provider,
+        status,
+        external_account_email,
+        access_token,
+        refresh_token,
+        token_expires_at,
+        scope,
+        created_at,
+        updated_at,
+        revoked_at
+      ) VALUES (?, ?, 'active', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL)
+      ON CONFLICT(user_id, provider) DO UPDATE SET
+        status = 'active',
+        external_account_email = excluded.external_account_email,
+        access_token = excluded.access_token,
+        refresh_token = excluded.refresh_token,
+        token_expires_at = excluded.token_expires_at,
+        scope = excluded.scope,
+        updated_at = CURRENT_TIMESTAMP,
+        revoked_at = NULL
+    `
+    )
+    .run(
+      userId,
+      provider,
+      String(tokenData?.accountEmail || ""),
+      String(tokenData?.accessToken || ""),
+      String(tokenData?.refreshToken || ""),
+      expiresAtIso,
+      String(tokenData?.scope || "")
+    );
+}
+
+function revokeCalendarConnection(database, userId, provider) {
+  database
+    .prepare(
+      `
+      UPDATE calendar_sync_connections
+      SET
+        status = 'revoked',
+        revoked_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP,
+        access_token = NULL,
+        refresh_token = NULL,
+        token_expires_at = NULL
+      WHERE user_id = ? AND provider = ?
+    `
+    )
+    .run(userId, provider);
+}
+
+function createCalendarOauthState(database, userId, provider) {
+  const stateToken = randomBytes(18).toString("hex");
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  database
+    .prepare(
+      `
+      INSERT INTO calendar_sync_oauth_states (user_id, provider, state_token, expires_at)
+      VALUES (?, ?, ?, ?)
+    `
+    )
+    .run(userId, provider, stateToken, expiresAt);
+  return { stateToken, expiresAt };
+}
+
+function consumeCalendarOauthState(database, userId, provider, stateToken) {
+  const record = database
+    .prepare(
+      `
+      SELECT id, expires_at AS expiresAt, used_at AS usedAt
+      FROM calendar_sync_oauth_states
+      WHERE user_id = ? AND provider = ? AND state_token = ?
+      LIMIT 1
+    `
+    )
+    .get(userId, provider, stateToken);
+  if (!record) {
+    return null;
+  }
+  if (record.usedAt) {
+    return null;
+  }
+  const expiresAtMs = parseIsoToMs(record.expiresAt);
+  if (expiresAtMs === null || expiresAtMs <= Date.now()) {
+    return null;
+  }
+  database
+    .prepare(
+      `
+      UPDATE calendar_sync_oauth_states
+      SET used_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `
+    )
+    .run(record.id);
+  return record;
+}
+
+function loadCalendarSyncMapping(database, userId, eventId, provider) {
+  return database
+    .prepare(
+      `
+      SELECT
+        id,
+        external_event_id AS externalEventId,
+        status
+      FROM calendar_sync_mappings
+      WHERE user_id = ? AND event_id = ? AND provider = ?
+      LIMIT 1
+    `
+    )
+    .get(userId, eventId, provider);
+}
+
+function upsertCalendarSyncMapping(database, userId, eventId, provider, externalEventId, status = "active") {
+  database
+    .prepare(
+      `
+      INSERT INTO calendar_sync_mappings (
+        user_id,
+        event_id,
+        provider,
+        external_event_id,
+        status,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ON CONFLICT(user_id, event_id, provider) DO UPDATE SET
+        external_event_id = excluded.external_event_id,
+        status = excluded.status,
+        updated_at = CURRENT_TIMESTAMP
+    `
+    )
+    .run(userId, eventId, provider, externalEventId, status);
+}
+
+function markCalendarSyncMappingCancelled(database, userId, eventId, provider) {
+  database
+    .prepare(
+      `
+      UPDATE calendar_sync_mappings
+      SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+      WHERE user_id = ? AND event_id = ? AND provider = ?
+    `
+    )
+    .run(userId, eventId, provider);
+}
+
+function recordCalendarSyncFailure(database, { userId, eventId = null, provider, operation, errorCode, errorMessage }) {
+  database
+    .prepare(
+      `
+      INSERT INTO calendar_sync_failures (
+        user_id,
+        event_id,
+        provider,
+        operation,
+        error_code,
+        error_message
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `
+    )
+    .run(userId, eventId, provider, operation, errorCode || null, String(errorMessage || "").slice(0, 2000) || null);
+}
+
+function markCalendarSyncFailuresResolved(database, { userId, eventId = null, provider }) {
+  if (eventId === null) {
+    database
+      .prepare(
+        `
+        UPDATE calendar_sync_failures
+        SET resolved_at = CURRENT_TIMESTAMP
+        WHERE user_id = ? AND provider = ? AND resolved_at IS NULL
+      `
+      )
+      .run(userId, provider);
+    return;
+  }
+  database
+    .prepare(
+      `
+      UPDATE calendar_sync_failures
+      SET resolved_at = CURRENT_TIMESTAMP
+      WHERE user_id = ? AND event_id = ? AND provider = ? AND resolved_at IS NULL
+    `
+    )
+    .run(userId, eventId, provider);
+}
+
+function buildCalendarSyncEventPayload(eventRow) {
+  const venue = formatInviteVenue(eventRow);
+  return {
+    id: Number(eventRow.id),
+    title: String(eventRow.title || ""),
+    description: String(eventRow.description || ""),
+    startAt: String(eventRow.start_at || ""),
+    endAt: String(eventRow.end_at || ""),
+    location: venue,
+    onlineJoinUrl: String(eventRow.online_join_url || ""),
+    hostName: String(eventRow.host_name || "")
+  };
+}
+
+async function syncCalendarForUserEvent(database, {
+  calendarSyncClient,
+  userId,
+  eventId,
+  operation,
+  actorUserId = null
+}) {
+  if (!calendarSyncClient) {
+    return { attempted: false, synced: false, reason: "disabled" };
+  }
+  const eventRow = loadEvent(database, eventId);
+  if (!eventRow) {
+    return { attempted: false, synced: false, reason: "event_not_found" };
+  }
+  const providerRows = listCalendarConnections(database, userId).filter((item) => item.status === "active");
+  if (providerRows.length === 0) {
+    return { attempted: false, synced: false, reason: "not_connected" };
+  }
+  const eventPayload = buildCalendarSyncEventPayload(eventRow);
+  for (const row of providerRows) {
+    const provider = row.provider;
+    const connection = loadCalendarConnection(database, userId, provider);
+    const mapping = loadCalendarSyncMapping(database, userId, eventId, provider);
+    try {
+      if (operation === "cancel") {
+        if (mapping) {
+          await calendarSyncClient.cancelCalendarEvent({ provider, connection, mapping, event: eventPayload });
+          markCalendarSyncMappingCancelled(database, userId, eventId, provider);
+        }
+      } else {
+        const outcome = await calendarSyncClient.upsertCalendarEvent({
+          provider,
+          connection,
+          mapping,
+          event: eventPayload
+        });
+        const externalEventId = String(outcome?.externalEventId || mapping?.externalEventId || "").trim();
+        if (!externalEventId) {
+          throw new Error("calendar_sync_missing_external_id");
+        }
+        upsertCalendarSyncMapping(database, userId, eventId, provider, externalEventId, "active");
+      }
+      markCalendarSyncFailuresResolved(database, { userId, eventId, provider });
+      database
+        .prepare(
+          `
+          INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+          VALUES (?, 'calendar_sync_success', 'event', ?, ?)
+        `
+        )
+        .run(
+          actorUserId,
+          String(eventId),
+          JSON.stringify({ userId, provider, operation })
+        );
+    } catch (error) {
+      recordCalendarSyncFailure(database, {
+        userId,
+        eventId,
+        provider,
+        operation: operation === "cancel" ? "cancel" : mapping ? "update" : "insert",
+        errorCode: error.code || "calendar_sync_failed",
+        errorMessage: error.message || String(error)
+      });
+      createInAppNotification(database, {
+        userId,
+        eventType: "calendar_sync_failed",
+        title: "Calendar sync issue",
+        body: `Unable to ${operation === "cancel" ? "cancel" : "sync"} "${eventRow.title}" to your ${provider} calendar.`,
+        metadata: { eventId, provider, operation },
+        idempotencyKey: `calendar_sync_failed:${provider}:${operation}:${eventId}:${userId}`
+      });
+    }
+  }
+  return { attempted: true, synced: true };
+}
+
+async function syncCalendarForEventParticipants(database, {
+  calendarSyncClient,
+  eventId,
+  operation,
+  actorUserId = null
+}) {
+  if (!calendarSyncClient) {
+    return;
+  }
+  const participantRows = database
+    .prepare(
+      `
+      SELECT user_id AS userId
+      FROM signups
+      WHERE event_id = ? AND status = 'confirmed'
+      ORDER BY user_id ASC
+    `
+    )
+    .all(eventId);
+  for (const row of participantRows) {
+    await syncCalendarForUserEvent(database, {
+      calendarSyncClient,
+      userId: Number(row.userId),
+      eventId,
+      operation,
+      actorUserId
+    });
+  }
+}
+
 async function syncTeamsMeetingForEvent(database, {
   teamsGraphClient,
   eventId,
@@ -3906,6 +4281,11 @@ export async function startApiServer(config) {
     createTeamsGraphClient(config.teamsGraph || {}, {
       fetchImpl: config.fetchImpl || fetch
     });
+  const calendarSyncClient =
+    config.calendarSyncClient ||
+    createCalendarSyncClient(config.calendarSync || {}, {
+      fetchImpl: config.fetchImpl || fetch
+    });
   const eventSummaryCache = createEventSummaryCache();
   const reminderIntervalMs =
     Number.isFinite(config.reminderDispatchIntervalMs) && config.reminderDispatchIntervalMs > 0
@@ -3980,6 +4360,173 @@ export async function startApiServer(config) {
         },
         corsHeaders
       );
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/calendar-sync/connections") {
+      const auth = requireAuth(database, request, response, corsHeaders);
+      if (!auth) {
+        return;
+      }
+      if (!requireRole(auth.user, INTERNAL_PORTAL_ROLES, response, corsHeaders)) {
+        return;
+      }
+      const items = listCalendarConnections(database, auth.user.id).map((row) => ({
+        provider: row.provider,
+        status: row.status,
+        externalAccountEmail: row.externalAccountEmail || null,
+        tokenExpiresAt: row.tokenExpiresAt || null,
+        scope: row.scope || "",
+        updatedAt: row.updatedAt,
+        revokedAt: row.revokedAt || null
+      }));
+      writeJson(
+        response,
+        200,
+        {
+          featureEnabled: Boolean(config.calendarSync?.enabled),
+          items
+        },
+        corsHeaders
+      );
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/calendar-sync/oauth/start") {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, INTERNAL_PORTAL_ROLES, response, corsHeaders)) {
+          return;
+        }
+        const payload = await readJsonBody(request);
+        const provider = normalizeCalendarProvider(payload.provider);
+        const state = createCalendarOauthState(database, auth.user.id, provider);
+        const start = calendarSyncClient.createAuthorizationRequest({
+          provider,
+          state: state.stateToken
+        });
+        writeJson(
+          response,
+          200,
+          {
+            provider,
+            state: state.stateToken,
+            expiresAt: state.expiresAt,
+            authorizationUrl: start.authorizationUrl
+          },
+          corsHeaders
+        );
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 400),
+          { error: error.code || "calendar_sync_start_failed", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/calendar-sync/oauth/callback") {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, INTERNAL_PORTAL_ROLES, response, corsHeaders)) {
+          return;
+        }
+        const payload = await readJsonBody(request);
+        const provider = normalizeCalendarProvider(payload.provider);
+        const stateToken = String(payload.state || "").trim();
+        const code = String(payload.code || "").trim();
+        if (!stateToken || !code) {
+          writeJson(
+            response,
+            400,
+            { error: "validation_error", message: "State token and OAuth code are required." },
+            corsHeaders
+          );
+          return;
+        }
+        const state = consumeCalendarOauthState(database, auth.user.id, provider, stateToken);
+        if (!state) {
+          writeJson(
+            response,
+            403,
+            { error: "invalid_state", message: "OAuth state is invalid or expired." },
+            corsHeaders
+          );
+          return;
+        }
+        const tokenData = await calendarSyncClient.exchangeCode({ provider, code });
+        upsertCalendarConnection(database, auth.user.id, provider, tokenData);
+        database
+          .prepare(
+            `
+            INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+            VALUES (?, 'calendar_sync_connected', 'user', ?, ?)
+          `
+          )
+          .run(
+            auth.user.id,
+            String(auth.user.id),
+            JSON.stringify({ provider })
+          );
+        writeJson(response, 200, { connected: true, provider }, corsHeaders);
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 400),
+          { error: error.code || "calendar_sync_connect_failed", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/calendar-sync/disconnect") {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, INTERNAL_PORTAL_ROLES, response, corsHeaders)) {
+          return;
+        }
+        const payload = await readJsonBody(request);
+        const provider = normalizeCalendarProvider(payload.provider);
+        try {
+          await calendarSyncClient.revokeConnection({ provider });
+        } catch {
+          // Keep local revocation authoritative even when provider revoke endpoint fails.
+        }
+        revokeCalendarConnection(database, auth.user.id, provider);
+        markCalendarSyncFailuresResolved(database, { userId: auth.user.id, provider });
+        database
+          .prepare(
+            `
+            INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+            VALUES (?, 'calendar_sync_disconnected', 'user', ?, ?)
+          `
+          )
+          .run(
+            auth.user.id,
+            String(auth.user.id),
+            JSON.stringify({ provider })
+          );
+        writeJson(response, 200, { disconnected: true, provider }, corsHeaders);
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 400),
+          { error: error.code || "calendar_sync_disconnect_failed", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
       return;
     }
 
@@ -5218,6 +5765,32 @@ export async function startApiServer(config) {
           action === "decline"
             ? declineMeetingRsvpByToken(database, { token, summaryCache: eventSummaryCache })
             : confirmMeetingRsvpByToken(database, { token, summaryCache: eventSummaryCache });
+        if (action === "decline") {
+          await syncCalendarForUserEvent(database, {
+            calendarSyncClient,
+            userId: Number(result.userId),
+            eventId: Number(result.eventId),
+            operation: "cancel",
+            actorUserId: Number(result.userId)
+          });
+          if (Number.isInteger(Number(result.promotedUserId)) && Number(result.promotedUserId) > 0) {
+            await syncCalendarForUserEvent(database, {
+              calendarSyncClient,
+              userId: Number(result.promotedUserId),
+              eventId: Number(result.eventId),
+              operation: "upsert",
+              actorUserId: Number(result.userId)
+            });
+          }
+        } else if (result.status === "confirmed") {
+          await syncCalendarForUserEvent(database, {
+            calendarSyncClient,
+            userId: Number(result.userId),
+            eventId: Number(result.eventId),
+            operation: "upsert",
+            actorUserId: Number(result.userId)
+          });
+        }
         writeJson(
           response,
           200,
@@ -5513,6 +6086,15 @@ export async function startApiServer(config) {
             userId: auth.user.id,
             summaryCache: eventSummaryCache
           });
+          if (registration.signupStatus === "confirmed") {
+            await syncCalendarForUserEvent(database, {
+              calendarSyncClient,
+              userId: auth.user.id,
+              eventId,
+              operation: "upsert",
+              actorUserId: auth.user.id
+            });
+          }
           notifyMeetingOrganizerAboutResponse(database, {
             eventRow: registration.eventRow,
             responderUserId: auth.user.id,
@@ -5584,6 +6166,22 @@ export async function startApiServer(config) {
           userId: auth.user.id,
           summaryCache: eventSummaryCache
         });
+        await syncCalendarForUserEvent(database, {
+          calendarSyncClient,
+          userId: auth.user.id,
+          eventId,
+          operation: "cancel",
+          actorUserId: auth.user.id
+        });
+        if (Number.isInteger(Number(cancellation.promoted?.userId || 0)) && Number(cancellation.promoted?.userId || 0) > 0) {
+          await syncCalendarForUserEvent(database, {
+            calendarSyncClient,
+            userId: Number(cancellation.promoted.userId),
+            eventId,
+            operation: "upsert",
+            actorUserId: auth.user.id
+          });
+        }
         const seatsRemaining = Math.max(
           Number(cancellation.eventRow.capacity || 0) - Number(cancellation.summary.confirmedCount || 0),
           0
@@ -6348,6 +6946,14 @@ export async function startApiServer(config) {
             };
           }
         }
+        if (eventRow.status === "published" && changes.length > 0) {
+          await syncCalendarForEventParticipants(database, {
+            calendarSyncClient,
+            eventId,
+            operation: "upsert",
+            actorUserId: auth.user.id
+          });
+        }
 
         writeJson(response, 200, { updated: true, teamsAutomation }, corsHeaders);
       } catch (error) {
@@ -6405,6 +7011,17 @@ export async function startApiServer(config) {
           snapshot: preDeleteSnapshot,
           actorUserId: auth.user.id
         });
+      }
+      if (eventRow.status === "published" && participantUserIds.length > 0) {
+        for (const participantUserId of participantUserIds) {
+          await syncCalendarForUserEvent(database, {
+            calendarSyncClient,
+            userId: Number(participantUserId),
+            eventId,
+            operation: "cancel",
+            actorUserId: auth.user.id
+          });
+        }
       }
 
       const result = database.prepare("DELETE FROM events WHERE id = ?").run(eventId);
@@ -6531,6 +7148,12 @@ export async function startApiServer(config) {
               reason: teamsError.code || "automation_failed"
             };
           }
+          await syncCalendarForEventParticipants(database, {
+            calendarSyncClient,
+            eventId,
+            operation: "upsert",
+            actorUserId: auth.user.id
+          });
         }
         writeJson(
           response,

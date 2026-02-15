@@ -37,6 +37,7 @@ export function getApiConfig(env = process.env) {
   const appBaseUrl = parseUrl(env.APP_BASE_URL || "http://127.0.0.1:3000", "APP_BASE_URL");
   const sharePointEnabled = parseBoolean(env.FEATURE_SHAREPOINT_DOCUMENTS, false);
   const teamsGraphEnabled = parseBoolean(env.FEATURE_TEAMS_GRAPH_AUTOMATION, false);
+  const calendarSyncEnabled = parseBoolean(env.FEATURE_CALENDAR_OAUTH_SYNC, false);
 
   return {
     host,
@@ -58,6 +59,19 @@ export function getApiConfig(env = process.env) {
       clientSecret: env.M365_CLIENT_SECRET || "",
       organizerUpn: env.M365_ORGANIZER_UPN || "",
       graphBaseUrl: env.M365_GRAPH_BASE_URL || "https://graph.microsoft.com"
+    },
+    calendarSync: {
+      enabled: calendarSyncEnabled,
+      google: {
+        clientId: env.GOOGLE_CALENDAR_CLIENT_ID || "",
+        clientSecret: env.GOOGLE_CALENDAR_CLIENT_SECRET || "",
+        redirectUri: env.GOOGLE_CALENDAR_REDIRECT_URI || ""
+      },
+      outlook: {
+        clientId: env.OUTLOOK_CALENDAR_CLIENT_ID || "",
+        clientSecret: env.OUTLOOK_CALENDAR_CLIENT_SECRET || "",
+        redirectUri: env.OUTLOOK_CALENDAR_REDIRECT_URI || ""
+      }
     }
   };
 }

@@ -26,7 +26,8 @@ test("runMigrations applies baseline exactly once", () => {
       "0009_meeting_management.sql",
       "0010_event_collaboration.sql",
       "0011_event_documents_sharepoint.sql",
-      "0012_teams_graph_automation.sql"
+      "0012_teams_graph_automation.sql",
+      "0013_calendar_sync.sql"
     ]);
     assert.equal(firstRun.bootstrapAdminCreated, true);
     assert.equal(firstRun.bootstrapAdminUsername, "akeida");
@@ -39,7 +40,7 @@ test("runMigrations applies baseline exactly once", () => {
     try {
       const tables = database
         .prepare(
-          "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('users', 'events', 'signups', 'audit_logs', 'sessions', 'event_editor_grants', 'member_import_batches', 'member_import_rows', 'member_roles', 'member_role_assignments', 'member_invite_tokens', 'password_reset_tokens', 'event_registration_overrides', 'registration_drafts', 'registration_reminder_preferences', 'registration_reminder_sends', 'event_alerts', 'notification_queue', 'notifications', 'notification_deliveries', 'event_revisions', 'event_revision_rollbacks', 'meeting_rsvp_tokens', 'meeting_planning_messages', 'event_internal_comments', 'event_documents', 'event_online_meetings')"
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('users', 'events', 'signups', 'audit_logs', 'sessions', 'event_editor_grants', 'member_import_batches', 'member_import_rows', 'member_roles', 'member_role_assignments', 'member_invite_tokens', 'password_reset_tokens', 'event_registration_overrides', 'registration_drafts', 'registration_reminder_preferences', 'registration_reminder_sends', 'event_alerts', 'notification_queue', 'notifications', 'notification_deliveries', 'event_revisions', 'event_revision_rollbacks', 'meeting_rsvp_tokens', 'meeting_planning_messages', 'event_internal_comments', 'event_documents', 'event_online_meetings', 'calendar_sync_connections', 'calendar_sync_oauth_states', 'calendar_sync_mappings', 'calendar_sync_failures')"
         )
         .all()
         .map((row) => row.name)
@@ -47,6 +48,10 @@ test("runMigrations applies baseline exactly once", () => {
 
       assert.deepEqual(tables, [
         "audit_logs",
+        "calendar_sync_connections",
+        "calendar_sync_failures",
+        "calendar_sync_mappings",
+        "calendar_sync_oauth_states",
         "event_alerts",
         "event_documents",
         "event_editor_grants",

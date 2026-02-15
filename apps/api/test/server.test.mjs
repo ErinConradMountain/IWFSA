@@ -101,6 +101,49 @@ function createFakeTeamsGraphClient() {
   };
 }
 
+function createFakeCalendarSyncClient() {
+  let sequence = 1;
+  const eventsByProvider = new Map([
+    ["google", new Map()],
+    ["outlook", new Map()]
+  ]);
+  const cancelLog = [];
+
+  return {
+    createAuthorizationRequest({ provider, state }) {
+      return {
+        provider,
+        state,
+        authorizationUrl: `https://calendar-auth.local/${provider}?state=${encodeURIComponent(state)}`
+      };
+    },
+    async exchangeCode({ provider, code }) {
+      return {
+        provider,
+        accessToken: `${provider}-access-${code}`,
+        refreshToken: `${provider}-refresh-${code}`,
+        expiresInSeconds: 3600,
+        scope: "calendar.events",
+        accountEmail: `${provider}@calendar.local`
+      };
+    },
+    async upsertCalendarEvent({ provider, mapping, event }) {
+      const providerMap = eventsByProvider.get(provider) || new Map();
+      const externalEventId = mapping?.externalEventId || `${provider}-event-${sequence++}`;
+      providerMap.set(externalEventId, { ...event });
+      eventsByProvider.set(provider, providerMap);
+      return { externalEventId, operation: mapping ? "update" : "insert" };
+    },
+    async cancelCalendarEvent({ provider, mapping }) {
+      cancelLog.push({ provider, externalEventId: mapping?.externalEventId || "" });
+      return { cancelled: true };
+    },
+    async revokeConnection() {
+      return { revoked: true };
+    }
+  };
+}
+
 async function createRunningServer(options = {}) {
   const workingDirectory = mkdtempSync(path.join(tmpdir(), "iwfsa-api-"));
   const databasePath = path.join(workingDirectory, "test.db");
@@ -243,6 +286,20 @@ async function createRunningServer(options = {}) {
       clientId: "test-client",
       clientSecret: "test-secret",
       organizerUpn: "events@iwfsa.local"
+    },
+    calendarSyncClient: options.calendarSyncClient,
+    calendarSync: {
+      enabled: options.enableCalendarSync === true,
+      google: {
+        clientId: "google-test-client",
+        clientSecret: "google-test-secret",
+        redirectUri: "http://localhost/google-callback"
+      },
+      outlook: {
+        clientId: "outlook-test-client",
+        clientSecret: "outlook-test-secret",
+        redirectUri: "http://localhost/outlook-callback"
+      }
     }
   });
 
@@ -5833,6 +5890,373 @@ test("Checkpoint 3.2: manual join link fallback remains active when present", as
     const created = (eventsPayload.items || []).find((item) => item.id === createPayload.id);
     assert.equal(created.onlineJoinUrl, manualJoinUrl);
     assert.equal(created.onlineProvider, "Microsoft Teams");
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Checkpoint 3.3: OAuth connect and disconnect for calendar sync is opt-in", async () => {
+  const fakeCalendar = createFakeCalendarSyncClient();
+  const { server, workingDirectory } = await createRunningServer({
+    calendarSyncClient: fakeCalendar,
+    enableCalendarSync: true
+  });
+
+  try {
+    const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const memberPayload = await memberLogin.json();
+    assert.equal(memberLogin.status, 200);
+
+    const startResponse = await fetch(`http://${server.host}:${server.port}/api/calendar-sync/oauth/start`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${memberPayload.token}`
+      },
+      body: JSON.stringify({ provider: "google" })
+    });
+    const startPayload = await startResponse.json();
+    assert.equal(startResponse.status, 200);
+    assert.equal(startPayload.provider, "google");
+    assert.match(String(startPayload.authorizationUrl || ""), /calendar-auth\.local\/google/);
+    assert.ok(startPayload.state);
+
+    const callbackResponse = await fetch(`http://${server.host}:${server.port}/api/calendar-sync/oauth/callback`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${memberPayload.token}`
+      },
+      body: JSON.stringify({ provider: "google", state: startPayload.state, code: "demo-code" })
+    });
+    const callbackPayload = await callbackResponse.json();
+    assert.equal(callbackResponse.status, 200);
+    assert.equal(callbackPayload.connected, true);
+
+    const listResponse = await fetch(`http://${server.host}:${server.port}/api/calendar-sync/connections`, {
+      headers: { Authorization: `Bearer ${memberPayload.token}` }
+    });
+    const listPayload = await listResponse.json();
+    assert.equal(listResponse.status, 200);
+    assert.equal(listPayload.featureEnabled, true);
+    const googleConnection = (listPayload.items || []).find((item) => item.provider === "google");
+    assert.equal(googleConnection?.status, "active");
+
+    const disconnectResponse = await fetch(`http://${server.host}:${server.port}/api/calendar-sync/disconnect`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${memberPayload.token}`
+      },
+      body: JSON.stringify({ provider: "google" })
+    });
+    const disconnectPayload = await disconnectResponse.json();
+    assert.equal(disconnectResponse.status, 200);
+    assert.equal(disconnectPayload.disconnected, true);
+
+    const listAfterResponse = await fetch(`http://${server.host}:${server.port}/api/calendar-sync/connections`, {
+      headers: { Authorization: `Bearer ${memberPayload.token}` }
+    });
+    const listAfterPayload = await listAfterResponse.json();
+    const googleAfter = (listAfterPayload.items || []).find((item) => item.provider === "google");
+    assert.equal(googleAfter?.status, "revoked");
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Checkpoint 3.3: confirmed registration syncs insert/update/cancel for connected user", async () => {
+  const fakeCalendar = createFakeCalendarSyncClient();
+  const { server, workingDirectory, databasePath } = await createRunningServer({
+    calendarSyncClient: fakeCalendar,
+    enableCalendarSync: true
+  });
+
+  try {
+    const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const memberPayload = await memberLogin.json();
+    assert.equal(memberLogin.status, 200);
+
+    const startResponse = await fetch(`http://${server.host}:${server.port}/api/calendar-sync/oauth/start`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${memberPayload.token}`
+      },
+      body: JSON.stringify({ provider: "google" })
+    });
+    const startPayload = await startResponse.json();
+    assert.equal(startResponse.status, 200);
+
+    const callbackResponse = await fetch(`http://${server.host}:${server.port}/api/calendar-sync/oauth/callback`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${memberPayload.token}`
+      },
+      body: JSON.stringify({ provider: "google", state: startPayload.state, code: "member1-code" })
+    });
+    assert.equal(callbackResponse.status, 200);
+
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "admin1", password: "adminpass" })
+    });
+    const adminPayload = await adminLogin.json();
+    assert.equal(adminLogin.status, 200);
+
+    const createEventResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({
+        title: "Calendar Sync Event",
+        description: "Sync lifecycle test",
+        startAt: "2026-12-20T10:00:00Z",
+        endAt: "2026-12-20T11:00:00Z",
+        venueType: "physical",
+        venueName: "IWFSA HQ",
+        capacity: 5,
+        audienceType: "all_members"
+      })
+    });
+    const createEventPayload = await createEventResponse.json();
+    assert.equal(createEventResponse.status, 201);
+
+    const submitResponse = await fetch(
+      `http://${server.host}:${server.port}/api/events/${createEventPayload.id}/submit`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${adminPayload.token}` }
+      }
+    );
+    assert.equal(submitResponse.status, 200);
+
+    const registerResponse = await fetch(
+      `http://${server.host}:${server.port}/api/events/${createEventPayload.id}/register`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${memberPayload.token}`
+        },
+        body: JSON.stringify({})
+      }
+    );
+    const registerPayload = await registerResponse.json();
+    assert.equal(registerResponse.status, 200);
+    assert.equal(registerPayload.status, "confirmed");
+
+    const db = openDatabase(databasePath);
+    try {
+      const mappingAfterRegister = db
+        .prepare(
+          `
+          SELECT status, external_event_id AS externalEventId
+          FROM calendar_sync_mappings
+          WHERE event_id = ? AND user_id = ? AND provider = 'google'
+          LIMIT 1
+        `
+        )
+        .get(createEventPayload.id, memberPayload.user.id);
+      assert.equal(mappingAfterRegister?.status, "active");
+      assert.ok(mappingAfterRegister?.externalEventId);
+    } finally {
+      db.close();
+    }
+
+    const patchResponse = await fetch(`http://${server.host}:${server.port}/api/events/${createEventPayload.id}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({ title: "Calendar Sync Event Updated" })
+    });
+    assert.equal(patchResponse.status, 200);
+
+    const cancelResponse = await fetch(
+      `http://${server.host}:${server.port}/api/events/${createEventPayload.id}/cancel-registration`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${memberPayload.token}` }
+      }
+    );
+    assert.equal(cancelResponse.status, 200);
+
+    const dbAfter = openDatabase(databasePath);
+    try {
+      const mappingAfterCancel = dbAfter
+        .prepare(
+          `
+          SELECT status
+          FROM calendar_sync_mappings
+          WHERE event_id = ? AND user_id = ? AND provider = 'google'
+          LIMIT 1
+        `
+        )
+        .get(createEventPayload.id, memberPayload.user.id);
+      assert.equal(mappingAfterCancel?.status, "cancelled");
+    } finally {
+      dbAfter.close();
+    }
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Checkpoint 3.3: sync failures are recorded and surfaced to members", async () => {
+  const failingCalendar = {
+    createAuthorizationRequest({ provider, state }) {
+      return { provider, state, authorizationUrl: `https://calendar-auth.local/${provider}` };
+    },
+    async exchangeCode({ provider, code }) {
+      return {
+        provider,
+        accessToken: `access-${code}`,
+        refreshToken: `refresh-${code}`,
+        expiresInSeconds: 3600,
+        scope: "calendar.events",
+        accountEmail: "member@calendar.local"
+      };
+    },
+    async upsertCalendarEvent() {
+      const error = new Error("provider_unavailable");
+      error.code = "provider_unavailable";
+      throw error;
+    },
+    async cancelCalendarEvent() {
+      const error = new Error("provider_unavailable");
+      error.code = "provider_unavailable";
+      throw error;
+    },
+    async revokeConnection() {
+      return { revoked: true };
+    }
+  };
+  const { server, workingDirectory, databasePath } = await createRunningServer({
+    calendarSyncClient: failingCalendar,
+    enableCalendarSync: true
+  });
+
+  try {
+    const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const memberPayload = await memberLogin.json();
+    assert.equal(memberLogin.status, 200);
+
+    const startResponse = await fetch(`http://${server.host}:${server.port}/api/calendar-sync/oauth/start`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${memberPayload.token}`
+      },
+      body: JSON.stringify({ provider: "google" })
+    });
+    const startPayload = await startResponse.json();
+    assert.equal(startResponse.status, 200);
+
+    const callbackResponse = await fetch(`http://${server.host}:${server.port}/api/calendar-sync/oauth/callback`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${memberPayload.token}`
+      },
+      body: JSON.stringify({ provider: "google", state: startPayload.state, code: "failing" })
+    });
+    assert.equal(callbackResponse.status, 200);
+
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "admin1", password: "adminpass" })
+    });
+    const adminPayload = await adminLogin.json();
+    assert.equal(adminLogin.status, 200);
+
+    const createEventResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({
+        title: "Calendar Sync Failure Event",
+        description: "Failure handling test",
+        startAt: "2026-12-28T10:00:00Z",
+        endAt: "2026-12-28T11:00:00Z",
+        venueType: "physical",
+        venueName: "IWFSA HQ",
+        capacity: 5,
+        audienceType: "all_members"
+      })
+    });
+    const createEventPayload = await createEventResponse.json();
+    assert.equal(createEventResponse.status, 201);
+
+    const submitResponse = await fetch(
+      `http://${server.host}:${server.port}/api/events/${createEventPayload.id}/submit`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${adminPayload.token}` }
+      }
+    );
+    assert.equal(submitResponse.status, 200);
+
+    const registerResponse = await fetch(
+      `http://${server.host}:${server.port}/api/events/${createEventPayload.id}/register`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${memberPayload.token}`
+        },
+        body: JSON.stringify({})
+      }
+    );
+    assert.equal(registerResponse.status, 200);
+
+    const db = openDatabase(databasePath);
+    try {
+      const failureCount = db
+        .prepare(
+          `
+          SELECT COUNT(*) AS count
+          FROM calendar_sync_failures
+          WHERE user_id = ? AND event_id = ?
+        `
+        )
+        .get(memberPayload.user.id, createEventPayload.id);
+      assert.ok(Number(failureCount?.count || 0) >= 1);
+    } finally {
+      db.close();
+    }
+
+    const notificationsResponse = await fetch(`http://${server.host}:${server.port}/api/notifications?limit=30`, {
+      headers: { Authorization: `Bearer ${memberPayload.token}` }
+    });
+    const notificationsPayload = await notificationsResponse.json();
+    const failureNotification = (notificationsPayload.items || []).find(
+      (item) => item.eventType === "calendar_sync_failed"
+    );
+    assert.ok(failureNotification);
   } finally {
     await server.close();
     rmSync(workingDirectory, { recursive: true, force: true });
