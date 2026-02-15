@@ -2,6 +2,12 @@
 
 This document describes the implemented checkpoint `3.1` flow for event documents (agenda, minutes, attachments) stored in SharePoint with app-mediated authorization.
 
+## Working model (confirmed)
+- GitHub is the source of truth for code and release workflow.
+- Microsoft 365 (Entra + SharePoint) is the integration environment.
+- The app enforces authorization and streams files; members do not browse raw SharePoint links.
+- Rollout is phased: dev/staging validation first, then a small production pilot.
+
 ## Goals
 - Store event documents in SharePoint (preferred by IWFSA)
 - Keep documents accessible only to eligible members (based on event audience)
@@ -88,6 +94,67 @@ If the feature is disabled or required values are missing, uploads/downloads fai
 - Configure site/library per environment (dev/staging/prod) using environment variables.
 - Keep tenant app consent scoped to the target site/library.
 - Decide retention strategy for minutes/attachments according to governance policy.
+
+## Beginner rollout checklist (SharePoint document flow)
+Use this sequence exactly in order.
+
+### Step 1: Tenant setup
+- Create/confirm the SharePoint site and library for event documents.
+- Register app in Entra and grant Graph permissions.
+- Prefer `Sites.Selected` and grant only the target site.
+
+Pass when:
+- App can access only the intended site/library.
+
+### Step 2: Environment configuration
+- Set:
+  - `FEATURE_SHAREPOINT_DOCUMENTS=true`
+  - `SHAREPOINT_TENANT_ID`
+  - `SHAREPOINT_CLIENT_ID`
+  - `SHAREPOINT_CLIENT_SECRET`
+  - `SHAREPOINT_SITE_ID`
+  - `SHAREPOINT_DRIVE_ID`
+- Keep production values separate from dev/staging.
+
+Pass when:
+- API starts with no integration-configuration errors.
+
+### Step 3: Functional smoke test
+- Upload one test agenda document.
+- List documents for the event.
+- Download the same document through the app endpoint.
+
+Pass when:
+- Upload/list/download all succeed and the file exists in SharePoint.
+
+### Step 4: Access-control test
+- Test with one eligible member and one ineligible member.
+- Confirm eligible user can list/download.
+- Confirm ineligible user is denied.
+
+Pass when:
+- Authorization behavior matches event audience rules every time.
+
+### Step 5: Availability-window test
+- Validate `immediate`, `after_event`, and `scheduled` document visibility.
+
+Pass when:
+- Visibility changes happen at expected times.
+
+### Step 6: Audit and safety test
+- Confirm upload/remove/download actions are present in audit trail.
+- Confirm logs do not expose sensitive tokens or shareable secrets.
+
+Pass when:
+- Audit trail is complete and logs are safe.
+
+### Step 7: Production pilot
+- Enable for 1-2 real events.
+- Assign one admin owner for pilot support.
+- Keep rollback ready by disabling `FEATURE_SHAREPOINT_DOCUMENTS` if needed.
+
+Pass when:
+- Pilot events run successfully with no access-control incidents.
 
 ## Future Enhancements
 - Virus scanning / file type allowlist
