@@ -91,6 +91,7 @@ Key terms in simple words:
 Plain-English checkpoint map:
 - 0.1 Stack and Hosting ADRs: decide the technology choices and write them down.
 - 0.2 Security and Privacy Baseline: list what personal data exists and how it is protected.
+
 - 0.3 MVP Contract and Feature Flags: lock the MVP scope and park extras behind flags.
 - 1.1 Project Scaffold and CI: set up the project so it can build, test, and run.
 - 1.2 Auth and RBAC Core: build login and role-based access control.
@@ -562,7 +563,7 @@ Exit criteria:
 - Notifications monitoring is understandable and useful for operations without losing auditability.
 
 ### Checkpoint 2.5 - Regression and Release Readiness
-Status: Not Started (restart run)
+Status: Done (restart run)
 
 Objective:
 - Lock quality gates before starting integration wave work.
@@ -671,8 +672,8 @@ Suggested status values:
 - Blocked
 - Done
 
-Tracker Last Updated: 2026-02-10
-Current Checkpoint: 1.4 - Event Lifecycle and Listings (In Progress)
+Tracker Last Updated: 2026-02-15
+Current Checkpoint: 3.3 - Calendar Sync (Not Started)
 
 | Checkpoint | Status | Notes |
 | --- | --- | --- |
@@ -682,18 +683,18 @@ Current Checkpoint: 1.4 - Event Lifecycle and Listings (In Progress)
 | 1.1 Project Scaffold and CI | Done | CI (`npm run ci`) green on 2026-02-09; env example validated and build artifacts generated. |
 | 1.2 Auth and RBAC Core | Done | Revalidated auth/login/logout/reset constraints, tightened protected-route role checks, added audited role-change path, and expanded RBAC matrix tests (including unauthorized paths). |
 | 1.3 Member Provisioning | Done | Revalidated and hardened import + onboarding flows: canonical membership-set dry-run/apply/report paths, activation-gated login, full-name directory behavior, invite/reset privacy safeguards (hashed/single-use tokens), dispatch audit trails, and expanded checkpoint-aligned tests. |
-| 1.4 Event Lifecycle and Listings | In Progress | Workflow is being realigned to direct member/event-editor publish (no moderation), creator-managed event-scoped grants, published-event directory visibility rules, warning-only overlap handling, and planning/RSVP behavior. |
-| 1.5 Registration, Capacity, Waitlist | Not Started | Prior registration/capacity logic exists; restart run will reconfirm deterministic behavior and reminders. |
-| 1.6 Notifications and Audit Trail | Not Started | Prior notification/audit paths exist; restart run will revalidate idempotency, delivery reporting, and revision behavior. |
-| 1.7 Calendar Actions and Teams Fallback | Not Started | Prior manual calendar actions and fallback are in place; restart run will reconfirm behavior. |
-| 1.8 Birthdays Sidebar (Member Portal) | Not Started | Prior birthdays sidebar exists; restart run will reconfirm consent/date-window behavior and UX quality. |
-| 1.9 Admin Console UX and Event Hub Layout | Not Started | Prior admin UX baseline exists; restart run will reconfirm accessibility/help persistence and operational clarity. |
-| 2.1 Planning and Knowledge Base Reset | Not Started | Integrated planning alignment checkpoint retained for this restart sequence. |
-| 2.2 Membership Data Consistency Hardening | Not Started | Unfinished from previous cycle and explicitly carried forward into this restart run. |
-| 2.3 Navigation and UX v2 (Public / Member / Admin) | Not Started | Unfinished from previous cycle and explicitly carried forward into this restart run. |
-| 2.4 Notifications UX Simplification (Delivery Report and Queue Status) | Not Started | Unfinished from previous cycle and explicitly carried forward into this restart run. |
-| 2.5 Regression and Release Readiness | Not Started | Quality lock checkpoint after 2.2-2.4 work lands in this restart run. |
-| 3.1 SharePoint Document Flow | Not Started | Integration wave checkpoint after restart run closes core consistency and readiness gates. |
-| 3.2 Teams Graph Automation | Not Started | Feature-flagged integration checkpoint after 3.1 prerequisites. |
+| 1.4 Event Lifecycle and Listings | Done | Completed and revalidated: direct publish (no moderation), creator-managed event-scoped grants (assign/revoke), published-event visibility gating, warning-only overlap handling, meeting planning endpoints, and RSVP-link confirmation flow with coverage in API tests. |
+| 1.5 Registration, Capacity, Waitlist | Done | Registration logic fully validated: atomic capacity, one-signup-per-member, deterministic waitlist FIFO promotion, countdown edge-cases, and concurrency tests all green. |
+| 1.6 Notifications and Audit Trail | Done | Revalidated and completed: in-app notification center (list + mark-read + markAll), transactional email integration (stub provider), queue-based fan-out with idempotency keys for event_published/event_updated/event_cancelled, immutable send logs in notification_deliveries, event revision snapshots and rollback flow, event cancellation participant notifications, waitlist promotion in-app notifications, enriched admin delivery report (full_name/phone/organisation), queue health summary with counts/label, and 6 dedicated checkpoint 1.6 validation tests. |
+| 1.7 Calendar Actions and Teams Fallback | Done | Revalidated and completed: .ics generation with DTSTART/DTEND/SUMMARY/LOCATION/DESCRIPTION, Google Calendar and Outlook add-link builders (client-side), manual Teams link entry/display via onlineJoinUrl/onlineProvider fields, URL validation for onlineJoinUrl (http/https required), onlineProvider included in ICS description, physical venue in LOCATION, and 6 dedicated checkpoint 1.7 validation tests. |
+| 1.8 Birthdays Sidebar (Member Portal) | Done | Completed: Slick UI with gold branding/watermarks, API exposes photoUrl for display, Social automation stubbed (Phase 4). |
+| 1.9 Admin Console UX and Event Hub Layout | Done | Implemented persisent help banners with dismissal state (localStorage), verified Event Hub card layout, and confirmed access to Business Audience options. Validated via automated tests. |
+| 2.1 Planning and Knowledge Base Reset | Done | Updated docs (product requirements, runbook, ux-notes) to reflect current Admin UX and restart status. |
+| 2.2 Membership Data Consistency Hardening | Done | Canonical `membership_set_json` is enforced for active import workflows while retaining a one-time legacy read fallback to keep historical batches readable. Removed duplicate `members-fixture.csv`. |
+| 2.3 Navigation and UX v2 (Public / Member / Admin) | Done | Implemented modular navigation (hash-based routing) for Member Portal and Admin Console, preventing scroll fatigue. |
+| 2.4 Notifications UX Simplification (Delivery Report and Queue Status) | Done | Consolidated Delivery Report with member-centric data (name/org) and Queue Status (health summary + global counts) to reduce admin cognitive load. |
+| 2.5 Regression and Release Readiness | Done | Quality gates revalidated on 2026-02-14 (`npm run ci` + focused API/Web regression) with typecheck, tests, and build green. |
+| 3.1 SharePoint Document Flow | Done | Implemented event document flow with SharePoint-backed metadata persistence (`event_documents`), app-mediated upload/download endpoints, availability windows (immediate/after_event/scheduled), RBAC + audience enforcement on document access, and checkpoint validation tests for authorized download, availability gating, and restricted-audience denial. |
+| 3.2 Teams Graph Automation | Done | Added feature-flagged Microsoft Graph automation for online meetings: publish creates Teams meetings, updates patch existing meetings, manual join-link fallback remains active, and meeting metadata is persisted in `event_online_meetings`. |
 | 3.3 Calendar Sync | Not Started | Optional post-MVP integration checkpoint after core integration stabilization. |
 | 4.1 Enhancements Wave | Not Started | Push/SMS, reporting, intelligence dashboards, and social workflow remain controlled backlog work. |

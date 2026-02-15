@@ -18,6 +18,12 @@ Use Microsoft Graph to create a Teams-enabled calendar event:
 - Microsoft Entra (Azure AD) app registration
 - Admin consent for required Graph permissions
 - Recommended: a dedicated organizer mailbox/service account
+- Feature flag and config:
+  - `FEATURE_TEAMS_GRAPH_AUTOMATION=true`
+  - `M365_TENANT_ID`
+  - `M365_CLIENT_ID`
+  - `M365_CLIENT_SECRET`
+  - `M365_ORGANIZER_UPN`
 
 ## Security
 - Do not log join URLs broadly.
