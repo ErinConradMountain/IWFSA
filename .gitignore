@@ -27,6 +27,12 @@ venv/
 .vscode/
 .idea/
 
+# Temporary agent working files
+tmpclaude-*
+tmp-*.txt
+tmp-*.json
+test.json
+
 # Local-only import spreadsheets (may contain PII)
 Members.xlsx
 South Africa-2026-01-11.xlsx
