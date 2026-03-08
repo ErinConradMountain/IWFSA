@@ -143,6 +143,20 @@ export function renderPublicPage(config) {
           <a class="ghost" href="${config.appBaseUrl}/member#dashboard">Test the Member Portal (demo)</a>
           <a class="ghost" href="${config.appBaseUrl}/admin">Admin Console (authorised only)</a>
         </div>
+        <h3 class="subsection-title">Member Portal Modules</h3>
+        <ul class="status-list">
+          <li><a href="${config.appBaseUrl}/member#events">Events &amp; Meetings</a></li>
+          <li><a href="${config.appBaseUrl}/member#birthdays">Birthdays</a></li>
+          <li><a href="${config.appBaseUrl}/member#sms">SMS Settings</a></li>
+          <li><a href="${config.appBaseUrl}/member#celebrations">Celebrations</a></li>
+        </ul>
+        <h3 class="subsection-title">Admin Console Modules</h3>
+        <ul class="status-list">
+          <li><a href="${config.appBaseUrl}/admin#members">Member Directory</a></li>
+          <li><a href="${config.appBaseUrl}/admin#imports">Imports</a></li>
+          <li><a href="${config.appBaseUrl}/admin#notifications">Notifications</a></li>
+          <li><a href="${config.appBaseUrl}/admin#reports">Reports</a></li>
+        </ul>
       </section>
       </div>
       <section class="panel panel-accent">
@@ -176,9 +190,12 @@ export function renderMemberPage(config) {
           </div>
           
           <nav class="module-nav" id="member-nav">
-            <a href="#dashboard" class="module-nav-link" data-module="dashboard">Dashboard</a>
-            <a href="#events" class="module-nav-link" data-module="events">Events</a>
-            <a href="#notifications" class="module-nav-link" data-module="notifications">Notifications & Birthdays</a>
+            <a href="#dashboard" class="module-nav-link" data-module="dashboard" data-member-module-link="dashboard">Dashboard</a>
+            <a href="#events" class="module-nav-link" data-module="events" data-member-module-link="events">Events</a>
+            <a href="#birthdays" class="module-nav-link" data-module="birthdays" data-member-module-link="birthdays">Birthdays</a>
+            <a href="#notifications" class="module-nav-link" data-module="notifications" data-member-module-link="notifications">Notifications</a>
+            <a href="#sms" class="module-nav-link" data-module="sms" data-member-module-link="sms">SMS Settings</a>
+            <a href="#celebrations" class="module-nav-link" data-module="celebrations" data-member-module-link="celebrations">Celebrations</a>
           </nav>
 
           <div id="module-dashboard" class="module-section">
@@ -197,6 +214,7 @@ export function renderMemberPage(config) {
           </div>
 
           <div id="module-events" class="module-section">
+            <h3>Member Event Directory</h3>
             <div class="member-actions">
               <label for="member-event-view" class="muted">Event window</label>
               <select id="member-event-view" disabled>
@@ -212,6 +230,22 @@ export function renderMemberPage(config) {
             </div>
           </div>
 
+          <div id="module-birthdays" class="module-section">
+            <h3>Upcoming Birthdays</h3>
+            <div class="member-actions member-actions-tight">
+              <label for="birthday-window" class="muted">Window</label>
+              <select id="birthday-window" disabled>
+                <option value="7">7 days</option>
+                <option value="14" selected>14 days</option>
+                <option value="30">30 days</option>
+              </select>
+              <button id="refresh-birthdays" type="button" class="ghost" disabled>Refresh</button>
+            </div>
+            <div id="birthday-list" class="birthday-list">
+              <p class="muted">Sign in to load birthdays.</p>
+            </div>
+          </div>
+
           <div id="module-notifications" class="module-section">
              <div class="member-layout">
                 <div class="main-column">
@@ -224,24 +258,26 @@ export function renderMemberPage(config) {
                       <p class="muted">Sign in to load notifications.</p>
                     </div>
                 </div>
-                <aside class="sidebar-card sidebar-card-accent">
-                  <div class="sidebar-header">
-                    <h3>Upcoming Birthdays</h3>
-                    <div class="member-actions member-actions-tight">
-                      <label for="birthday-window" class="muted">Window</label>
-                      <select id="birthday-window" disabled>
-                        <option value="7">7 days</option>
-                        <option value="14" selected>14 days</option>
-                        <option value="30">30 days</option>
-                      </select>
-                      <button id="refresh-birthdays" type="button" class="ghost" disabled>Refresh</button>
-                    </div>
-                  </div>
-                  <div id="birthday-list" class="birthday-list">
-                    <p class="muted">Sign in to load birthdays.</p>
-                  </div>
-                </aside>
              </div>
+          </div>
+
+          <div id="module-sms" class="module-section">
+            <h3>SMS Settings</h3>
+            <p class="muted">Manage your SMS notification preferences and phone number.</p>
+            <form id="sms-settings-form" class="login-form">
+              <label for="sms-phone">Phone number</label>
+              <input id="sms-phone" name="phone" type="tel" autocomplete="tel" placeholder="+27 000 000 0000" disabled />
+              <button type="submit" disabled>Save SMS settings</button>
+            </form>
+            <p id="sms-status" class="muted"></p>
+          </div>
+
+          <div id="module-celebrations" class="module-section">
+            <h3>Celebration Thread</h3>
+            <p class="muted">Share and view celebration messages with fellow members.</p>
+            <div id="celebration-list" class="event-grid">
+              <p class="muted">Sign in to load celebrations.</p>
+            </div>
           </div>
         </section>
       </div>
@@ -265,11 +301,12 @@ export function renderMemberPage(config) {
         const localDraftOverrides = new Map();
         let serverSkewMs = 0;
         let currentEvents = [];
+        const VALID_MEMBER_MODULES = ['dashboard', 'events', 'birthdays', 'notifications', 'sms', 'celebrations'];
 
         function handleHashChange() {
            const hash = window.location.hash.substring(1) || "dashboard";
            let activeModule = hash;
-           if (!['dashboard', 'events', 'notifications'].includes(activeModule)) {
+           if (!VALID_MEMBER_MODULES.includes(activeModule)) {
               activeModule = 'dashboard';
            }
 
@@ -1298,20 +1335,21 @@ export function renderAdminPage(config) {
              <h2>Admin Console</h2>
              <div class="auth-controls">
                 <p id="login-status" class="muted">Not signed in.</p>
-                <form id="admin-login-form" class="inline-login-form">
-                   <input id="admin-username" name="username" placeholder="Username" autocomplete="username" />
-                   <input id="admin-password" type="password" name="password" placeholder="Password" autocomplete="current-password" />
-                   <button type="submit">Sign in</button>
+                <form id="admin-login-form" class="inline-login-form" aria-label="Admin Login">
+                   <input id="admin-username" name="username" placeholder="Username" aria-label="Username" autocomplete="username" />
+                   <input id="admin-password" type="password" name="password" placeholder="Password" aria-label="Password" autocomplete="current-password" />
+                   <button type="submit">Admin Login</button>
                 </form>
              </div>
           </div>
 
           <nav class="module-nav" id="admin-nav">
              <a href="#overview" class="module-nav-link" data-module="overview">Overview</a>
-             <a href="#members" class="module-nav-link" data-module="members">Members</a>
-             <a href="#imports" class="module-nav-link" data-module="imports">Imports</a>
+             <a href="#members" class="module-nav-link" data-module="members" data-admin-module-link="members">Members</a>
+             <a href="#imports" class="module-nav-link" data-module="imports" data-admin-module-link="imports">Imports</a>
              <a href="#events" class="module-nav-link" data-module="events">Event Hub</a>
-             <a href="#notifications" class="module-nav-link" data-module="notifications">Notifications</a>
+             <a href="#notifications" class="module-nav-link" data-module="notifications" data-admin-module-link="notifications">Notifications</a>
+             <a href="#reports" class="module-nav-link" data-module="reports" data-admin-module-link="reports">Reports</a>
           </nav>
 
           <div id="module-overview" class="module-section">
@@ -1720,6 +1758,24 @@ export function renderAdminPage(config) {
               <tr><td colspan="2" class="muted">Sign in to load queue status.</td></tr>
             </tbody>
           </table>
+        </div>
+      </div>
+     </div>
+
+     <div id="module-reports" class="module-section">
+      <div class="admin-card" data-admin-panel="reporting_exports">
+        <h3>Reporting and Exports Dashboard</h3>
+        <p class="muted">Download member data exports and review platform activity reports.</p>
+        <div class="member-actions">
+          <button id="export-members-csv" type="button" disabled>Export Members (CSV)</button>
+        </div>
+        <p id="export-status" class="muted"></p>
+      </div>
+      <div class="admin-card" data-admin-panel="celebration_moderators">
+        <h3>Celebration Moderators</h3>
+        <p class="muted">Manage members who can moderate the Celebration Thread.</p>
+        <div id="celebration-moderators-list" class="event-grid">
+          <p class="muted">Sign in to load celebration moderators.</p>
         </div>
       </div>
      </div>
