@@ -14,11 +14,10 @@ function htmlLayout({ title, body, appBaseUrl, currentPath, pageClass = "" }) {
       { href: `${appBaseUrl}/admin`, label: "Admin Console", path: "/admin" }
     ];
   } else {
-    // On the public site, we just show a generic login pathway to the portal 
-    // without exposing operations consoles directly in the top nav
     navItems = [
       { href: `${appBaseUrl}/`, label: "Public", path: "/" },
-      { href: `${appBaseUrl}/member`, label: "Sign In", path: "/member" }
+      { href: `${appBaseUrl}/member`, label: "Sign In", path: "/member" },
+      { href: `${appBaseUrl}/admin`, label: "Admin Console", path: "/admin" }
     ];
   }
   const navLinks = navItems
