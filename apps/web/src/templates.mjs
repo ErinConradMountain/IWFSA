@@ -36,6 +36,7 @@ function htmlLayout({ title, body, appBaseUrl, currentPath, pageClass = "" }) {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${title}</title>
     <link rel="stylesheet" href="${appBaseUrl}/assets/styles.css?v=${UI_BUILD}-public-refresh" />
+    <script>window.addEventListener('pageshow', function(e) { if (e.persisted) { window.location.reload(); } });</script>
   </head>
   <body class="${escapeHtml(pageClass)}">
     <a class="skip-link" href="#main-content">Skip to content</a>
