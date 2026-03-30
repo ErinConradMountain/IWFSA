@@ -204,6 +204,31 @@ export function renderPublicPage(config) {
         </script>
       </section>
 
+      <section class="panel" aria-labelledby="portal-nav-heading" style="margin-top: 2rem;">
+        <p class="eyebrow">Public Surface</p>
+        <h2 id="portal-nav-heading" style="border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; margin-bottom: 1.5rem;">Quick Links — Portal Access</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.5rem;">
+          <div>
+            <h3 style="font-size: 1rem; margin-bottom: 0.75rem;">Member Portal</h3>
+            <ul style="list-style: none; padding: 0; margin: 0; line-height: 2;">
+              <li><a href="${config.appBaseUrl}/member#events">Events</a></li>
+              <li><a href="${config.appBaseUrl}/member#birthdays">Birthdays</a></li>
+              <li><a href="${config.appBaseUrl}/member#sms">SMS Settings</a></li>
+              <li><a href="${config.appBaseUrl}/member#celebrations">Celebration Thread</a></li>
+            </ul>
+          </div>
+          <div>
+            <h3 style="font-size: 1rem; margin-bottom: 0.75rem;">Admin Console</h3>
+            <ul style="list-style: none; padding: 0; margin: 0; line-height: 2;">
+              <li><a href="${config.appBaseUrl}/admin#members">Members</a></li>
+              <li><a href="${config.appBaseUrl}/admin#imports">Imports</a></li>
+              <li><a href="${config.appBaseUrl}/admin#notifications">Notifications</a></li>
+              <li><a href="${config.appBaseUrl}/admin#reports">Reports</a></li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
       <section class="panel" aria-labelledby="contact-heading" style="margin-top: 2rem;">
         <h2 id="contact-heading" style="border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; margin-bottom: 1.5rem;">Get in touch</h2>
         
