@@ -297,6 +297,7 @@ export function renderMemberPage(config) {
                     <div class="member-login-actions">
                       <button id="member-login-submit" type="submit">Sign in</button>
                       <button id="member-logout" type="button" class="ghost member-logout-button" hidden>Sign out</button>
+                      <a id="member-admin-link" href="${config.appBaseUrl}/admin" class="button-link member-admin-link" hidden>Admin Console</a>
                     </div>
                  </form>
              </div>
@@ -505,6 +506,7 @@ export function renderMemberPage(config) {
         /* Removed demo fill button ref */
         const loginStatus = document.getElementById("member-login-status");
         const logoutButton = document.getElementById("member-logout");
+        const adminLink = document.getElementById("member-admin-link");
         const birthdayPanel = document.getElementById("member-birthday-panel");
         const viewSelect = document.getElementById("member-event-view");
         const refreshEventsButton = document.getElementById("member-refresh-events");
@@ -561,8 +563,9 @@ export function renderMemberPage(config) {
         }
 
         let memberUsername = sessionStorage.getItem("iwfsa_member_username") || "";
+        let memberRole = sessionStorage.getItem("iwfsa_member_role") || "";
 
-        function setToken(token, username = "") {
+        function setToken(token, username = "", role = "") {
           if (token) {
             sessionStorage.setItem("iwfsa_token", token);
             memberUsername = String(username || memberUsername || "").trim();
@@ -571,10 +574,18 @@ export function renderMemberPage(config) {
             } else {
               sessionStorage.removeItem("iwfsa_member_username");
             }
+            memberRole = String(role || "").trim();
+            if (memberRole) {
+              sessionStorage.setItem("iwfsa_member_role", memberRole);
+            } else {
+              sessionStorage.removeItem("iwfsa_member_role");
+            }
           } else {
             sessionStorage.removeItem("iwfsa_token");
             sessionStorage.removeItem("iwfsa_member_username");
+            sessionStorage.removeItem("iwfsa_member_role");
             memberUsername = "";
+            memberRole = "";
           }
         }
 
@@ -588,6 +599,10 @@ export function renderMemberPage(config) {
           }
           logoutButton.disabled = !isSignedIn;
           logoutButton.hidden = !isSignedIn;
+          if (adminLink) {
+            const isAdmin = isSignedIn && (memberRole === "admin" || memberRole === "chief_admin");
+            adminLink.hidden = !isAdmin;
+          }
           if (birthdayPanel) {
             birthdayPanel.hidden = !isSignedIn;
           }
@@ -1557,7 +1572,7 @@ export function renderMemberPage(config) {
               return;
             }
 
-            setToken(json.token, json.user.username);
+            setToken(json.token, json.user.username, json.user.role);
             setSignedInState(true);
             loginStatus.textContent = "Signed in as " + json.user.username + ".";
             loginForm.reset();

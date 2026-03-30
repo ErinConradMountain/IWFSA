@@ -55,6 +55,8 @@ test("web routes render baseline surfaces", async () => {
     assert.match(memberHtml, /member-login-credentials/);
     assert.match(memberHtml, /member-birthday-panel/);
     assert.match(memberHtml, /Open Birthday Circle/);
+    assert.match(memberHtml, /id="member-admin-link"/);
+    assert.match(memberHtml, /\/admin/);
     assert.match(adminHtml, /Admin Console/);
     assert.match(adminHtml, /Access/);
     assert.match(adminHtml, /data-admin-module-link="members"/);
