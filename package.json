@@ -1,1 +1,1 @@
-{"name": "IWFSA", "version": "1.0.0", "scripts": {"test": "node --test apps/api/test/*.test.mjs apps/web/test/*.test.mjs"}, "main": "index.js"}
+{"name":"IWFSA","version":"1.0.0","scripts":{"test":"node --test apps/api/test/*.test.mjs apps/web/test/*.test.mjs"},"main":"index.js","dependencies":{"busboy":"^1.6.0","xlsx":"file:vendor/xlsx"}}
