@@ -1,0 +1,11 @@
+{
+  "name": "xlsx",
+  "version": "0.20.2",
+  "description": "Minimal xlsx stub for IWFSA (local only)",
+  "type": "commonjs",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "license": "Apache-2.0"
+}
