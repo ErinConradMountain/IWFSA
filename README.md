@@ -47,12 +47,14 @@ Default deployment model:
 ## Current Status
 - Runtime baseline, database migrations, tests, and build pipeline are already in place.
 - The web UI is now aligned to a web-first delivery model with responsive public, member, and admin surfaces.
-- Current checkpoint in the build status table: `4.1 - Enhancements Wave`
+- Last completed checkpoint in the build status table: `4.1 - Enhancements Wave`
+- Active checkpoint in the build status table: `4.2 - Reporting and exports`
 
 ## Local Development
-1. `npm run migrate`
-2. `npm run dev:api`
-3. `npm run dev:web`
+1. `npm install`
+2. `npm run migrate`
+3. `npm run dev:api`
+4. `npm run dev:web`
 
 Or run both services together:
 - `npm run dev:all`

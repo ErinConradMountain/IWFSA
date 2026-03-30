@@ -9,10 +9,13 @@ This roadmap is executed with `docs/build-playbook.md`.
 - Keep unfinished items from the previous cycle integrated in the same checkpoint order.
 - Keep exactly one checkpoint marked `In Progress` in the playbook status table.
 
-## Current Restart Baseline (2026-02-15)
+## Current Restart Baseline (2026-03-30)
 - Checkpoints `2.1` through `2.5` are complete and validated.
 - Checkpoint `3.1` is complete with SharePoint document-flow foundations: persisted SharePoint identifiers, app-mediated upload/download APIs, availability windows, and RBAC/audience-gated access controls.
-- Active checkpoint is now `3.2` (Teams Graph Automation), remaining feature-flagged until tenant readiness and security approvals are confirmed.
+- Checkpoint `3.2` is complete with feature-flagged Teams Graph automation.
+- Checkpoint `3.3` is complete with feature-flagged calendar OAuth sync foundations.
+- Checkpoint `4.1` is complete with enhancement wave deliverables.
+- Active checkpoint is now `4.2` (Reporting and exports).
 - Prior cycle outputs remain retained and revalidated through the restart run sequence.
 
 ## Phase 0 - Blueprint and Decision Lock (Done)
@@ -59,7 +62,7 @@ Checkpoints:
 Exit criteria:
 - Data consistency, modular navigation, and notifications operations are all production-ready.
 
-## Phase 3 - Integrations and Automation (Active)
+## Phase 3 - Integrations and Automation (Done)
 Goal:
 - Add integrations while preserving governance, reliability, and fallback behavior.
 
@@ -71,7 +74,7 @@ Checkpoints:
 Exit criteria:
 - Integration controls and operational safety checks are validated.
 
-## Phase 4 - Enhancements (Backlog)
+## Phase 4 - Enhancements (Active)
 Goal:
 - Extend value only after core and integration checkpoints are stable.
 

@@ -580,7 +580,7 @@ Exit criteria:
 - The codebase is stable enough for the next direction wave.
 
 ## Phase 3 - Integrations and Automation
-Status: Queued
+Status: Done
 
 ### Checkpoint 3.1 - SharePoint Document Flow
 Objective:
@@ -672,8 +672,8 @@ Suggested status values:
 - Blocked
 - Done
 
-Status Table Last Updated: 2026-02-15
-Current Checkpoint: 4.1 - Enhancements Wave (Done)
+Status Table Last Updated: 2026-03-30
+Current Checkpoint: 4.2 - Reporting and exports (In Progress)
 
 | Checkpoint | Status | Notes |
 | --- | --- | --- |
@@ -698,3 +698,4 @@ Current Checkpoint: 4.1 - Enhancements Wave (Done)
 | 3.2 Teams Graph Automation | Done | Added feature-flagged Microsoft Graph automation for online meetings: publish creates Teams meetings, updates patch existing meetings, manual join-link fallback remains active, and meeting metadata is persisted in `event_online_meetings`. |
 | 3.3 Calendar Sync | Done | Added feature-flagged OAuth sync foundations for Google/Outlook: connect/disconnect endpoints, insert/update/cancel propagation on registration and event lifecycle changes, mapping persistence, and failure tracking with member-visible in-app alerts. |
 | 4.1 Enhancements Wave | Done | Delivered member SMS opt-in controls with limits/quiet-hours safety, admin reporting/export dashboard, publish-gated event minutes/agenda access policy for invited+attended members, organisation-wide celebration thread with moderator delete controls, and clear member/admin navigation for these features. |
+| 4.2 Reporting and exports | In Progress | Active enhancement checkpoint for reporting/export follow-up hardening and documentation validation. |
