@@ -36,3 +36,11 @@ docs/imports/*
 !docs/imports/members-fixture.csv
 !docs/imports/members-fixture-summary.json
 !docs/imports/members-fixture-issues.csv
+
+.vercel
+
+# Temp / scratch files
+tmp-html-dump.txt
+tmpclaude-*
+2Dos-*.txt
+test.json

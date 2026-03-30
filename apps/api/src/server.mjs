@@ -4,6 +4,7 @@ import { Readable } from "node:stream";
 import Busboy from "busboy";
 import * as XLSX from "xlsx";
 import { hashPassword, verifyPassword } from "./auth/passwords.mjs";
+import { ensureBootstrapAdmin } from "./auth/bootstrap-admin.mjs";
 import { openDatabase } from "./db/client.mjs";
 import { sendTransactionalEmail } from "./notifications/email.mjs";
 import { listUpcomingBirthdays } from "./birthdays.mjs";
@@ -1855,10 +1856,149 @@ function listMembers(database) {
     groupsByUser.get(row.userId).push(row.name);
   }
 
+  const roleRows = database
+    .prepare(
+      `
+      SELECT
+        member_role_assignments.user_id AS userId,
+        member_roles.name AS name
+      FROM member_role_assignments
+      JOIN member_roles ON member_roles.id = member_role_assignments.role_id
+      WHERE member_role_assignments.user_id IN (${placeholders})
+      ORDER BY member_roles.name
+    `
+    )
+    .all(...ids);
+
+  const rolesByUser = new Map();
+  for (const row of roleRows) {
+    if (!rolesByUser.has(row.userId)) {
+      rolesByUser.set(row.userId, []);
+    }
+    rolesByUser.get(row.userId).push(row.name);
+  }
+
   return members.map((member) => ({
     ...member,
-    groups: groupsByUser.get(member.id) || []
+    organisation: member.company || "",
+    groups: groupsByUser.get(member.id) || [],
+    roles: rolesByUser.get(member.id) || []
   }));
+}
+
+function ensureSeedMembers(database) {
+  const existing = database.prepare("SELECT COUNT(1) AS total FROM users WHERE role = 'member'").get();
+  const total = Number(existing?.total || 0);
+  if (total > 0) {
+    return { seeded: false, count: total };
+  }
+
+  const seedMembers = [
+    {
+      username: "nomsa",
+      email: "nomsa.dlamini@example.com",
+      fullName: "Nomsa Dlamini",
+      company: "Ubuntu Ventures",
+      phone: "+27821234567",
+      roles: ["Full Member"],
+      groups: ["Member Affairs"]
+    },
+    {
+      username: "thandi",
+      email: "thandi.vandyk@example.com",
+      fullName: "Thandi van Dyk",
+      company: "SageBridge Consulting",
+      phone: "+27721234567",
+      roles: ["Associate Member"],
+      groups: ["Brand and Reputation"]
+    },
+    {
+      username: "zara",
+      email: "zara.patel@example.com",
+      fullName: "Zara Patel",
+      company: "Grove Holdings",
+      phone: "+27831234567",
+      roles: ["Board Member"],
+      groups: ["Board of Directors"]
+    },
+    {
+      username: "lerato",
+      email: "lerato.maseko@example.com",
+      fullName: "Lerato Maseko",
+      company: "Maseko & Co.",
+      phone: "+27841234567",
+      roles: ["Full Member"],
+      groups: ["Strategic Alliances and Advocacy"]
+    },
+    {
+      username: "naledi",
+      email: "naledi.khumalo@example.com",
+      fullName: "Naledi Khumalo",
+      company: "Khumalo Legal",
+      phone: "+27851234567",
+      roles: ["Associate Member"],
+      groups: ["Leadership Development"]
+    },
+    {
+      username: "ava",
+      email: "ava.naidoo@example.com",
+      fullName: "Ava Naidoo",
+      company: "Naidoo Partners",
+      phone: "+27861234567",
+      roles: ["Full Member"],
+      groups: ["Catalytic Strategy and Voice"]
+    }
+  ];
+
+  const allGroups = seedMembers.flatMap((member) => member.groups || []);
+  const allRoles = seedMembers.flatMap((member) => member.roles || []);
+
+  runTransaction(database, () => {
+    const groupMap = ensureGroupIds(database, allGroups);
+    const roleMap = ensureRoleIds(database, allRoles);
+    const insertUser = database.prepare(
+      `
+      INSERT INTO users (
+        username,
+        email,
+        password_hash,
+        role,
+        status,
+        desired_status,
+        must_change_password,
+        must_change_username,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, 'member', 'active', 'active', 1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `
+    );
+    const insertProfile = database.prepare(
+      `
+      INSERT INTO member_profiles (user_id, full_name, company, phone, created_at, updated_at)
+      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `
+    );
+
+    for (const seed of seedMembers) {
+      const email = seed.email.toLowerCase();
+      const passwordHash = hashPassword(randomBytes(16).toString("hex"));
+      const insertResult = insertUser.run(seed.username, email, passwordHash);
+      const userId = insertResult.lastInsertRowid;
+      insertProfile.run(userId, seed.fullName, seed.company || null, seed.phone || null);
+
+      const groupIds = (seed.groups || [])
+        .map((name) => groupMap.get(name))
+        .filter((id) => Number.isInteger(id));
+      setGroupMemberships(database, userId, groupIds);
+
+      const roleIds = (seed.roles || [])
+        .map((name) => roleMap.get(name))
+        .filter((id) => Number.isInteger(id));
+      setRoleAssignments(database, userId, roleIds);
+    }
+  });
+
+  return { seeded: true, count: seedMembers.length };
 }
 
 function queueMemberInvites(database, userIds, actorUserId, { expiryHours = 72 } = {}) {
@@ -5058,6 +5198,18 @@ IWF Administrator`
 
 export async function startApiServer(config) {
   const database = openDatabase(config.databasePath);
+  try {
+    ensureBootstrapAdmin(database);
+    ensureSeedMembers(database);
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        event: "bootstrap_seed_failed",
+        message: String(error.message || error)
+      })
+    );
+  }
   const sharePointClient =
     config.sharePointClient ||
     createSharePointClient(config.sharePoint || {}, {
@@ -7185,8 +7337,19 @@ export async function startApiServer(config) {
         let groupIds = Array.isArray(payload.groupIds)
           ? payload.groupIds.map((id) => Number(id)).filter((id) => Number.isInteger(id))
           : [];
+        const groupNamesInput = Array.isArray(payload.groupNames)
+          ? payload.groupNames.map((name) => String(name || "").trim()).filter(Boolean)
+          : [];
+        const hasGroupNames = groupNamesInput.length > 0;
+        if (hasGroupNames) {
+          const groupMap = ensureGroupIds(database, groupNamesInput);
+          groupIds = groupNamesInput
+            .map((name) => Number(groupMap.get(name)))
+            .filter((id) => Number.isInteger(id));
+          audienceType = "groups";
+        }
         const audienceCode = normalizeAudienceCode(payload.audienceCode);
-        if (audienceCode) {
+        if (audienceCode && !hasGroupNames) {
           const mappedAudience = mapAudienceCodeToSelection(database, audienceCode);
           if (!mappedAudience) {
             writeJson(
@@ -8357,8 +8520,19 @@ export async function startApiServer(config) {
         let nextGroupIds = Array.isArray(payload.groupIds)
           ? payload.groupIds.map((id) => Number(id)).filter((id) => Number.isInteger(id))
           : null;
+        const groupNamesInput = Array.isArray(payload.groupNames)
+          ? payload.groupNames.map((name) => String(name || "").trim()).filter(Boolean)
+          : [];
+        const hasGroupNames = groupNamesInput.length > 0;
+        if (hasGroupNames) {
+          const groupMap = ensureGroupIds(database, groupNamesInput);
+          nextGroupIds = groupNamesInput
+            .map((name) => Number(groupMap.get(name)))
+            .filter((id) => Number.isInteger(id));
+          nextAudienceType = "groups";
+        }
         const audienceCode = payload.audienceCode !== undefined ? normalizeAudienceCode(payload.audienceCode) : "";
-        if (audienceCode) {
+        if (audienceCode && !hasGroupNames) {
           const mappedAudience = mapAudienceCodeToSelection(database, audienceCode);
           if (!mappedAudience) {
             writeJson(

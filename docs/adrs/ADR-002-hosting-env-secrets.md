@@ -1,38 +1,41 @@
 # ADR-002 Hosting, Environment Strategy, and Secret Handling
 
 ## Title
-Initial hosting and environment strategy for MVP build start
+Initial web hosting and environment strategy for MVP build start
 
 ## Status
 Accepted
 
 ## Context
-Phase 0.1 requires explicit decisions for hosting model, environment progression, and secret management before significant implementation. The solution must stay simple for MVP and enforce secure handling of credentials and tokens.
+The IWFSA product is delivered as a standalone web application. We need a hosting model that keeps MVP delivery simple while preserving clean paths for future scaling and secure integration work.
 
 ## Decision
-- Hosting model (MVP baseline):
-  - deploy API and web services together on a single host boundary (single VM or container group) behind TLS termination.
-  - keep app processes logically separated (`apps/api`, `apps/web`) even when co-hosted.
+- Hosting model:
+  - deploy the application as a normal web platform, not as a SharePoint-hosted surface
+  - co-host web and API behind one TLS boundary for MVP simplicity
+  - keep `apps/web` and `apps/api` logically separate even when deployed together
 - Environments:
-  - `dev`: local workstation using `.env` (never committed).
-  - `staging`: production-like config, isolated data, used for release validation.
-  - `prod`: hardened runtime with least-privilege credentials.
-- Secret management:
-  - do not store secrets in repository.
-  - use environment variable injection from a platform secret store in staging/prod.
-  - keep a committed `.env.example` for required keys and non-secret defaults only.
+  - `dev`: local workstation using `.env` that is never committed
+  - `staging`: production-like validation environment with isolated data
+  - `prod`: hardened runtime with least-privilege credentials
+- Secret handling:
+  - never store secrets in the repository
+  - inject secrets from a platform secret store or deployment environment
+  - keep `.env.example` limited to non-secret defaults and required key names
+- Integrations:
+  - treat SharePoint, Teams, and similar provider features as optional back-end integrations
+  - do not make external platforms prerequisites for basic web hosting
 
 ## Consequences
-- Benefit: deployment path stays operationally simple while preserving clear upgrade routes.
-- Tradeoff: co-hosted services have tighter failure coupling than fully separated services.
+- Benefit: the product can ship and operate as a normal website without waiting on Microsoft 365 setup
+- Benefit: optional integrations can be enabled progressively behind feature flags
+- Tradeoff: co-hosted services have tighter operational coupling than fully separated services
 - Follow-up:
-  - add platform-specific runbooks once infrastructure provider is finalized,
-  - introduce environment-specific health checks and release promotion rules in CI/CD,
-  - reassess when queue workers and external integrations move into active scope.
+  - document platform-specific deployment runbooks once the infrastructure provider is finalized
+  - add health checks and release promotion rules per environment
+  - reassess the topology when dedicated workers and external integrations become critical-path services
 
-## Restart-Run Revalidation (2026-02-08)
-- Revalidated environment and secret-handling alignment:
-  - `.env.example` exists and contains non-secret runtime keys only.
-  - CI workflow keeps a reproducible Node 22 quality gate path.
-  - Repository policy and docs remain aligned on "no secrets in git".
-- Decision remains accepted for restart-run execution.
+## Revalidation
+- `.env.example` remains aligned with a standalone web deployment model
+- repository policy remains "no secrets in git"
+- decision still fits the current architecture and build flow

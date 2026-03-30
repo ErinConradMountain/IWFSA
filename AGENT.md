@@ -4,7 +4,7 @@ This file defines how delivery decisions are made and how checkpoint work is exe
 
 ## 1) Source of Truth Order
 Use documents in this order when there is ambiguity:
-1. `docs/build-playbook.md` (execution details and tracker)
+1. `docs/build-playbook.md` (execution details and status table)
 2. `docs/roadmap.md` (phase and checkpoint sequencing)
 3. `docs/product-requirements.md` (functional/non-functional requirements)
 4. `.github/copilot-instructions.md` (custom assistant behavior for this repo)

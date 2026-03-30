@@ -1,93 +1,55 @@
-﻿# IWFSA Web Application (Public + Member Portal + Admin)
+# IWFSA Web Platform
 
-This repository hosts the IWFSA (International Women's Forum South Africa) web application.
+This repository hosts the standalone IWFSA web application.
 
-## Goal
-Create a modern web experience that:
-- Presents a public landing site (marketing + general information)
-- Provides a member-only portal (authenticated) for internal events and member services
-- Provides an admin console (restricted) for managing members, events, permissions, and content
+The product is delivered as its own web platform rather than as a SharePoint-hosted experience. Microsoft 365 services remain optional integrations for event documents, Teams meeting automation, and calendar sync.
 
-## Core Features (MVP)
-### Public (non-members)
-- Marketing/brand site: mission, leadership, contact, partners/sponsors
-- Member login entry point
-- No internal event visibility
+## Product Surfaces
+- Public website for mission, conference, contact, and external storytelling
+- Member portal for events, registrations, notifications, birthdays, SMS preferences, and celebration threads
+- Admin console for member operations, imports, event management, notification monitoring, reporting, and moderation
 
-### Members (authenticated)
-- Event listing with filters: week / month / year
-- Event details: venue (physical) or Teams (online), time, chairperson/host, capacity
-- Registration: one-click sign-up, capacity tracking, waitlist when full
-- Countdown to registration close
-- Notifications on event changes: postponed/cancelled
-- Add-to-calendar options (manual): `.ics` download, Google add link, Outlook add link
+## Architecture Summary
+- `apps/web`: Node-served web UI shells for public, member, and admin routes
+- `apps/api`: Node API for auth, events, notifications, members, imports, documents, and reporting
+- `data`: SQLite database used by the modular monolith
+- `docs`: product, architecture, deployment, operations, and integration guidance
 
-### Administrators
-- Full CRUD for events and member records
-- Provision members via Excel import and send onboarding invites
-- Trigger member credential resets (private delivery)
-- Event publishing and delegation:
-  - Members/event editors/admins can publish directly from draft (no moderation gate)
-  - Event creators can assign event-scoped editors for their own events
-- Delegate event editing rights per-event (event-scoped permissions)
-- Event change notifications to registrants
-- Audit log + rollback for event edits and permission changes
+Default deployment model:
+- Web and API run as a standalone web application behind TLS on a normal web host or container platform.
+- SharePoint is not the host for the app itself.
+- SharePoint and Microsoft Teams can be switched on later as optional back-end integrations.
 
-## Build Workflow (Step-by-Step)
-During implementation, we build this system checkpoint by checkpoint with Codex guidance.
-
-Start here:
-1. `AGENT.md` - collaboration contract and build session protocol
-2. `docs/build-playbook.md` - detailed phase/checkpoint execution guide
-3. `docs/roadmap.md` - phase goals and exit criteria
-4. `.github/copilot-instructions.md` - repository custom instructions for assistants
-
-Working rule:
-- Do not start a new checkpoint until the current one meets its exit criteria.
-
-## Online Events (Microsoft Teams)
-- Target: no anonymous join; guest access may apply depending on tenant policy.
-- Preferred automation (when available): generate Teams join links via Microsoft Graph.
-- Fallback (if tenant/app registration causes delays): admin manually pastes the Teams join link.
-
-Details: see `docs/integrations/microsoft-teams.md`.
+## Core Capabilities
+- Public content that never leaks internal member activity
+- Authenticated member event directory with waitlist and calendar support
+- Birthday visibility and celebration tooling with consent-aware handling
+- Admin member import from Excel plus invite and credential-reset flows
+- Event publishing, collaboration, notification delivery, and reporting
 
 ## Documentation Index
 - Product requirements: `docs/product-requirements.md`
+- Architecture overview: `docs/architecture.md`
+- Web deployment model: `docs/web-deployment-model.md`
 - Security and privacy baseline: `docs/privacy-baseline.md`
-- Member import (Excel) spec: `docs/member-import.md`
-- Member import service contract (API/process): `docs/member-import-service-contract.md`
-- Change alignment log (break-risk decisions): `docs/change-alignment-log.md`
-- Roles & permissions (RBAC): `docs/rbac-permissions.md`
-- Data model (draft): `docs/data-model.md`
-- Notifications & messaging: `docs/notifications.md`
+- Roles and permissions: `docs/rbac-permissions.md`
+- Data model: `docs/data-model.md`
+- Notifications and messaging: `docs/notifications.md`
+- Member import spec: `docs/member-import.md`
+- Member import service contract: `docs/member-import-service-contract.md`
 - Admin runbook: `docs/admin-runbook.md`
-- Calendar options: `docs/integrations/calendars.md`
-- Microsoft Teams automation: `docs/integrations/microsoft-teams.md`
-- Social media posting (optional): `docs/integrations/social-media.md`
-- SharePoint document storage: `docs/integrations/sharepoint.md`
-- Microsoft 365 tenant setup checklist: `docs/integrations/m365-setup-checklist.md`
-- Architecture (draft): `docs/architecture.md`
-- Build playbook: `docs/build-playbook.md`
-- Custom assistant instructions: `.github/copilot-instructions.md`
+- Calendar integration options: `docs/integrations/calendars.md`
+- Microsoft Teams integration: `docs/integrations/microsoft-teams.md`
+- Optional SharePoint document storage integration: `docs/integrations/sharepoint.md`
+- Optional Microsoft 365 setup checklist: `docs/integrations/m365-setup-checklist.md`
+- Social media and celebration workflow: `docs/integrations/social-media.md`
 
-## Status
-This repo is now in active implementation.
+## Current Status
+- Runtime baseline, database migrations, tests, and build pipeline are already in place.
+- The web UI is now aligned to a web-first delivery model with responsive public, member, and admin surfaces.
+- Current checkpoint in the build status table: `4.1 - Enhancements Wave`
 
-Completed baseline:
-- ADRs for stack/hosting/environment strategy
-- Initial `apps/api` and `apps/web` scaffold
-- SQLite migration runner and baseline schema
-- CI checks for lint, typecheck, test, and build
-
-Restart run (beginning from plan start):
-- Restart at `0.1` and progress checkpoint-by-checkpoint through the full plan.
-- Prior implemented work is carried forward as baseline and revalidated.
-- Unfinished work from the prior cycle remains integrated and is executed in sequence (`2.2+` when reached).
-
-Current checkpoint: `4.1 - Enhancements Wave`
-
-## Local Run
+## Local Development
 1. `npm run migrate`
 2. `npm run dev:api`
 3. `npm run dev:web`
@@ -96,8 +58,8 @@ Or run both services together:
 - `npm run dev:all`
 - `npm run dev:stop`
 
-## Temporary Bootstrap Admin (Local Dev)
+## Temporary Bootstrap Admin
 - Username: `akeida`
-- Password: `akeida123`
+- Password: `1possibility`
 
-This account is seeded automatically during migrations if it does not already exist.
+This account is seeded automatically during migrations and refreshed if an older database snapshot drifts from the expected credentials.

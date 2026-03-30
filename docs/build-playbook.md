@@ -102,7 +102,7 @@ Plain-English checkpoint map:
 - 1.7 Calendar Actions and Teams Fallback: give members calendar links and manual Teams links.
 - 1.8 Birthdays Sidebar: show upcoming birthdays only when consent allows.
 - 1.9 Admin Console UX and Event Hub: separate admin panels, persist help/tooltips, ship the Event Hub card layout, add queue status visibility, and expose business audience options.
-- 2.1 Planning and Knowledge Base Reset: refresh docs, checkpoint sequencing, and tracker alignment for a new build session.
+- 2.1 Planning and Knowledge Base Reset: refresh docs, checkpoint sequencing, and status-table alignment for a new build session.
 - 2.2 Membership Data Consistency Hardening: enforce one canonical member-import membership set and remove duplicate import staging structures.
 - 2.3 Navigation & UX v2: introduce modular navigation within Public, Member Portal, and Admin Console so admins and members can jump between modules instead of scrolling.
 - 2.4 Notifications UX Simplification: simplify Notification Delivery Report and Queue Status views so admins see clear, member-centric information and queue health at a glance.
@@ -478,12 +478,12 @@ Objective:
 
 Tasks:
 - Renumber checkpoint plan to keep one sequential structure.
-- Align `docs/build-playbook.md`, `docs/roadmap.md`, and tracker-facing language.
+- Align `docs/build-playbook.md`, `docs/roadmap.md`, and status-table language.
 - Refresh delivered features and open work in the progress model.
 - Refresh session templates and handover expectations for iterative build sessions.
 
 Validation:
-- Build tracker resolves one clear in-progress checkpoint.
+- Status table resolves one clear in-progress checkpoint.
 - Roadmap and playbook do not disagree on active phase/checkpoint naming.
 
 Exit criteria:
@@ -570,7 +570,7 @@ Objective:
 
 Tasks:
 - Run targeted API/web regression for changed checkpoints.
-- Verify migrations, tracker parsing, and admin/member critical flows.
+- Verify migrations, status-table parsing, and admin/member critical flows.
 - Capture residual risks and define go/no-go criteria for integration wave start.
 
 Validation:
@@ -663,8 +663,8 @@ Use this short template at the end of each build session:
 3. Open risks/blockers
 4. Next checkpoint or remaining tasks
 
-## 8) Progress Tracking
-Maintain a simple status table in this file (or an adjacent tracker) as work proceeds.
+## 8) Execution Status
+Maintain a simple status table in this file as work proceeds.
 
 Suggested status values:
 - Not Started
@@ -672,7 +672,7 @@ Suggested status values:
 - Blocked
 - Done
 
-Tracker Last Updated: 2026-02-15
+Status Table Last Updated: 2026-02-15
 Current Checkpoint: 4.1 - Enhancements Wave (Done)
 
 | Checkpoint | Status | Notes |

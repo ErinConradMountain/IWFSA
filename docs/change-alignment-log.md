@@ -65,7 +65,7 @@ Use this structure for each new proposal:
 - Status: Resolved
 - Potential break:
   - Playbook contained branch-style checkpoint numbering (`1.1.1`) and roadmap phase naming drift.
-  - Tracker-facing docs could diverge from active build execution order.
+  - Status-table-facing docs could diverge from active build execution order.
 - Impacted docs:
   - `docs/build-playbook.md`
   - `docs/roadmap.md`
@@ -76,7 +76,7 @@ Use this structure for each new proposal:
   - Move integration/enhancement waves to `3.x` and `4.x`.
 - Mitigation applied:
   - Renumbered planning checkpoints to a single sequential structure.
-  - Set one active in-progress checkpoint (`2.1`) for tracker clarity.
+  - Set one active in-progress checkpoint (`2.1`) for status-table clarity.
   - Synced roadmap phase/checkpoint IDs to the playbook.
 
 ### CAL-004 - Incorporating UX and notification suggestions into the active wave
@@ -116,7 +116,7 @@ Use this structure for each new proposal:
   - Keep prior implementation as carry-forward baseline evidence at each checkpoint.
   - Keep unfinished prior-cycle work (especially `2.2+`) explicitly integrated in the same order.
 - Mitigation applied:
-  - Updated tracker current checkpoint to `0.1` with one active in-progress row.
+  - Updated status table current checkpoint to `0.1` with one active in-progress row.
   - Reframed roadmap and agent/custom instruction files to the restart-run model.
   - Updated public plan messaging to match restart-run execution state.
 
@@ -134,10 +134,10 @@ Use this structure for each new proposal:
   - `README.md`
 - Alignment decision:
   - Close checkpoint `0.1` after explicit revalidation notes are recorded in ADRs.
-  - Move active checkpoint to `0.2` and preserve single in-progress tracker rule.
+  - Move active checkpoint to `0.2` and preserve single in-progress status-table rule.
 - Mitigation applied:
   - Added restart-run revalidation sections in both ADRs.
-  - Updated tracker and current-checkpoint references from `0.1` to `0.2`.
+  - Updated status table and current-checkpoint references from `0.1` to `0.2`.
 
 ### CAL-007 - Checkpoint 0.2 privacy-baseline closure and transition to 0.3
 - Date: 2026-02-08

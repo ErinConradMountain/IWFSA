@@ -1,7 +1,7 @@
 # Microsoft Teams Integration (Draft)
 
 ## Objective
-For online events, generate a Teams join link automatically when publishing (preferred), while supporting a manual fallback.
+For the standalone IWFSA web app, generate a Teams join link automatically when publishing online events (preferred), while supporting a manual fallback.
 
 ## Constraints
 - No anonymous joining.

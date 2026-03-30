@@ -1,76 +1,71 @@
-# Architecture (Draft)
+# Architecture
 
 ## Strategic Positioning
-This platform is not "a website with logins." It is a governance-aware digital operating system for an elite women's leadership forum, designed to protect trust, enable participation, and strengthen the global IWF ecosystem.
+This platform is a governance-aware web operating system for IWFSA.
 
-## Delivery Guardrails
-- Member value without overexposure: events are intentional, there is no public leakage of internal activity, and member experiences respect seniority, privacy, and consent.
-- MVP-first, future-ready architecture: ship a modular monolith with clear boundaries now, extract services later, and defer integration-heavy automation until governance/budget/readiness allows.
+It is not a SharePoint page customization. It is a standalone web application with optional Microsoft 365 integrations.
 
-## Chosen Stack Baseline
-Phase 0.1 decisions are captured in:
-- `docs/adrs/ADR-001-runtime-stack.md`
-- `docs/adrs/ADR-002-hosting-env-secrets.md`
+## Delivery Model
+- Standalone public web application served over a normal web host or container platform
+- Separate web and API applications with a shared repository and deployment boundary
+- Web-first routes for public, member, and admin experiences
+- Optional integrations behind the API for documents, online meetings, and calendar sync
 
-Implementation baseline for checkpoint 1.1:
-- Runtime: Node.js 22+ with ESM modules.
-- Application layout:
-  - `apps/web` for public/member/admin UI shells.
-  - `apps/api` for internal APIs and data access.
-- Data layer: SQLite using Node's built-in `node:sqlite` module with migration files.
-- HTTP baseline: built-in `node:http`.
-- Tests: Node built-in test runner (`node:test`).
+See also: `docs/web-deployment-model.md`
 
-## High-level Components
-- Public website (marketing and mission content)
-- Member portal (authenticated)
-- Admin console (authenticated + elevated permissions)
-- API (auth, events, signups, notifications, audit)
-- Database (members, events, signups, roles, revisions)
+## Chosen Baseline
+- Runtime: Node.js 22+ with ESM modules
+- Web UI: `apps/web`
+- API: `apps/api`
+- Data layer: SQLite via Node built-ins and SQL migrations
+- HTTP baseline: built-in `node:http`
+- Tests: Node built-in test runner
 
-## Key Design Principles
-- Public pages contain no internal event data.
-- All internal APIs require authentication.
-- RBAC + event-scoped permissions.
-- Audit logging for sensitive actions.
-- Reliable notifications via queue.
-- Privacy by design: minimize personal data and enforce consent before non-essential/public processing.
-- No social publication path without explicit opt-in consent checks.
-- Operational reliability by default: idempotent async jobs, retry safety, and visible admin outcomes.
-- Security/privacy baseline details (inventory, consent, retention) are defined in `docs/privacy-baseline.md`.
+## High-Level Components
+- Public website
+- Member portal
+- Admin console
+- API for auth, members, events, notifications, documents, and reporting
+- Database for members, events, signups, roles, revisions, and audit history
 
-## Integrations
-- Microsoft Teams (Graph): create join links for online events where possible.
-- Calendars: ICS + Google/Outlook add links (MVP), OAuth sync (Phase 3).
-- SharePoint: store event documents with app-mediated access.
-- Social media (optional): publish/schedule approved birthday posts via platform APIs.
+## Core Design Principles
+- Public pages never expose internal event data
+- Internal APIs require authentication and role checks
+- RBAC and event-scoped permissions govern operational access
+- Privacy-by-design and consent-aware handling apply to birthdays, photos, and social posting
+- Audit logging captures sensitive administrative actions
+- Background work must be retry-safe and operationally visible
+
+## Integration Strategy
+Default platform operation does not require Microsoft 365.
+
+Optional integrations:
+- Microsoft Teams / Graph for creating online meeting links
+- SharePoint for protected event document storage
+- Calendar sync providers for direct insert/update behavior
+- Social channels for approved celebration posts
+
+## Hosting Guidance
+- Co-host web and API behind one TLS boundary for MVP simplicity
+- Keep `apps/web` and `apps/api` logically separate for future extraction
+- Use environment-based secret injection in staging and production
+- Treat integration features as feature-flagged and easy to disable
 
 ## Background Jobs
-- Use a queue/worker for:
-  - notification fan-out
-  - member import processing (Excel validation + create/update)
-  - onboarding invite sending
-  - credential reset sending
-  - scheduled publishing (birthday social posts)
-  - image rendering
-  - daily automation runs
+Use queue or worker processes for:
+- notification fan-out
+- member import processing
+- onboarding invites
+- credential resets
+- scheduled social workflows
+- image generation and other async tasks
 
 Reliability requirements:
-- Jobs must be idempotent using stable dedupe/idempotency keys.
-- Retries must not create duplicate side effects (duplicate sends, duplicate user creation, duplicate invites).
-- Admin UI/API must expose clear job outcomes (queued, processing, succeeded, failed, retrying).
+- idempotent execution
+- retry safety
+- clear admin-visible outcomes
 
-## Operational Intelligence (Designed-for, post-MVP)
-- Attendance trends by programme type.
-- Capacity vs demand insights (registrations, waitlists, no-shows where tracked).
-- Leadership pipeline signals (host/chair/mentor participation over time).
-- Conference readiness dashboards (for example Cornerstone preparation indicators).
-
-## Approval Links (Security)
-- If approvals are actioned via email links, use short-lived, single-use tokens.
-- Store only a hash of the token; require authentication when risk policy demands it.
-
-## Onboarding and Reset Links (Security)
-- Invitation and credential reset links follow the same pattern: short-lived, single-use tokens.
-- Store only hashed tokens; never log raw tokens.
-- If a temporary password is used, it must be forced to change on first use and should expire.
+## Security Notes
+- Approval, activation, reset, and RSVP links must use short-lived single-use tokens
+- Store hashes of sensitive tokens, not raw token values
+- Never expose SharePoint or other provider credentials to end users

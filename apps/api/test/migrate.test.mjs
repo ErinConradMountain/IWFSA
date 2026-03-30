@@ -5,6 +5,8 @@ import path from "node:path";
 import test from "node:test";
 import { runMigrations } from "../src/db/migrate.mjs";
 import { openDatabase } from "../src/db/client.mjs";
+import { BOOTSTRAP_ADMIN } from "../src/auth/bootstrap-admin.mjs";
+import { hashPassword, verifyPassword } from "../src/auth/passwords.mjs";
 
 test("runMigrations applies baseline exactly once", () => {
   const workingDirectory = mkdtempSync(path.join(tmpdir(), "iwfsa-migrate-"));
@@ -94,6 +96,40 @@ test("runMigrations applies baseline exactly once", () => {
       assert.equal(adminUser.status, "active");
     } finally {
       database.close();
+    }
+  } finally {
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("runMigrations restores the bootstrap admin credentials when they drift", () => {
+  const workingDirectory = mkdtempSync(path.join(tmpdir(), "iwfsa-migrate-"));
+  const databasePath = path.join(workingDirectory, "test.db");
+
+  try {
+    runMigrations({ databasePath });
+
+    const database = openDatabase(databasePath);
+    try {
+      database
+        .prepare("UPDATE users SET password_hash = ?, updated_at = ? WHERE username = ?")
+        .run(hashPassword("stale-password"), new Date().toISOString(), BOOTSTRAP_ADMIN.username);
+    } finally {
+      database.close();
+    }
+
+    const rerun = runMigrations({ databasePath });
+    assert.equal(rerun.bootstrapAdminCreated, false);
+
+    const repairedDatabase = openDatabase(databasePath);
+    try {
+      const adminUser = repairedDatabase
+        .prepare("SELECT password_hash AS passwordHash FROM users WHERE username = ?")
+        .get(BOOTSTRAP_ADMIN.username);
+
+      assert.equal(verifyPassword(BOOTSTRAP_ADMIN.password, adminUser.passwordHash), true);
+    } finally {
+      repairedDatabase.close();
     }
   } finally {
     rmSync(workingDirectory, { recursive: true, force: true });

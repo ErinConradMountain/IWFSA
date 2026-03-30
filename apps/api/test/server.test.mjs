@@ -7,6 +7,7 @@ import * as XLSX from "xlsx";
 import { runMigrations } from "../src/db/migrate.mjs";
 import { openDatabase } from "../src/db/client.mjs";
 import { startApiServer } from "../src/server.mjs";
+import { BOOTSTRAP_ADMIN } from "../src/auth/bootstrap-admin.mjs";
 import { hashPassword } from "../src/auth/passwords.mjs";
 import { EMAIL_OUTBOX_GLOBAL_KEY } from "../src/notifications/email.mjs";
 
@@ -35,6 +36,36 @@ function isoDaysFromNow(daysFromNow, durationHours = 0) {
   const nowMs = Date.now();
   const eventMs = nowMs + daysFromNow * 24 * 60 * 60 * 1000 + durationHours * 60 * 60 * 1000;
   return new Date(eventMs).toISOString();
+}
+
+function isoUtcCalendar(daysFromToday, hours = 0, minutes = 0, seconds = 0) {
+  const now = new Date();
+  return new Date(
+    Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate() + daysFromToday,
+      hours,
+      minutes,
+      seconds,
+      0
+    )
+  ).toISOString();
+}
+
+function shiftIsoHours(isoValue, hours) {
+  return new Date(Date.parse(isoValue) + hours * 60 * 60 * 1000).toISOString();
+}
+
+function getSeedEventSchedule() {
+  return {
+    leadershipStartAt: isoUtcCalendar(5, 10),
+    leadershipEndAt: isoUtcCalendar(5, 12),
+    leadershipRegistrationClosesAt: isoUtcCalendar(4, 23, 59, 59),
+    boardStartAt: isoUtcCalendar(9, 10),
+    boardEndAt: isoUtcCalendar(9, 12),
+    boardRegistrationClosesAt: isoUtcCalendar(8, 23, 59, 59)
+  };
 }
 
 function extractTokenFromText(text, pathSegment) {
@@ -147,6 +178,7 @@ function createFakeCalendarSyncClient() {
 async function createRunningServer(options = {}) {
   const workingDirectory = mkdtempSync(path.join(tmpdir(), "iwfsa-api-"));
   const databasePath = path.join(workingDirectory, "test.db");
+  const seedEventSchedule = getSeedEventSchedule();
 
   runMigrations({ databasePath });
 
@@ -218,12 +250,12 @@ async function createRunningServer(options = {}) {
     .run(
       "Leadership Roundtable",
       "Member-only strategy discussion.",
-      "2026-03-01T10:00:00Z",
-      "2026-03-01T12:00:00Z",
+      seedEventSchedule.leadershipStartAt,
+      seedEventSchedule.leadershipEndAt,
       "physical",
       "Johannesburg",
       50,
-      "2026-02-28T23:59:59Z",
+      seedEventSchedule.leadershipRegistrationClosesAt,
       "published"
     );
 
@@ -255,12 +287,12 @@ async function createRunningServer(options = {}) {
     .run(
       "Board Strategy",
       "Board-only event.",
-      "2026-03-05T10:00:00Z",
-      "2026-03-05T12:00:00Z",
+      seedEventSchedule.boardStartAt,
+      seedEventSchedule.boardEndAt,
       "physical",
       "Cape Town",
       20,
-      "2026-03-04T23:59:59Z",
+      seedEventSchedule.boardRegistrationClosesAt,
       "groups",
       "published"
     );
@@ -337,7 +369,7 @@ test("GET /api/events returns published events", async () => {
     const login = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const loginPayload = await login.json();
     const response = await fetch(`http://${server.host}:${server.port}/api/events`, {
@@ -403,8 +435,8 @@ test("POST /api/auth/login authenticates bootstrap admin", async () => {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        username: "akeida",
-        password: "akeida123"
+        username: BOOTSTRAP_ADMIN.username,
+        password: BOOTSTRAP_ADMIN.password
       })
     });
     const payload = await response.json();
@@ -541,7 +573,7 @@ test("POST /api/members stores group memberships and records audit logs", async 
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -660,7 +692,7 @@ test("GET /api/admin/event-audiences returns required audience options for admin
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -827,7 +859,7 @@ test("Member can create/edit/publish own draft event and cannot edit another mem
     const chiefLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const chiefPayload = await chiefLogin.json();
     assert.equal(chiefLogin.status, 200);
@@ -879,7 +911,7 @@ test("Member event listing supports week/month/year filters", async () => {
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -962,7 +994,7 @@ test("Event lifecycle follows draft -> publish-on-submit and keeps submit/approv
     const chiefLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const chiefPayload = await chiefLogin.json();
     assert.equal(chiefLogin.status, 200);
@@ -1048,7 +1080,7 @@ test("Audience code mapping and lifecycle audit logs are recorded", async () => 
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -1135,7 +1167,7 @@ test("Event publish notifications are idempotent and visible in admin deliveries
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -1288,7 +1320,7 @@ test("Event rollback restores snapshot and triggers participant notification del
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -1655,7 +1687,7 @@ test("Event editor can publish own draft and can edit after publish for own even
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -1677,6 +1709,7 @@ test("Event editor can publish own draft and can edit after publish for own even
 
 test("Overlapping meeting creation stays allowed and creates clash warning notification for creator", async () => {
   const { server, workingDirectory } = await createRunningServer();
+  const seedEventSchedule = getSeedEventSchedule();
 
   try {
     const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
@@ -1696,8 +1729,8 @@ test("Overlapping meeting creation stays allowed and creates clash warning notif
       body: JSON.stringify({
         title: "Overlap Warning Event",
         description: "Should overlap with the seeded event.",
-        startAt: "2026-03-01T11:00:00Z",
-        endAt: "2026-03-01T13:00:00Z",
+        startAt: shiftIsoHours(seedEventSchedule.leadershipStartAt, 1),
+        endAt: shiftIsoHours(seedEventSchedule.leadershipStartAt, 3),
         venueType: "physical",
         capacity: 20,
         audienceType: "all_members"
@@ -1868,7 +1901,7 @@ test("Meeting invitations include RSVP email links and RSVP tokens confirm parti
     const chiefLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const chiefPayload = await chiefLogin.json();
     assert.equal(chiefLogin.status, 200);
@@ -2066,7 +2099,7 @@ test("A member can register for multiple different events", async () => {
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
     assert.equal(adminLogin.status, 200);
@@ -2203,7 +2236,7 @@ test("Meeting planning endpoints return organizer summary and send scoped update
     const chiefLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const chiefPayload = await chiefLogin.json();
     assert.equal(chiefLogin.status, 200);
@@ -2275,7 +2308,7 @@ test("DELETE /api/events enforces draft-only creator deletes unless event-scoped
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -2403,7 +2436,7 @@ test("Registration enforces one-signup, atomic capacity, and waitlist promotion"
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -2549,7 +2582,7 @@ test("Waitlist promotion remains FIFO across repeated cancellations", async () =
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -2704,7 +2737,7 @@ test("High-concurrency registrations do not oversubscribe capacity", async () =>
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -2818,7 +2851,7 @@ test("Registration close enforces deadline and supports per-user override", asyn
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -2952,7 +2985,7 @@ test("Personal reminder preferences can be set and dispatched", async () => {
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
     const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
@@ -3066,7 +3099,7 @@ test("Event editor grant accepts member targets for event-scoped editing", async
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -3096,7 +3129,7 @@ test("Event editor grant enables edit access", async () => {
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -3426,7 +3459,7 @@ test("Event editor revoke writes audit log", async () => {
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -3487,7 +3520,7 @@ test("RBAC matrix enforces protected event and admin routes across roles", async
     const chiefLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const chiefPayload = await chiefLogin.json();
     assert.equal(chiefLogin.status, 200);
@@ -3665,7 +3698,7 @@ test("User role changes require chief admin and are audit logged with grant revo
     const chiefLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const chiefPayload = await chiefLogin.json();
     assert.equal(chiefLogin.status, 200);
@@ -3768,7 +3801,7 @@ test("Cannot demote the last chief admin account", async () => {
     const chiefLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const chiefPayload = await chiefLogin.json();
     assert.equal(chiefLogin.status, 200);
@@ -3800,7 +3833,7 @@ test("Member import dry-run and apply create members", async () => {
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -3916,7 +3949,7 @@ test("Member import apply blocked by duplicate email", async () => {
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -3977,7 +4010,7 @@ test("Member import dry-run reuses saved upload when file is omitted", async () 
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -4037,7 +4070,7 @@ test("Member import row edits update persisted data before apply", async () => {
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -4202,7 +4235,7 @@ test("Onboarding invite activates member with token", async () => {
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -4319,7 +4352,7 @@ test("Credential reset requires token redemption", async () => {
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -4437,7 +4470,7 @@ test("Checkpoint 1.6: one in-app send per user/channel/version (idempotency)", a
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -4550,7 +4583,7 @@ test("Checkpoint 1.6: event cancellation notifies registered participants", asyn
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -4656,7 +4689,7 @@ test("Checkpoint 1.6: admin notification-queue returns health summary with count
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -4688,7 +4721,7 @@ test("Checkpoint 1.6: admin delivery report includes member-centric data", async
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -4778,7 +4811,7 @@ test("Checkpoint 1.6: waitlist promotion creates in-app notification and email d
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -4908,7 +4941,7 @@ test("Checkpoint 1.6: event revision snapshots and rollback with notification", 
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -5063,7 +5096,7 @@ test("Checkpoint 1.6: mark-read works for individual and markAll", async () => {
     const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "akeida", password: "akeida123" })
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
     });
     const adminPayload = await adminLogin.json();
 
@@ -6592,3 +6625,4 @@ test("Checkpoint 4.1: social moderation and reporting export endpoints are avail
     rmSync(workingDirectory, { recursive: true, force: true });
   }
 });
+

@@ -15,7 +15,7 @@ If any of these disagree, update them together in the same change.
 - Revalidate carried-forward implemented work at each checkpoint.
 - Execute unfinished prior-cycle scope when reached (especially `2.2+`).
 
-Keep exactly one checkpoint marked `In Progress` in the playbook tracker table.
+Keep exactly one checkpoint marked `In Progress` in the playbook status table.
 
 ## 3) Scope and Governance Guardrails
 - Do not broaden scope outside the active checkpoint.

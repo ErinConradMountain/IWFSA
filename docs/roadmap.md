@@ -7,7 +7,7 @@ This roadmap is executed with `docs/build-playbook.md`.
 - Run checkpoints strictly in sequence from `0.1` onward.
 - Carry forward prior implemented work as baseline evidence, then validate and complete gaps.
 - Keep unfinished items from the previous cycle integrated in the same checkpoint order.
-- Keep exactly one checkpoint marked `In Progress` in the playbook tracker.
+- Keep exactly one checkpoint marked `In Progress` in the playbook status table.
 
 ## Current Restart Baseline (2026-02-15)
 - Checkpoints `2.1` through `2.5` are complete and validated.

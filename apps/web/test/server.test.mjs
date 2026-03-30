@@ -32,12 +32,9 @@ test("web routes render baseline surfaces", async () => {
     assert.equal(resetResponse.status, 200);
     assert.equal(rsvpResponse.status, 200);
     assert.match(publicHtml, /Public Surface/);
-    assert.match(publicHtml, /Build Progress Tracker/);
-    assert.match(publicHtml, /Source:\s*<code>docs\/build-playbook\.md<\/code>/);
-    assert.match(
-      publicHtml,
-      /Current checkpoint:\s*<strong>Checkpoint \d+(?:\.[0-9]+)+ - [^<]+<\/strong>|No active checkpoint is selected yet\./
-    );
+    for (const html of [publicHtml, memberHtml, adminHtml]) {
+      assert.doesNotMatch(html, /Build Progress Tracker/);
+    }
     assert.match(publicHtml, /\/member#events/);
     assert.match(publicHtml, /\/member#birthdays/);
     assert.match(publicHtml, /\/member#sms/);
@@ -55,7 +52,11 @@ test("web routes render baseline surfaces", async () => {
     assert.match(memberHtml, /SMS Settings/);
     assert.match(memberHtml, /Celebration Thread/);
     assert.match(memberHtml, /Event window/);
-    assert.match(adminHtml, /Admin Login/);
+    assert.match(memberHtml, /member-login-credentials/);
+    assert.match(memberHtml, /member-birthday-panel/);
+    assert.match(memberHtml, /Open Birthday Circle/);
+    assert.match(adminHtml, /Admin Console/);
+    assert.match(adminHtml, /Access/);
     assert.match(adminHtml, /data-admin-module-link="members"/);
     assert.match(adminHtml, /data-admin-module-link="imports"/);
     assert.match(adminHtml, /data-admin-module-link="notifications"/);

@@ -1,162 +1,65 @@
-# SharePoint Document Storage
+# Optional SharePoint Document Storage Integration
 
-This document describes the implemented checkpoint `3.1` flow for event documents (agenda, minutes, attachments) stored in SharePoint with app-mediated authorization.
+## What This Document Means
+The IWFSA application is hosted on the web as a standalone platform.
 
-## Working model (confirmed)
-- GitHub is the source of truth for code and release workflow.
-- Microsoft 365 (Entra + SharePoint) is the integration environment.
-- The app enforces authorization and streams files; members do not browse raw SharePoint links.
-- Rollout is phased: dev/staging validation first, then a small production pilot.
+SharePoint is not the place where the app UI runs.
 
-## Goals
-- Store event documents in SharePoint (preferred by IWFSA)
-- Keep documents accessible only to eligible members (based on event audience)
-- Provide reliable downloads in the app without leaking long-lived public links
-- Support replacing/removing documents with audit trail
+If IWFSA wants Microsoft 365-backed document storage, SharePoint can be enabled as an optional integration that the API uses for event documents.
 
-## Implemented Approach
-### 1) Store files in a dedicated SharePoint site/library
-- Create a SharePoint site (e.g., “IWFSA Events”) with a document library (e.g., “Event Documents”).
-- Organize folders per event (or per year/month), e.g.:
-  - `Event Documents/2026/EVT-000123/agenda.pdf`
-  - `Event Documents/2026/EVT-000123/minutes.pdf`
+## Intended Use
+Use SharePoint only for:
+- agenda files
+- minutes
+- event attachments that should stay behind the IWFSA web app
 
-### 2) App stores SharePoint identifiers, not public URLs
-When a document is uploaded, the API persists:
+The member experience still happens in the web application. Users do not browse raw SharePoint libraries directly.
+
+## Integration Model
+1. Admin or event editor uploads a document through the IWFSA web app.
+2. The API stores the file in SharePoint using Microsoft Graph.
+3. The database stores SharePoint identifiers and document metadata.
+4. Members download through the IWFSA app, which enforces event access and availability rules before streaming the file.
+
+## Why This Model
+- keeps the product web-first
+- centralizes authorization in the application
+- avoids long-lived public document links
+- lets IWFSA switch the feature off without affecting the main app host
+
+## Data Stored by the App
+When SharePoint integration is enabled, the app stores:
 - `sharepoint_site_id`
 - `sharepoint_drive_id`
 - `sharepoint_item_id`
 - `sharepoint_web_url`
-- `file_name`, `mime_type`, `size_bytes`, `checksum_sha256`
-- availability metadata (`availability_mode`, `available_from`)
+- file metadata and availability metadata
 
-Persistence table:
-- `event_documents`
-
-This avoids depending on fragile or shareable URLs.
-
-### 3) Download flow: app-mediated access (member-only)
-Implemented pattern:
-1. Member requests document download via the app.
-2. App checks eligibility:
-   - user is authenticated
-   - user is allowed to view the event (audience rules)
-   - document is available (e.g., minutes only after event)
-3. If allowed, app fetches the file from SharePoint using Microsoft Graph and streams it to the member.
-
-Benefits:
-- No SharePoint link sharing required
-- Centralized authorization in the app
-- Works even if SharePoint link policies are strict
-
-## API Endpoints (checkpoint 3.1)
+## Relevant Endpoints
 - `POST /api/events/:id/documents`
-  - Multipart upload (`file`) with fields: `documentType`, `availabilityMode`, optional `availableFrom`, optional `availabilityOffsetMinutes`.
-  - Common document formats are accepted (for example PDF, DOC/DOCX, XLS/XLSX, PPT/PPTX, CSV, TXT) for agenda, minutes, and attachment document types.
-  - Executable/program file types are blocked for safety (for example `.exe`).
-  - Allowed roles: admins, event owners, event-scoped editors.
 - `GET /api/events/:id/documents`
-  - Lists active documents for eligible users.
 - `GET /api/events/:id/documents/:documentId/download`
-  - Enforces event visibility and availability window before streaming the file.
 - `DELETE /api/events/:id/documents/:documentId`
-  - Soft-removes document metadata (`removed_at`, `removed_by_user_id`) with audit logging.
 
-## Availability Modes
-- `immediate`: available as soon as uploaded.
-- `after_event`: available from event end time plus optional offset minutes.
-- `scheduled`: available from a specific timestamp (`availableFrom`).
-
-## Microsoft Graph Permissions (recommended)
-Application-permission model (server-to-server):
-
-Typical permissions (subject to tenant policy/security review):
-- `Sites.Selected` (recommended) + grant access only to the specific site
-  - Then assign the app access to the SharePoint site via admin tooling
-- Alternative (broader, usually discouraged): `Sites.Read.All` / `Sites.ReadWrite.All`
-
-## Environment Variables
-- `FEATURE_SHAREPOINT_DOCUMENTS` (`true`/`false`)
+## Required Environment Variables
+- `FEATURE_SHAREPOINT_DOCUMENTS`
 - `SHAREPOINT_TENANT_ID`
 - `SHAREPOINT_CLIENT_ID`
 - `SHAREPOINT_CLIENT_SECRET`
 - `SHAREPOINT_SITE_ID`
 - `SHAREPOINT_DRIVE_ID`
 
-If the feature is disabled or required values are missing, uploads/downloads fail fast with integration configuration errors.
+If these are missing while the feature flag is enabled, the integration should fail fast with a configuration error.
 
-## Security and Audit
-- Upload/remove/download actions are recorded in `audit_logs`.
-- Event audience and RBAC checks are enforced before list/download operations.
-- Access remains app-authorized; members do not receive direct SharePoint credentials or long-lived public links.
+## Operational Guidance
+- keep separate SharePoint sites or libraries per environment
+- prefer `Sites.Selected` over broad Graph permissions
+- treat this integration as optional and reversible
+- keep the web application working even when SharePoint is disabled
 
-## Operational Notes
-- Configure site/library per environment (dev/staging/prod) using environment variables.
-- Keep tenant app consent scoped to the target site/library.
-- Decide retention strategy for minutes/attachments according to governance policy.
-
-## Beginner rollout checklist (SharePoint document flow)
-Use this sequence exactly in order.
-
-### Step 1: Tenant setup
-- Create/confirm the SharePoint site and library for event documents.
-- Register app in Entra and grant Graph permissions.
-- Prefer `Sites.Selected` and grant only the target site.
-
-Pass when:
-- App can access only the intended site/library.
-
-### Step 2: Environment configuration
-- Set:
-  - `FEATURE_SHAREPOINT_DOCUMENTS=true`
-  - `SHAREPOINT_TENANT_ID`
-  - `SHAREPOINT_CLIENT_ID`
-  - `SHAREPOINT_CLIENT_SECRET`
-  - `SHAREPOINT_SITE_ID`
-  - `SHAREPOINT_DRIVE_ID`
-- Keep production values separate from dev/staging.
-
-Pass when:
-- API starts with no integration-configuration errors.
-
-### Step 3: Functional smoke test
-- Upload one test agenda document.
-- List documents for the event.
-- Download the same document through the app endpoint.
-
-Pass when:
-- Upload/list/download all succeed and the file exists in SharePoint.
-
-### Step 4: Access-control test
-- Test with one eligible member and one ineligible member.
-- Confirm eligible user can list/download.
-- Confirm ineligible user is denied.
-
-Pass when:
-- Authorization behavior matches event audience rules every time.
-
-### Step 5: Availability-window test
-- Validate `immediate`, `after_event`, and `scheduled` document visibility.
-
-Pass when:
-- Visibility changes happen at expected times.
-
-### Step 6: Audit and safety test
-- Confirm upload/remove/download actions are present in audit trail.
-- Confirm logs do not expose sensitive tokens or shareable secrets.
-
-Pass when:
-- Audit trail is complete and logs are safe.
-
-### Step 7: Production pilot
-- Enable for 1-2 real events.
-- Assign one admin owner for pilot support.
-- Keep rollback ready by disabling `FEATURE_SHAREPOINT_DOCUMENTS` if needed.
-
-Pass when:
-- Pilot events run successfully with no access-control incidents.
-
-## Future Enhancements
-- Virus scanning / file type allowlist
-- Version history: keep prior uploads as separate items or SharePoint versions
-- “Publish document” workflow (draft vs visible to members)
+## Smoke Test
+1. Enable `FEATURE_SHAREPOINT_DOCUMENTS=true`.
+2. Upload a test agenda from the admin console.
+3. Verify the document appears in SharePoint.
+4. Download it through the IWFSA web route as an eligible member.
+5. Confirm ineligible users are denied.

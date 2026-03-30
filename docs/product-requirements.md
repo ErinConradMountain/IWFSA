@@ -44,10 +44,15 @@ Global value:
 
 
 ## 1) Overview
-The IWFSA web app supports:
+The IWFSA web app is delivered as a standalone web platform and supports:
 - A public marketing site
 - A member-only portal
 - An admin console with delegated event editing
+
+### 1.0 Deployment Model
+- The application runs on the web as its own product surface.
+- SharePoint is not the host for the UI.
+- Microsoft 365 services, when used, are optional integrations behind the API.
 
 ### 1.1 Surface Boundaries (Public vs Member vs Admin)
 - Public-facing site: brand/storytelling and conference landing pages only; no member details, no internal calendars, and no leakage of private network activity.

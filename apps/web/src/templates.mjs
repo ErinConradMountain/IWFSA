@@ -1,16 +1,32 @@
-﻿const UI_BUILD = "2026-02-08.3";
+﻿const UI_BUILD = "2026-03-30.1";
 
-function htmlLayout({ title, body, appBaseUrl, buildTracker, currentPath }) {
+function htmlLayout({ title, body, appBaseUrl, currentPath, pageClass = "" }) {
   const normalizedPath = currentPath || "/";
-  const navItems = [
-    { href: `${appBaseUrl}/`, label: "Public", path: "/" },
-    { href: `${appBaseUrl}/member`, label: "Member Portal", path: "/member" },
-    { href: `${appBaseUrl}/admin`, label: "Admin Console", path: "/admin" }
-  ];
+  let navItems = [];
+  if (currentPath === "/member") {
+    navItems = [
+      { href: `${appBaseUrl}/`, label: "Public", path: "/" },
+      { href: `${appBaseUrl}/member`, label: "Member Portal", path: "/member" }
+    ];
+  } else if (currentPath === "/admin") {
+    navItems = [
+      { href: `${appBaseUrl}/`, label: "Public", path: "/" },
+      { href: `${appBaseUrl}/admin`, label: "Admin Console", path: "/admin" }
+    ];
+  } else {
+    // On the public site, we just show a generic login pathway to the portal 
+    // without exposing operations consoles directly in the top nav
+    navItems = [
+      { href: `${appBaseUrl}/`, label: "Public", path: "/" },
+      { href: `${appBaseUrl}/member`, label: "Sign In", path: "/member" }
+    ];
+  }
   const navLinks = navItems
     .map((item) => {
       const isActive = normalizedPath === item.path;
-      return `<a class="nav-link${isActive ? " nav-link-active" : ""}" href="${item.href}">${item.label}</a>`;
+      return `<a class="nav-link${isActive ? " nav-link-active" : ""}" href="${item.href}"${
+        isActive ? ' aria-current="page"' : ""
+      }>${item.label}</a>`;
     })
     .join("");
   return `<!doctype html>
@@ -19,22 +35,27 @@ function htmlLayout({ title, body, appBaseUrl, buildTracker, currentPath }) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${title}</title>
-    <link rel="stylesheet" href="${appBaseUrl}/assets/styles.css?v=${UI_BUILD}" />
+    <link rel="stylesheet" href="${appBaseUrl}/assets/styles.css?v=${UI_BUILD}-public-refresh" />
   </head>
-  <body>
+  <body class="${escapeHtml(pageClass)}">
+    <a class="skip-link" href="#main-content">Skip to content</a>
     <header class="site-header">
-      <div class="shell">
-        <p class="eyebrow">IWFSA Platform</p>
-        <h1>Governance-Aware Digital Operating System</h1>
-        <nav>
+      <div class="shell site-header-shell">
+        <div class="brand-lockup">
+          <p class="eyebrow">IWFSA Web Platform</p>
+          <a class="brand-link" href="${appBaseUrl}/">
+            <span class="brand-title">International Women's Forum South Africa</span>
+            <span class="brand-subtitle">Public website, member workspace, and governance console</span>
+          </a>
+        </div>
+        <nav class="site-nav" aria-label="Primary">
           ${navLinks}
         </nav>
       </div>
     </header>
-    <main class="shell">
+    <main id="main-content" class="shell page-shell">
       ${body}
     </main>
-    ${renderBuildTracker(buildTracker)}
   </body>
 </html>`;
 }
@@ -48,106 +69,176 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
-function renderTrackerList(items, options = {}) {
-  if (!items || items.length === 0) {
-    return `<p class="muted">${escapeHtml(options.emptyText || "Nothing listed yet.")}</p>`;
-  }
-
-  const tag = options.ordered ? "ol" : "ul";
-  const rows = items.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
-  return `<${tag} class="tracker-list">${rows}</${tag}>`;
-}
-
-function renderBuildTracker(buildTracker = {}) {
-  const doneItems = buildTracker.doneItems || [];
-  const sourcePath = buildTracker.sourcePath || "docs/build-playbook.md";
-  const current = buildTracker.current || null;
-  const nextSteps = buildTracker.nextSteps || [];
-  const warning = buildTracker.warning
-    ? `<p class="tracker-warning">${escapeHtml(buildTracker.warning)}</p>`
-    : "";
-
-  const currentCard = current
-    ? `
-      <p>Current checkpoint: <strong>${escapeHtml(current.title)}</strong></p>
-      <p class="muted">Status: ${escapeHtml(current.status)}</p>
-      ${renderTrackerList(current.tasks || [], {
-        emptyText: "No tasks found under this checkpoint. Add them in the playbook."
-      })}
-    `
-    : `
-      <p>No active checkpoint is selected yet.</p>
-      <p class="muted">Set one row to <code>In Progress</code> in the progress table.</p>
-    `;
-
-  return `
-    <footer class="build-tracker">
-      <div class="shell">
-        <section class="panel tracker-panel">
-          <p class="eyebrow">Build Progress Tracker</p>
-          <h2>Where We Are Right Now</h2>
-          <p class="muted">Source: <code>${escapeHtml(sourcePath)}</code></p>
-          <p class="muted">Last updated: ${escapeHtml(buildTracker.lastUpdatedLabel || "Not set")}.</p>
-          ${warning}
-          <div class="tracker-grid">
-            <article class="tracker-card">
-              <h3>What is done</h3>
-              ${renderTrackerList(doneItems, {
-                emptyText: "No completed checkpoints are marked as Done yet."
-              })}
-            </article>
-            <article class="tracker-card">
-              <h3>What is current</h3>
-              ${currentCard}
-            </article>
-            <article class="tracker-card">
-              <h3>What to do next</h3>
-              ${renderTrackerList(nextSteps, {
-                ordered: true,
-                emptyText: "No next steps generated yet. Update checkpoint statuses in the progress table."
-              })}
-            </article>
-            <article class="tracker-card">
-              <h3>How to keep this updated</h3>
-              <ol class="tracker-list">
-                <li>Update the status table in <code>docs/build-playbook.md</code>.</li>
-                <li>Keep exactly one checkpoint marked as <code>In Progress</code> (this drives the current checkpoint).</li>
-                <li>Use <code>Current Checkpoint</code> only as a tie-breaker if multiple rows are <code>In Progress</code>.</li>
-              </ol>
-            </article>
-          </div>
-        </section>
-      </div>
-    </footer>
-  `;
-}
-
 export function renderPublicPage(config) {
   return htmlLayout({
     title: "IWFSA | Public",
     appBaseUrl: config.appBaseUrl,
-    buildTracker: config.buildTracker,
     currentPath: "/",
+    pageClass: "page-public",
     body: `
-      <div id="admin-panel-grid" class="admin-panel-grid">
-      <section class="panel admin-card" data-admin-panel="admin_login">
-        <h2>Public Surface</h2>
-        <p>Mission-led storytelling and contact pathways for external visitors.</p>
-        <ul class="status-list">
-          <li>Public narrative is isolated from internal events.</li>
-          <li>Member login remains the gateway to private experiences.</li>
-          <li>Conference landing pages can be added without exposing private operations.</li>
-        </ul>
-        <div class="member-actions">
-          <a class="ghost" href="${config.appBaseUrl}/member">Go to Member Portal</a>
-          <a class="ghost" href="${config.appBaseUrl}/member#dashboard">Test the Member Portal (demo)</a>
-          <a class="ghost" href="${config.appBaseUrl}/admin">Admin Console (authorised only)</a>
+      <section class="panel panel-hero public-hero">
+        <div class="hero-copy">
+          <p class="eyebrow eyebrow-contrast">International Women's Forum of South Africa</p>
+          <h1 class="page-title" style="text-align: center; width: 100%; max-width: none;">Leading with Purpose.</h1>
+          <h2 style="text-align: center; margin-top: 0; font-weight: normal; font-size: 1.75rem;">ignite. inspire. impact.</h2>
+          <p class="lead" style="margin-top: 1.5rem; text-align: center;">
+            IWFSA is the SA chapter of the International Women’s Forum (“IWF”), our core objective is to nurture and develop a pipeline of the next generation of women leaders through targeted Leadership Development programmes, mentoring and coaching.
+          </p>
+          <div style="text-align: center; margin-top: 1.5rem;">
+            <a class="button-link" href="https://www.iwfsa.co.za/our-impact/" target="_blank" rel="noopener noreferrer">View Our Impact</a>
+          </div>
         </div>
+        <figure class="featured-signal-figure" style="margin-top: 3rem;">
+          <div class="featured-photo-frame">
+            <img
+              class="featured-hero-image"
+              src="${config.appBaseUrl}/assets/iwfsa-home.jpg?v=${UI_BUILD}-public-refresh"
+              alt="IWFSA leaders meeting around a conference table in Sandton while a presentation screen reads Ignite. Inspire. Impact."
+              loading="eager"
+              decoding="async"
+            />
+          </div>
+        </figure>
       </section>
-      </div>
-      <section class="panel panel-accent">
-        <h3>Restart Run Active</h3>
-        <p>Execution has been restarted from checkpoint 0.1. Prior implementation is retained as baseline, and unfinished integrated work is completed as each checkpoint is reached.</p>
+
+      <section class="panel panel-carousel" aria-label="IWFSA photo gallery" style="margin-top: 2rem; padding: 0; overflow: hidden;">
+        <div class="carousel" id="iwfsa-carousel" aria-roledescription="carousel">
+          <div class="carousel-track" role="list">
+            <div class="carousel-slide" role="listitem" aria-label="Slide 1 of 6">
+              <a href="https://www.iwfsa.co.za/" target="_blank" rel="noopener noreferrer" tabindex="-1">
+                <img src="https://www.iwfsa.co.za/wp-content/uploads/2025/11/54923917203_a297501112_c.jpg"
+                  alt="IWFSA event – group of women leaders" loading="lazy" decoding="async" />
+              </a>
+            </div>
+            <div class="carousel-slide" role="listitem" aria-label="Slide 2 of 6">
+              <a href="https://www.iwfsa.co.za/" target="_blank" rel="noopener noreferrer" tabindex="-1">
+                <img src="https://www.iwfsa.co.za/wp-content/uploads/2025/11/DSC04621-scaled.jpg"
+                  alt="IWFSA gathering – members at an official event" loading="lazy" decoding="async" />
+              </a>
+            </div>
+            <div class="carousel-slide" role="listitem" aria-label="Slide 3 of 6">
+              <a href="https://www.iwfsa.co.za/" target="_blank" rel="noopener noreferrer" tabindex="-1">
+                <img src="https://www.iwfsa.co.za/wp-content/uploads/2025/11/SB-IWFSA-fellows-breakfast-050-qz8dlgcmi31qq9tk81eixoqndfa8vjz5f0wxulcrkw.webp"
+                  alt="IWFSA Fellows Breakfast" loading="lazy" decoding="async" />
+              </a>
+            </div>
+            <div class="carousel-slide" role="listitem" aria-label="Slide 4 of 6">
+              <a href="https://www.iwfsa.co.za/" target="_blank" rel="noopener noreferrer" tabindex="-1">
+                <img src="https://www.iwfsa.co.za/wp-content/uploads/2025/11/IWFSA-Revised-Board-Strategy-Launch-February-2024-qz8dl44q18l0jcbb7e4dj9tnneyh3hmn1cfmlzuvts.webp"
+                  alt="IWFSA Revised Board Strategy Launch – February 2024" loading="lazy" decoding="async" />
+              </a>
+            </div>
+            <div class="carousel-slide" role="listitem" aria-label="Slide 5 of 6">
+              <a href="https://www.iwfsa.co.za/" target="_blank" rel="noopener noreferrer" tabindex="-1">
+                <img src="https://www.iwfsa.co.za/wp-content/uploads/2025/11/iwfsa-2024-halle-of-femme-awards-800-qz8dlx9usiumz9rx4w6hmvue7ptdd4p70j0d36kklc.webp"
+                  alt="IWFSA 2024 Hall of Femme Awards" loading="lazy" decoding="async" />
+              </a>
+            </div>
+            <div class="carousel-slide" role="listitem" aria-label="Slide 6 of 6">
+              <a href="https://www.iwfsa.co.za/" target="_blank" rel="noopener noreferrer" tabindex="-1">
+                <img src="https://www.iwfsa.co.za/wp-content/uploads/2025/11/Catalytic-Strategy-Gender-Inclusive-Tax-Roundtable-October-2024-qz8dl1bcc5kkxynqinbsg20vnlompwy47s48xyl5yc.webp"
+                  alt="Catalytic Strategy Gender-Inclusive Tax Roundtable – October 2024" loading="lazy" decoding="async" />
+              </a>
+            </div>
+          </div>
+
+          <button class="carousel-btn carousel-btn-prev" aria-label="Previous slide" onclick="iwfsaCarouselMove(-1)">&#8249;</button>
+          <button class="carousel-btn carousel-btn-next" aria-label="Next slide" onclick="iwfsaCarouselMove(1)">&#8250;</button>
+
+          <div class="carousel-dots" role="tablist" aria-label="Slide indicators">
+            <button class="carousel-dot carousel-dot-active" role="tab" aria-label="Go to slide 1" aria-selected="true" onclick="iwfsaCarouselGo(0)"></button>
+            <button class="carousel-dot" role="tab" aria-label="Go to slide 2" aria-selected="false" onclick="iwfsaCarouselGo(1)"></button>
+            <button class="carousel-dot" role="tab" aria-label="Go to slide 3" aria-selected="false" onclick="iwfsaCarouselGo(2)"></button>
+            <button class="carousel-dot" role="tab" aria-label="Go to slide 4" aria-selected="false" onclick="iwfsaCarouselGo(3)"></button>
+            <button class="carousel-dot" role="tab" aria-label="Go to slide 5" aria-selected="false" onclick="iwfsaCarouselGo(4)"></button>
+            <button class="carousel-dot" role="tab" aria-label="Go to slide 6" aria-selected="false" onclick="iwfsaCarouselGo(5)"></button>
+          </div>
+        </div>
+        <script>
+          (function () {
+            var current = 0;
+            var total = 6;
+            var timer;
+            var paused = false;
+
+            function update(idx) {
+              current = (idx + total) % total;
+              var track = document.querySelector('#iwfsa-carousel .carousel-track');
+              track.style.transform = 'translateX(-' + (current * 100) + '%)';
+              var dots = document.querySelectorAll('#iwfsa-carousel .carousel-dot');
+              dots.forEach(function (d, i) {
+                d.classList.toggle('carousel-dot-active', i === current);
+                d.setAttribute('aria-selected', i === current ? 'true' : 'false');
+              });
+              var slides = document.querySelectorAll('#iwfsa-carousel .carousel-slide a');
+              slides.forEach(function (a, i) {
+                a.setAttribute('tabindex', i === current ? '0' : '-1');
+              });
+            }
+
+            function next() { update(current + 1); }
+
+            function startTimer() {
+              clearInterval(timer);
+              timer = setInterval(function () { if (!paused) next(); }, 5000);
+            }
+
+            window.iwfsaCarouselMove = function (dir) { update(current + dir); startTimer(); };
+            window.iwfsaCarouselGo   = function (idx) { update(idx); startTimer(); };
+
+            var el = document.getElementById('iwfsa-carousel');
+            if (el) {
+              el.addEventListener('mouseenter', function () { paused = true; });
+              el.addEventListener('mouseleave', function () { paused = false; });
+              el.addEventListener('focusin',    function () { paused = true; });
+              el.addEventListener('focusout',   function () { paused = false; });
+              el.addEventListener('keydown', function (e) {
+                if (e.key === 'ArrowLeft')  { iwfsaCarouselMove(-1); }
+                if (e.key === 'ArrowRight') { iwfsaCarouselMove(1); }
+              });
+            }
+
+            update(0);
+            startTimer();
+          })();
+        </script>
+      </section>
+
+      <section class="panel" aria-labelledby="contact-heading" style="margin-top: 2rem;">
+        <h2 id="contact-heading" style="border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; margin-bottom: 1.5rem;">Get in touch</h2>
+        
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 2rem;">
+          <div>
+            <h3 style="font-size: 1.1rem; margin-bottom: 0.5rem;">Office Address</h3>
+            <address style="font-style: normal; line-height: 1.6;">
+              2 Bruton, Block A<br>
+              Nicol Main Office Park<br>
+              Bryanston 2191<br>
+              South Africa
+            </address>
+          </div>
+
+          <div>
+            <h3 style="font-size: 1.1rem; margin-bottom: 0.5rem;">Postal Address</h3>
+            <address style="font-style: normal; line-height: 1.6;">
+              PO Box 3189,<br>
+              Houghton, 2041<br>
+              South Africa
+            </address>
+          </div>
+
+          <div>
+            <h3 style="font-size: 1.1rem; margin-bottom: 0.5rem;">Contact</h3>
+            <p style="margin: 0; line-height: 1.6;">Tel: <a href="tel:+27113255295">+27 (0) 11 325 5295</a></p>
+            <p style="margin: 0; line-height: 1.6;">Fax: +27 (0) 11 325 5284</p>
+          </div>
+
+          <div>
+            <h3 style="font-size: 1.1rem; margin-bottom: 0.5rem;">Company Details</h3>
+            <p style="margin: 0; line-height: 1.6;">Reg No: 201/000062/08</p>
+            <p style="margin: 0; line-height: 1.6;">VAT No: 4130 201 934</p>
+          </div>
+        </div>
       </section>
     `
   });
@@ -157,46 +248,92 @@ export function renderMemberPage(config) {
   return htmlLayout({
     title: "IWFSA | Member Portal",
     appBaseUrl: config.appBaseUrl,
-    buildTracker: config.buildTracker,
     currentPath: "/member",
+    pageClass: "page-member",
     body: `
-      <div id="member-portal-root">
-        <section class="panel">
+      <div id="member-portal-root" class="portal-shell">
+        <section class="panel panel-hero portal-hero">
           <div class="header-cluster">
-             <h2>Member Portal</h2>
+             <div>
+                <p class="eyebrow">Member Experience</p>
+                <h1 class="page-title">Member Event Directory</h1>
+               <p class="lead">
+                 One responsive workspace for events, birthdays, notifications, celebration threads, and personal
+                 communication preferences.
+               </p>
+             </div>
              <div class="auth-controls">
-                <p id="member-login-status" class="muted">Not signed in.</p>
-                <form id="member-login-form" class="inline-login-form">
-                   <input id="member-username" name="username" placeholder="Username" autocomplete="username" />
-                   <input id="member-password" type="password" name="password" placeholder="Password" autocomplete="current-password" />
-                   <button type="submit">Sign in</button>
-                   <button id="member-logout" type="button" class="ghost" disabled>Sign out</button>
-                </form>
+                 <p id="member-login-status" class="muted">Not signed in.</p>
+                 <form id="member-login-form" class="inline-login-form member-login-form">
+                    <div id="member-login-credentials" class="member-login-credentials">
+                      <input id="member-username" name="username" placeholder="Username" autocomplete="username" />
+                      <input id="member-password" type="password" name="password" placeholder="Password" autocomplete="current-password" />
+                    </div>
+                    <div class="member-login-actions">
+                      <button id="member-login-submit" type="submit">Sign in</button>
+                      <button id="member-logout" type="button" class="ghost member-logout-button" hidden>Sign out</button>
+                    </div>
+                 </form>
              </div>
           </div>
-          
-          <nav class="module-nav" id="member-nav">
-            <a href="#dashboard" class="module-nav-link" data-module="dashboard">Dashboard</a>
-            <a href="#events" class="module-nav-link" data-module="events">Events</a>
-            <a href="#notifications" class="module-nav-link" data-module="notifications">Notifications & Birthdays</a>
+          <section id="member-birthday-panel" class="panel panel-accent member-birthday-panel" hidden>
+            <div class="member-birthday-copy">
+              <p class="eyebrow">Birthday Circle</p>
+              <h2>Celebrate members and build team spirit</h2>
+              <p class="muted">
+                When a member signs in, this panel becomes the welcome moment for the organisation to send warm
+                birthday wishes and recognise the people who keep the forum strong.
+              </p>
+            </div>
+            <a class="button-link member-birthday-link" href="#birthdays">Open Birthday Circle</a>
+          </section>
+           
+          <nav class="module-nav" id="member-nav" aria-label="Member modules">
+            <a href="#dashboard" class="module-nav-link" data-module="dashboard" data-member-module-link="dashboard">Dashboard</a>
+            <a href="#events" class="module-nav-link" data-module="events" data-member-module-link="events">Events</a>
+            <a href="#birthdays" class="module-nav-link" data-module="birthdays" data-member-module-link="birthdays">Birthdays</a>
+            <a href="#notifications" class="module-nav-link" data-module="notifications" data-member-module-link="notifications">Notifications</a>
+            <a href="#sms" class="module-nav-link" data-module="sms" data-member-module-link="sms">SMS Settings</a>
+            <a href="#celebrations" class="module-nav-link" data-module="celebrations" data-member-module-link="celebrations">Celebration Thread</a>
           </nav>
+        </section>
 
-          <div id="module-dashboard" class="module-section">
-             <h3>Welcome</h3>
-             <p>Welcome to the IWFSA Member Portal. Use the navigation tabs to browse events or check your notifications.</p>
-             <div class="dashboard-cards">
-                <div class="dashboard-card" onclick="window.location.hash='#events'">
-                   <h4>Upcoming Events</h4>
-                   <p>Browse the event directory and register.</p>
-                </div>
-                <div class="dashboard-card" onclick="window.location.hash='#notifications'">
-                    <h4>Notifications</h4>
-                    <p>Check for updates and see upcoming birthdays.</p>
-                </div>
-             </div>
+        <section id="module-dashboard" class="panel module-section">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Overview</p>
+              <h2>Start where you need to act next</h2>
+            </div>
+            <p class="muted">Deep links make each part of the portal easy to revisit on any device.</p>
           </div>
+          <div class="dashboard-cards">
+            <button type="button" class="dashboard-card" onclick="window.location.hash='#events'">
+              <h4>Upcoming Events</h4>
+              <p>Browse the event directory, confirm attendance, and download calendar files.</p>
+            </button>
+            <button type="button" class="dashboard-card" onclick="window.location.hash='#birthdays'">
+              <h4>Birthday Circle</h4>
+              <p>See upcoming member birthdays based on your selected window and visibility rules.</p>
+            </button>
+            <button type="button" class="dashboard-card" onclick="window.location.hash='#notifications'">
+              <h4>Notification Center</h4>
+              <p>Review updates, mark items as read, and keep important changes in view.</p>
+            </button>
+            <button type="button" class="dashboard-card" onclick="window.location.hash='#sms'">
+              <h4>SMS Settings</h4>
+              <p>Choose how urgent text reminders should behave for your account.</p>
+            </button>
+          </div>
+        </section>
 
-          <div id="module-events" class="module-section">
+        <section id="module-events" class="panel module-section">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Events</p>
+                <h2>Member Event Directory</h2>
+              </div>
+              <p class="muted">Browse published meetings, join online sessions, and keep your calendar aligned.</p>
+            </div>
             <div class="member-actions">
               <label for="member-event-view" class="muted">Event window</label>
               <select id="member-event-view" disabled>
@@ -210,38 +347,124 @@ export function renderMemberPage(config) {
             <div id="event-list" class="event-grid">
                <p class="muted">Sign in to load events.</p>
             </div>
-          </div>
+        </section>
 
-          <div id="module-notifications" class="module-section">
-             <div class="member-layout">
-                <div class="main-column">
-                    <h3 class="subsection-title">Notification Center</h3>
-                    <div class="member-actions">
-                      <button id="member-refresh-notifications" type="button" disabled>Refresh</button>
-                      <button id="member-mark-read" type="button" class="ghost" disabled>Mark all read</button>
-                    </div>
-                    <div id="notification-list" class="event-grid">
-                      <p class="muted">Sign in to load notifications.</p>
-                    </div>
-                </div>
-                <aside class="sidebar-card sidebar-card-accent">
-                  <div class="sidebar-header">
-                    <h3>Upcoming Birthdays</h3>
-                    <div class="member-actions member-actions-tight">
-                      <label for="birthday-window" class="muted">Window</label>
-                      <select id="birthday-window" disabled>
-                        <option value="7">7 days</option>
-                        <option value="14" selected>14 days</option>
-                        <option value="30">30 days</option>
-                      </select>
-                      <button id="refresh-birthdays" type="button" class="ghost" disabled>Refresh</button>
-                    </div>
-                  </div>
-                  <div id="birthday-list" class="birthday-list">
-                    <p class="muted">Sign in to load birthdays.</p>
-                  </div>
-                </aside>
-             </div>
+        <section id="module-birthdays" class="panel module-section">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Birthdays</p>
+              <h2>Birthday Circle</h2>
+            </div>
+            <p class="muted">Celebrate members respectfully, with visibility controlled by consent choices.</p>
+          </div>
+          <div class="member-actions">
+            <label for="birthday-window" class="muted">Window</label>
+            <select id="birthday-window" disabled>
+              <option value="7">7 days</option>
+              <option value="14" selected>14 days</option>
+              <option value="30">30 days</option>
+            </select>
+            <button id="refresh-birthdays" type="button" class="ghost" disabled>Refresh birthdays</button>
+          </div>
+          <div id="birthday-list" class="birthday-list">
+            <p class="muted">Sign in to load birthdays.</p>
+          </div>
+        </section>
+
+        <section id="module-notifications" class="panel module-section">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Alerts</p>
+              <h2>Notification Center</h2>
+            </div>
+            <p class="muted">Stay current on schedule changes, reminders, and operational updates.</p>
+          </div>
+          <div class="member-actions">
+            <button id="member-refresh-notifications" type="button" disabled>Refresh</button>
+            <button id="member-mark-read" type="button" class="ghost" disabled>Mark all read</button>
+          </div>
+          <div id="notification-list" class="event-grid">
+            <p class="muted">Sign in to load notifications.</p>
+          </div>
+        </section>
+
+        <section id="module-sms" class="panel module-section">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">SMS Settings</p>
+              <h2>Control how urgent texts reach you</h2>
+            </div>
+            <p class="muted">Choose opt-in status, delivery limits, and quiet hours that fit your schedule.</p>
+          </div>
+          <form id="member-sms-form" class="login-form sms-form">
+            <label class="inline-checkbox" for="member-sms-enabled">
+              <input id="member-sms-enabled" type="checkbox" />
+              Enable SMS reminders
+            </label>
+            <label for="member-sms-phone">Phone number</label>
+            <input id="member-sms-phone" type="tel" placeholder="+27..." />
+            <div class="sms-grid">
+              <div>
+                <label for="member-sms-daily-limit">Daily limit</label>
+                <input id="member-sms-daily-limit" type="number" min="1" max="10" />
+              </div>
+              <div>
+                <label for="member-sms-per-event-limit">Per-event limit</label>
+                <input id="member-sms-per-event-limit" type="number" min="1" max="5" />
+              </div>
+              <div>
+                <label for="member-sms-quiet-start">Quiet hours start</label>
+                <input id="member-sms-quiet-start" type="time" />
+              </div>
+              <div>
+                <label for="member-sms-quiet-end">Quiet hours end</label>
+                <input id="member-sms-quiet-end" type="time" />
+              </div>
+            </div>
+            <label class="inline-checkbox" for="member-sms-allow-urgent">
+              <input id="member-sms-allow-urgent" type="checkbox" />
+              Allow urgent SMS outside quiet hours
+            </label>
+            <p id="member-sms-limits" class="muted">Sign in to load SMS policy guidance.</p>
+            <button id="member-sms-save" type="submit" disabled>Save SMS Settings</button>
+            <p id="member-sms-status" class="muted">Sign in to manage SMS preferences.</p>
+          </form>
+        </section>
+
+        <section id="module-celebrations" class="panel module-section">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Celebration Thread</p>
+              <h2>Share approved messages for birthdays and milestones</h2>
+            </div>
+            <p class="muted">Use the shared thread for respectful, relevant posts that support the IWFSA community.</p>
+          </div>
+          <div class="member-layout celebration-layout">
+            <div class="main-column">
+              <form id="celebration-form" class="login-form celebration-form">
+                <label for="celebration-body">New celebration post</label>
+                <textarea id="celebration-body" rows="5" class="registration-draft-input" placeholder="Write a short, relevant celebration message..."></textarea>
+                <label class="inline-checkbox" for="celebration-acknowledge">
+                  <input id="celebration-acknowledge" type="checkbox" />
+                  I acknowledge the community posting rules
+                </label>
+                <label class="inline-checkbox" for="celebration-relevant">
+                  <input id="celebration-relevant" type="checkbox" />
+                  This post is directly relevant to IWFSA activity
+                </label>
+                <button id="celebration-submit" type="submit" disabled>Post to Celebration Thread</button>
+                <p id="celebration-status" class="muted">Sign in to load the shared thread.</p>
+              </form>
+              <div id="celebration-list" class="thread-list">
+                <p class="muted">Sign in to load celebration posts.</p>
+              </div>
+            </div>
+            <aside class="sidebar-card">
+              <h3>Posting rules</h3>
+              <ul id="celebration-rules" class="status-list">
+                <li>Sign in to load moderation rules.</li>
+              </ul>
+            </aside>
           </div>
         </section>
       </div>
@@ -250,17 +473,38 @@ export function renderMemberPage(config) {
         const birthdayList = document.getElementById("birthday-list");
         const notificationList = document.getElementById("notification-list");
         const loginForm = document.getElementById("member-login-form");
+        const loginCredentials = document.getElementById("member-login-credentials");
+        const loginSubmitButton = document.getElementById("member-login-submit");
         const memberUsernameInput = document.getElementById("member-username");
         const memberPasswordInput = document.getElementById("member-password");
         /* Removed demo fill button ref */
         const loginStatus = document.getElementById("member-login-status");
         const logoutButton = document.getElementById("member-logout");
+        const birthdayPanel = document.getElementById("member-birthday-panel");
         const viewSelect = document.getElementById("member-event-view");
         const refreshEventsButton = document.getElementById("member-refresh-events");
         const birthdayWindowSelect = document.getElementById("birthday-window");
         const refreshBirthdaysButton = document.getElementById("refresh-birthdays");
         const refreshNotificationsButton = document.getElementById("member-refresh-notifications");
         const markNotificationsReadButton = document.getElementById("member-mark-read");
+        const smsForm = document.getElementById("member-sms-form");
+        const smsEnabledInput = document.getElementById("member-sms-enabled");
+        const smsPhoneInput = document.getElementById("member-sms-phone");
+        const smsDailyLimitInput = document.getElementById("member-sms-daily-limit");
+        const smsPerEventLimitInput = document.getElementById("member-sms-per-event-limit");
+        const smsQuietStartInput = document.getElementById("member-sms-quiet-start");
+        const smsQuietEndInput = document.getElementById("member-sms-quiet-end");
+        const smsAllowUrgentInput = document.getElementById("member-sms-allow-urgent");
+        const smsLimits = document.getElementById("member-sms-limits");
+        const smsStatus = document.getElementById("member-sms-status");
+        const smsSaveButton = document.getElementById("member-sms-save");
+        const celebrationForm = document.getElementById("celebration-form");
+        const celebrationBodyInput = document.getElementById("celebration-body");
+        const celebrationAcknowledgeInput = document.getElementById("celebration-acknowledge");
+        const celebrationRelevantInput = document.getElementById("celebration-relevant");
+        const celebrationList = document.getElementById("celebration-list");
+        const celebrationRules = document.getElementById("celebration-rules");
+        const celebrationStatus = document.getElementById("celebration-status");
         const draftAutosaveTimers = new Map();
         const localDraftOverrides = new Map();
         let serverSkewMs = 0;
@@ -269,7 +513,7 @@ export function renderMemberPage(config) {
         function handleHashChange() {
            const hash = window.location.hash.substring(1) || "dashboard";
            let activeModule = hash;
-           if (!['dashboard', 'events', 'notifications'].includes(activeModule)) {
+           if (!["dashboard", "events", "birthdays", "notifications", "sms", "celebrations"].includes(activeModule)) {
               activeModule = 'dashboard';
            }
 
@@ -291,22 +535,54 @@ export function renderMemberPage(config) {
           return sessionStorage.getItem("iwfsa_token");
         }
 
-        function setToken(token) {
+        let memberUsername = sessionStorage.getItem("iwfsa_member_username") || "";
+
+        function setToken(token, username = "") {
           if (token) {
             sessionStorage.setItem("iwfsa_token", token);
+            memberUsername = String(username || memberUsername || "").trim();
+            if (memberUsername) {
+              sessionStorage.setItem("iwfsa_member_username", memberUsername);
+            } else {
+              sessionStorage.removeItem("iwfsa_member_username");
+            }
           } else {
             sessionStorage.removeItem("iwfsa_token");
+            sessionStorage.removeItem("iwfsa_member_username");
+            memberUsername = "";
           }
         }
 
         function setSignedInState(isSignedIn) {
+          document.body.classList.toggle("member-signed-in", isSignedIn);
+          if (loginCredentials) {
+            loginCredentials.hidden = isSignedIn;
+          }
+          if (loginSubmitButton) {
+            loginSubmitButton.hidden = isSignedIn;
+          }
           logoutButton.disabled = !isSignedIn;
+          logoutButton.hidden = !isSignedIn;
+          if (birthdayPanel) {
+            birthdayPanel.hidden = !isSignedIn;
+          }
           viewSelect.disabled = !isSignedIn;
           refreshEventsButton.disabled = !isSignedIn;
           birthdayWindowSelect.disabled = !isSignedIn;
           refreshBirthdaysButton.disabled = !isSignedIn;
           refreshNotificationsButton.disabled = !isSignedIn;
           markNotificationsReadButton.disabled = !isSignedIn;
+          smsSaveButton.disabled = !isSignedIn;
+          Array.from(smsForm?.elements || []).forEach((element) => {
+            if (element !== smsSaveButton && element instanceof HTMLElement) {
+              element.toggleAttribute("disabled", !isSignedIn);
+            }
+          });
+          Array.from(celebrationForm?.elements || []).forEach((element) => {
+            if (element instanceof HTMLElement) {
+              element.toggleAttribute("disabled", !isSignedIn);
+            }
+          });
         }
 
         function nowWithServerSkew() {
@@ -463,6 +739,146 @@ export function renderMemberPage(config) {
             renderBirthdays(payload.items || [], payload.windowDays || windowDays);
           } catch {
             birthdayList.innerHTML = "<p class='muted'>Unable to reach API for birthdays.</p>";
+          }
+        }
+
+        function renderSmsSettings(item, limits) {
+          const smsItem = item || {};
+          const limitConfig = limits || {};
+          smsEnabledInput.checked = Boolean(smsItem.enabled);
+          smsPhoneInput.value = String(smsItem.phoneNumber || "");
+          smsDailyLimitInput.value = String(smsItem.dailyLimit || "");
+          smsPerEventLimitInput.value = String(smsItem.perEventLimit || "");
+          smsQuietStartInput.value = String(smsItem.quietHoursStart || "21:00");
+          smsQuietEndInput.value = String(smsItem.quietHoursEnd || "07:00");
+          smsAllowUrgentInput.checked = Boolean(smsItem.allowUrgent);
+          smsLimits.textContent =
+            "Current limits: daily " +
+            String(limitConfig.daily?.min || 1) +
+            "-" +
+            String(limitConfig.daily?.max || 10) +
+            ", per-event " +
+            String(limitConfig.perEvent?.min || 1) +
+            "-" +
+            String(limitConfig.perEvent?.max || 5) +
+            ".";
+        }
+
+        async function loadSmsSettings() {
+          const token = getToken();
+          if (!token) {
+            smsStatus.textContent = "Sign in to manage SMS preferences.";
+            smsLimits.textContent = "Sign in to load SMS policy guidance.";
+            return;
+          }
+
+          smsStatus.textContent = "Loading SMS settings...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/notifications/sms-settings", {
+              headers: { Authorization: "Bearer " + token }
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+              smsStatus.textContent = payload.message || "Unable to load SMS settings.";
+              return;
+            }
+            renderSmsSettings(payload.item || {}, payload.limits || {});
+            smsStatus.textContent = "SMS Settings ready.";
+          } catch {
+            smsStatus.textContent = "Unable to reach API for SMS settings.";
+          }
+        }
+
+        function renderCelebrationRules(items) {
+          const rules = Array.isArray(items) ? items : [];
+          if (rules.length === 0) {
+            celebrationRules.innerHTML = "<li>No rules are configured yet.</li>";
+            return;
+          }
+          celebrationRules.innerHTML = rules
+            .map((rule) => "<li>" + escapeClientHtml(rule) + "</li>")
+            .join("");
+        }
+
+        function formatCelebrationTimestamp(value) {
+          const date = new Date(value);
+          if (!Number.isFinite(date.getTime())) {
+            return "Just now";
+          }
+          return date.toLocaleString(undefined, {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit"
+          });
+        }
+
+        function renderCelebrations(items) {
+          const rows = Array.isArray(items) ? items : [];
+          if (rows.length === 0) {
+            celebrationList.innerHTML = "<p class='muted'>No celebration posts yet. Be the first to add one.</p>";
+            return;
+          }
+
+          celebrationList.innerHTML = rows
+            .map((item) => {
+              const deleteButton = item.canDelete
+                ? "<button type='button' class='ghost-link danger-link' data-delete-celebration-id='" +
+                  escapeClientHtml(item.id) +
+                  "'>Delete</button>"
+                : "";
+              return (
+                "<article class='thread-item'>" +
+                "<div class='thread-item-head'>" +
+                "<div>" +
+                "<strong>" +
+                escapeClientHtml(item.authorUsername || "Member") +
+                "</strong>" +
+                "<p class='muted'>" +
+                escapeClientHtml(formatCelebrationTimestamp(item.createdAt)) +
+                "</p>" +
+                "</div>" +
+                deleteButton +
+                "</div>" +
+                "<p>" +
+                escapeClientHtml(item.bodyText || "") +
+                "</p>" +
+                "</article>"
+              );
+            })
+            .join("");
+        }
+
+        async function loadCelebrations() {
+          const token = getToken();
+          if (!token) {
+            celebrationStatus.textContent = "Sign in to load the shared thread.";
+            celebrationList.innerHTML = "<p class='muted'>Sign in to load celebration posts.</p>";
+            celebrationRules.innerHTML = "<li>Sign in to load moderation rules.</li>";
+            return;
+          }
+
+          celebrationStatus.textContent = "Loading celebration thread...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/social/celebrations?limit=25", {
+              headers: { Authorization: "Bearer " + token }
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+              celebrationStatus.textContent = payload.message || "Unable to load celebration thread.";
+              celebrationList.innerHTML = "<p class='muted'>Unable to load celebration posts.</p>";
+              return;
+            }
+
+            renderCelebrationRules(payload.rules || []);
+            renderCelebrations(payload.items || []);
+            celebrationStatus.textContent = payload.canModerate
+              ? "Moderator access is enabled for this account."
+              : "Post a short, community-relevant message to the shared thread.";
+          } catch {
+            celebrationStatus.textContent = "Unable to reach API for celebration posts.";
+            celebrationList.innerHTML = "<p class='muted'>Unable to reach API for celebration posts.</p>";
           }
         }
 
@@ -1116,12 +1532,15 @@ export function renderMemberPage(config) {
               return;
             }
 
-            setToken(json.token);
+            setToken(json.token, json.user.username);
             setSignedInState(true);
             loginStatus.textContent = "Signed in as " + json.user.username + ".";
+            loginForm.reset();
             await loadEvents();
             await loadBirthdays();
             await loadNotifications();
+            await loadSmsSettings();
+            await loadCelebrations();
           } catch {
             loginStatus.textContent = "Sign in failed: unable to reach API.";
           }
@@ -1142,110 +1561,20 @@ export function renderMemberPage(config) {
           setToken(null);
           setSignedInState(false);
           loginStatus.textContent = "Signed out.";
+          loginForm.reset();
           container.innerHTML = "<p class='muted'>Sign in to load events.</p>";
           birthdayList.innerHTML = "<p class='muted'>Sign in to load birthdays.</p>";
           notificationList.innerHTML = "<p class='muted'>Sign in to load notifications.</p>";
+          smsStatus.textContent = "Sign in to manage SMS preferences.";
+          smsLimits.textContent = "Sign in to load SMS policy guidance.";
+          celebrationStatus.textContent = "Sign in to load the shared thread.";
+          celebrationList.innerHTML = "<p class='muted'>Sign in to load celebration posts.</p>";
+          celebrationRules.innerHTML = "<li>Sign in to load moderation rules.</li>";
         });
 
         refreshEventsButton.addEventListener("click", () => {
           loadEvents();
         });
-
-        if (createEventFab) {
-          createEventFab.addEventListener("click", () => {
-            resetEventFormState("Creating a new meeting.");
-            if (eventFormShell) {
-              eventFormShell.classList.remove("event-form-hidden");
-            }
-            eventTitleInput.focus();
-            eventForm.scrollIntoView({ behavior: "smooth", block: "start" });
-          });
-        }
-
-        if (bulkDeleteEventsButton) {
-          bulkDeleteEventsButton.addEventListener("click", async () => {
-            if (selectedEventIds.size === 0) {
-              return;
-            }
-            if (!confirm("Delete selected events? This cannot be undone.")) {
-              return;
-            }
-            eventStatus.textContent = "Deleting selected events...";
-            for (const eventId of Array.from(selectedEventIds)) {
-              const response = await fetch("${config.apiBaseUrl}/api/events/" + eventId, {
-                method: "DELETE",
-                headers: { Authorization: "Bearer " + authToken }
-              });
-              if (!response.ok) {
-                let message = "Unable to delete selected events.";
-                try {
-                  const json = await response.json();
-                  message = json.message || message;
-                } catch {
-                  // no-op
-                }
-                eventStatus.textContent = message;
-                return;
-              }
-            }
-            selectedEventIds = new Set();
-            eventStatus.textContent = "Selected events deleted.";
-            await loadEvents();
-          });
-        }
-
-        if (bulkExtendEventsButton) {
-          bulkExtendEventsButton.addEventListener("click", async () => {
-            if (selectedEventIds.size === 0) {
-              return;
-            }
-            const userIdInput = prompt("Enter user id to extend deadline for selected events");
-            if (userIdInput === null) {
-              return;
-            }
-            const userId = Number(userIdInput);
-            if (!Number.isInteger(userId)) {
-              eventStatus.textContent = "User id must be a whole number.";
-              return;
-            }
-            const closesAtInput = prompt(
-              "Enter override close time (ISO 8601)",
-              new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-            );
-            if (closesAtInput === null || !String(closesAtInput || "").trim()) {
-              eventStatus.textContent = "Close time is required.";
-              return;
-            }
-            const reason = String(prompt("Reason (optional)", "Batch extension") || "").trim();
-            eventStatus.textContent = "Applying overrides...";
-            for (const eventId of Array.from(selectedEventIds)) {
-              const response = await fetch(
-                "${config.apiBaseUrl}/api/events/" + eventId + "/registration-overrides",
-                {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    Authorization: "Bearer " + authToken
-                  },
-                  body: JSON.stringify({ userId, closesAt: String(closesAtInput).trim(), reason })
-                }
-              );
-              if (!response.ok) {
-                let message = "Unable to apply overrides.";
-                try {
-                  const json = await response.json();
-                  message = json.message || message;
-                } catch {
-                  // no-op
-                }
-                eventStatus.textContent = message;
-                return;
-              }
-            }
-            eventStatus.textContent = "Overrides applied to selected events.";
-            await loadEvents();
-          });
-        }
 
         refreshBirthdaysButton.addEventListener("click", () => {
           loadBirthdays();
@@ -1267,6 +1596,122 @@ export function renderMemberPage(config) {
           loadEvents();
         });
 
+        smsForm.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const token = getToken();
+          if (!token) {
+            smsStatus.textContent = "Sign in to manage SMS preferences.";
+            return;
+          }
+
+          smsStatus.textContent = "Saving SMS settings...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/notifications/sms-settings", {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer " + token
+              },
+              body: JSON.stringify({
+                enabled: smsEnabledInput.checked,
+                phoneNumber: String(smsPhoneInput.value || "").trim(),
+                dailyLimit: Number(smsDailyLimitInput.value || 0),
+                perEventLimit: Number(smsPerEventLimitInput.value || 0),
+                quietHoursStart: String(smsQuietStartInput.value || "").trim(),
+                quietHoursEnd: String(smsQuietEndInput.value || "").trim(),
+                allowUrgent: smsAllowUrgentInput.checked
+              })
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+              smsStatus.textContent = payload.message || "Unable to save SMS settings.";
+              return;
+            }
+
+            renderSmsSettings(payload.item || {}, {
+              daily: { min: 1, max: 10 },
+              perEvent: { min: 1, max: 5 }
+            });
+            smsStatus.textContent = "SMS settings saved.";
+          } catch {
+            smsStatus.textContent = "Unable to reach API for SMS settings.";
+          }
+        });
+
+        celebrationForm.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const token = getToken();
+          if (!token) {
+            celebrationStatus.textContent = "Sign in to post to the celebration thread.";
+            return;
+          }
+
+          celebrationStatus.textContent = "Posting celebration message...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/social/celebrations", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer " + token
+              },
+              body: JSON.stringify({
+                bodyText: String(celebrationBodyInput.value || "").trim(),
+                acknowledgeRules: celebrationAcknowledgeInput.checked,
+                relevantToIwfsa: celebrationRelevantInput.checked
+              })
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+              celebrationStatus.textContent = payload.message || "Unable to post celebration message.";
+              return;
+            }
+
+            celebrationBodyInput.value = "";
+            celebrationAcknowledgeInput.checked = false;
+            celebrationRelevantInput.checked = false;
+            celebrationStatus.textContent = "Celebration post added.";
+            await loadCelebrations();
+          } catch {
+            celebrationStatus.textContent = "Unable to reach API for celebration posts.";
+          }
+        });
+
+        celebrationList.addEventListener("click", async (event) => {
+          const button = event.target.closest("[data-delete-celebration-id]");
+          if (!button) {
+            return;
+          }
+
+          const token = getToken();
+          if (!token) {
+            celebrationStatus.textContent = "Sign in to moderate posts.";
+            return;
+          }
+
+          const postId = String(button.getAttribute("data-delete-celebration-id") || "").trim();
+          if (!postId) {
+            return;
+          }
+
+          celebrationStatus.textContent = "Removing celebration post...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/social/celebrations/" + postId, {
+              method: "DELETE",
+              headers: { Authorization: "Bearer " + token }
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+              celebrationStatus.textContent = payload.message || "Unable to remove celebration post.";
+              return;
+            }
+
+            celebrationStatus.textContent = "Celebration post removed.";
+            await loadCelebrations();
+          } catch {
+            celebrationStatus.textContent = "Unable to reach API for celebration posts.";
+          }
+        });
+
         setInterval(() => {
           if (!getToken()) {
             return;
@@ -1277,9 +1722,14 @@ export function renderMemberPage(config) {
 
         syncServerTime();
         setSignedInState(Boolean(getToken()));
+        if (getToken()) {
+          loginStatus.textContent = "Signed in as " + (memberUsername || "member") + ".";
+        }
         loadEvents();
         loadBirthdays();
         loadNotifications();
+        loadSmsSettings();
+        loadCelebrations();
       </script>
     `
   });
@@ -1289,32 +1739,58 @@ export function renderAdminPage(config) {
   return htmlLayout({
     title: "IWFSA | Admin Console",
     appBaseUrl: config.appBaseUrl,
-    buildTracker: config.buildTracker,
     currentPath: "/admin",
+    pageClass: "page-admin",
     body: `
       <div id="admin-root">
-        <section class="panel">
+        <section class="panel panel-hero portal-hero">
           <div class="header-cluster">
-             <h2>Admin Console</h2>
-             <div class="auth-controls">
-                <p id="login-status" class="muted">Not signed in.</p>
-                <form id="admin-login-form" class="inline-login-form">
-                   <input id="admin-username" name="username" placeholder="Username" autocomplete="username" />
-                   <input id="admin-password" type="password" name="password" placeholder="Password" autocomplete="current-password" />
-                   <button type="submit">Sign in</button>
-                </form>
+             <div>
+               <p class="eyebrow">Operations</p>
+               <h1 class="page-title">Admin Console</h1>
+               <p class="lead">
+                 Governance-first controls for members, imports, event operations, delivery monitoring, reporting,
+                 and celebration moderation.
+               </p>
+               <p class="muted">
+                 Sign in through the Access tab first. The Event Hub stays separate so meeting work has its own workspace.
+               </p>
              </div>
           </div>
 
-          <nav class="module-nav" id="admin-nav">
-             <a href="#overview" class="module-nav-link" data-module="overview">Overview</a>
-             <a href="#members" class="module-nav-link" data-module="members">Members</a>
-             <a href="#imports" class="module-nav-link" data-module="imports">Imports</a>
-             <a href="#events" class="module-nav-link" data-module="events">Event Hub</a>
-             <a href="#notifications" class="module-nav-link" data-module="notifications">Notifications</a>
+          <nav class="module-nav" id="admin-nav" aria-label="Admin modules">
+             <a href="#access" class="module-nav-link" data-module="access" data-admin-module-link="access">Access</a>
+             <a href="#overview" class="module-nav-link" data-module="overview" data-admin-module-link="overview">Overview</a>
+             <a href="#members" class="module-nav-link" data-module="members" data-admin-module-link="members">Members</a>
+             <a href="#imports" class="module-nav-link" data-module="imports" data-admin-module-link="imports">Imports</a>
+             <a href="#events" class="module-nav-link" data-module="events" data-admin-module-link="events">Event Hub</a>
+             <a href="#notifications" class="module-nav-link" data-module="notifications" data-admin-module-link="notifications">Notifications</a>
+             <a href="#reports" class="module-nav-link" data-module="reports" data-admin-module-link="reports">Reports</a>
           </nav>
+        </section>
 
-          <div id="module-overview" class="module-section">
+          <section id="module-access" class="panel module-section">
+             <div class="section-heading">
+                <div>
+                  <p class="eyebrow">Access</p>
+                  <h2>Sign in to open the admin workspace</h2>
+                </div>
+                <p class="muted">The Event Hub is kept separate from login so meeting work stays focused.</p>
+             </div>
+             <div class="admin-access-panel">
+               <p id="login-status" class="muted">Not signed in.</p>
+               <form id="admin-login-form" class="inline-login-form admin-login-form">
+                  <input id="admin-username" name="username" placeholder="Username" autocomplete="username" />
+                  <input id="admin-password" type="password" name="password" placeholder="Password" autocomplete="current-password" />
+                  <button type="submit">Sign in</button>
+               </form>
+               <div class="member-actions">
+                 <button id="admin-logout" type="button" disabled>Sign out</button>
+               </div>
+             </div>
+          </section>
+
+          <section id="module-overview" class="panel module-section">
              <p class="muted">Select a module to manage the platform.</p>
              <div class="dashboard-cards">
                 <div class="dashboard-card" onclick="window.location.hash='#events'">
@@ -1333,8 +1809,12 @@ export function renderAdminPage(config) {
                    <h4>Notifications</h4>
                    <p>Monitor delivery health and queues.</p>
                 </div>
+                <div class="dashboard-card" onclick="window.location.hash='#reports'">
+                   <h4>Reporting</h4>
+                   <p>Review engagement metrics, SMS activity, and moderation controls.</p>
+                </div>
              </div>
-          </div>
+          </section>
 
           <div id="module-members" class="module-section">
              <div class="admin-card" data-admin-panel="member_directory">
@@ -1375,13 +1855,14 @@ export function renderAdminPage(config) {
                         <th><input id="select-all-members" type="checkbox" /></th>
                         <th>Name</th>
                 <th>Organisation</th>
+                <th>Membership</th>
                 <th>Email</th>
                 <th>Cell Phone</th>
                 <th>Groups</th>
               </tr>
             </thead>
             <tbody id="member-table-body">
-              <tr><td colspan="6" class="muted">Loading members...</td></tr>
+              <tr><td colspan="7" class="muted">Loading members...</td></tr>
             </tbody>
           </table>
         </div>
@@ -1615,6 +2096,13 @@ export function renderAdminPage(config) {
             <option value="catalytic_strategy_and_voice">Catalytic Strategy and Voice</option>
             <option value="leadership_development">Leadership Development</option>
           </select>
+          <fieldset class="group-picker-fieldset">
+            <legend>Invite groups (optional)</legend>
+            <p class="muted group-picker-help">
+              Select one or more groups to invite. If any are selected, the event is visible to those groups only.
+            </p>
+            <div id="event-audience-groups" class="group-picker"></div>
+          </fieldset>
           <button type="submit" id="event-submit">Create meeting</button>
           <button type="button" id="event-cancel" hidden>Cancel edit</button>
         </form>
@@ -1723,17 +2211,114 @@ export function renderAdminPage(config) {
         </div>
       </div>
      </div>
+
+     <div id="module-reports" class="module-section">
+      <div class="admin-card" data-admin-panel="reporting_dashboard">
+        <h3>Reporting and Exports Dashboard</h3>
+        <p class="muted">Track activity across events, SMS usage, document publishing, and celebration workflows.</p>
+        <div class="member-actions">
+          <label for="report-window-days" class="muted">Window</label>
+          <select id="report-window-days" disabled>
+            <option value="30" selected>30 days</option>
+            <option value="60">60 days</option>
+            <option value="90">90 days</option>
+            <option value="180">180 days</option>
+          </select>
+          <button id="refresh-reports" type="button" disabled>Refresh dashboard</button>
+          <button id="export-reports" type="button" disabled>Export CSV</button>
+        </div>
+        <div class="import-kpi-grid report-kpi-grid">
+          <div class="import-kpi">
+            <p class="import-kpi-label">Active members</p>
+            <p id="report-active-members" class="import-kpi-value">0</p>
+          </div>
+          <div class="import-kpi">
+            <p class="import-kpi-label">Published events</p>
+            <p id="report-published-events" class="import-kpi-value">0</p>
+          </div>
+          <div class="import-kpi">
+            <p class="import-kpi-label">Confirmed signups</p>
+            <p id="report-confirmed-signups" class="import-kpi-value">0</p>
+          </div>
+          <div class="import-kpi">
+            <p class="import-kpi-label">Published documents</p>
+            <p id="report-published-documents" class="import-kpi-value">0</p>
+          </div>
+        </div>
+        <div class="table-shell">
+          <table class="member-table">
+            <thead>
+              <tr>
+                <th>Top Event</th>
+                <th class="numeric-col">Confirmed</th>
+                <th class="numeric-col">Waitlisted</th>
+                <th class="numeric-col">Attended</th>
+              </tr>
+            </thead>
+            <tbody id="report-events-body">
+              <tr><td colspan="4" class="muted">Sign in to load reporting data.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="table-shell">
+          <table class="member-table">
+            <thead>
+              <tr>
+                <th>Recent SMS</th>
+                <th>Status</th>
+                <th>Event</th>
+                <th>When</th>
+              </tr>
+            </thead>
+            <tbody id="report-sms-body">
+              <tr><td colspan="4" class="muted">Sign in to load SMS activity.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p id="report-status" class="muted">Sign in to load reporting data.</p>
+      </div>
+      <div class="admin-card" data-admin-panel="social_moderators">
+        <h3>Celebration Moderators</h3>
+        <p class="muted">Assign trusted members who can remove celebration posts when moderation is needed.</p>
+        <div class="member-actions">
+          <label for="moderator-user-id" class="muted">Member user</label>
+          <select id="moderator-user-id" disabled>
+            <option value="">Select member</option>
+          </select>
+          <button id="add-moderator" type="button" disabled>Add moderator</button>
+        </div>
+        <div class="table-shell">
+          <table class="member-table">
+            <thead>
+              <tr>
+                <th>Member</th>
+                <th>Email</th>
+                <th>Assigned</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="moderator-table-body">
+              <tr><td colspan="4" class="muted">Sign in to load moderators.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p id="moderator-status" class="muted">Sign in to manage moderators.</p>
+      </div>
+     </div>
     </div>
       <script>
         const DEFAULT_IMPORT_ACTIVATION_POLICY = "password_change_required";
         
         function handleHashChange() {
-           const hash = window.location.hash || '#overview';
+           const hash = window.location.hash || '#access';
            document.querySelectorAll('.module-nav-link').forEach(l => l.classList.toggle('active', l.getAttribute('href') === hash));
            document.querySelectorAll('.module-section').forEach(s => s.classList.remove('active'));
            const target = document.getElementById('module-' + hash.substring(1));
-           if (target) target.classList.add('active');
-           else document.getElementById('module-overview').classList.add('active');
+           if (target) {
+             target.classList.add('active');
+           } else {
+             document.getElementById('module-access').classList.add('active');
+           }
         }
         window.addEventListener('hashchange', handleHashChange);
         handleHashChange();
@@ -1741,6 +2326,7 @@ export function renderAdminPage(config) {
         const form = document.getElementById("admin-login-form");
         const adminPanelGrid = document.getElementById("admin-panel-grid");
         const status = document.getElementById("login-status");
+        const logoutButton = document.getElementById("admin-logout");
         const usernameInput = document.getElementById("admin-username");
         const passwordInput = document.getElementById("admin-password");
         const memberStatus = document.getElementById("member-status");
@@ -1777,6 +2363,7 @@ export function renderAdminPage(config) {
         const eventPostInternalCommentButton = document.getElementById("event-post-internal-comment");
         const eventInternalCommentStatus = document.getElementById("event-internal-comment-status");
         const eventAudienceInput = document.getElementById("event-audience");
+        const eventAudienceGroups = document.getElementById("event-audience-groups");
         const eventSubmitButton = document.getElementById("event-submit");
         const eventCancelButton = document.getElementById("event-cancel");
         const eventStatus = document.getElementById("event-status");
@@ -1839,6 +2426,20 @@ export function renderAdminPage(config) {
         const importEditGroupsShell = document.getElementById("import-edit-groups");
         const importEditStatusText = document.getElementById("import-edit-status-text");
         const importEditSaveButton = document.getElementById("import-edit-save");
+        const reportWindowDaysInput = document.getElementById("report-window-days");
+        const refreshReportsButton = document.getElementById("refresh-reports");
+        const exportReportsButton = document.getElementById("export-reports");
+        const reportActiveMembers = document.getElementById("report-active-members");
+        const reportPublishedEvents = document.getElementById("report-published-events");
+        const reportConfirmedSignups = document.getElementById("report-confirmed-signups");
+        const reportPublishedDocuments = document.getElementById("report-published-documents");
+        const reportEventsBody = document.getElementById("report-events-body");
+        const reportSmsBody = document.getElementById("report-sms-body");
+        const reportStatus = document.getElementById("report-status");
+        const moderatorUserIdInput = document.getElementById("moderator-user-id");
+        const addModeratorButton = document.getElementById("add-moderator");
+        const moderatorTableBody = document.getElementById("moderator-table-body");
+        const moderatorStatus = document.getElementById("moderator-status");
 
         if (importActivationPolicyInput && !importActivationPolicyInput.value) {
           importActivationPolicyInput.value = DEFAULT_IMPORT_ACTIVATION_POLICY;
@@ -1893,6 +2494,21 @@ export function renderAdminPage(config) {
         let selectedEventIds = new Set();
         let currentEvents = [];
 
+        function resolveEventAudienceSelection(formData) {
+          const selectedGroups = selectedEventGroups();
+          if (selectedGroups.length > 0) {
+            return { audienceType: "groups", groupNames: selectedGroups, audienceCode: "groups" };
+          }
+          const audienceCode = String(formData.get("audienceCode") || "all_members").trim() || "all_members";
+          if (audienceCode !== "all_members") {
+            const label = eventAudienceInput?.selectedOptions?.[0]?.textContent || "";
+            if (label && label.toLowerCase() !== "legacy audience") {
+              return { audienceType: "groups", groupNames: [label], audienceCode: "groups" };
+            }
+          }
+          return { audienceCode };
+        }
+
         function buildEventPayload(formData) {
           resetEventFormValidation();
           const title = String(formData.get("title") || "").trim();
@@ -1904,7 +2520,7 @@ export function renderAdminPage(config) {
           const hostName = String(formData.get("hostName") || "").trim();
           const capacity = Number(formData.get("capacity") || 0);
           const registrationClosesAt = toIsoStringFromLocalInput(formData.get("registrationClosesAt"));
-          const audienceCode = String(formData.get("audienceCode") || "all_members").trim();
+          const audienceSelection = resolveEventAudienceSelection(formData);
           const errors = [];
 
           if (!title) {
@@ -1940,6 +2556,11 @@ export function renderAdminPage(config) {
             return { error: errors[0] };
           }
 
+          if (audienceSelection.groupNames && audienceSelection.groupNames.length === 0) {
+            markEventFieldError(eventAudienceInput);
+            return { error: "Select at least one group for group-only events." };
+          }
+
           return {
             payload: {
               title,
@@ -1951,7 +2572,7 @@ export function renderAdminPage(config) {
               hostName,
               capacity,
               registrationClosesAt,
-              audienceCode
+              ...audienceSelection
             }
           };
         }
@@ -1970,7 +2591,7 @@ export function renderAdminPage(config) {
           const hostName = String(formData.get("hostName") || "").trim();
           const capacity = Number(formData.get("capacity") || 0);
           const registrationClosesAt = toIsoStringFromLocalInput(formData.get("registrationClosesAt"));
-          const audienceCode = String(formData.get("audienceCode") || "").trim();
+          const audienceSelection = resolveEventAudienceSelection(formData);
           const errors = [];
 
           if (!title) {
@@ -2003,10 +2624,14 @@ export function renderAdminPage(config) {
             errors.push("Capacity must be 0 or greater.");
           }
 
-          const resolvedAudienceCode = audienceCode || originalEvent.audienceCode || originalEvent.audienceType || "all_members";
-          if (resolvedAudienceCode === "groups") {
+          const resolvedAudienceCode =
+            audienceSelection.audienceCode ||
+            originalEvent.audienceCode ||
+            originalEvent.audienceType ||
+            "all_members";
+          if (resolvedAudienceCode === "groups" && !(audienceSelection.groupNames || []).length) {
             markEventFieldError(eventAudienceInput);
-            errors.push("Legacy audience requires selecting a supported audience option.");
+            errors.push("Select at least one group for group-only events.");
           }
           if (errors.length > 0) {
             return { error: errors[0] };
@@ -2022,6 +2647,7 @@ export function renderAdminPage(config) {
             hostName,
             capacity,
             registrationClosesAt,
+            ...audienceSelection,
             audienceCode: resolvedAudienceCode
           };
           return { payload };
@@ -2047,6 +2673,16 @@ export function renderAdminPage(config) {
         eventAudienceInput.addEventListener("change", () => {
           clearEventFieldError(eventAudienceInput);
           renderMemberGroupOptions();
+          const currentGroups = selectedEventGroups();
+          renderEventGroupOptions(currentGroups);
+          if (eventAudienceInput.value === "all_members") {
+            setEventGroupSelections([]);
+          } else if (selectedEventGroups().length === 0) {
+            const selectedLabel = eventAudienceInput.selectedOptions?.[0]?.textContent || "";
+            if (selectedLabel && selectedLabel.toLowerCase() !== "legacy audience") {
+              setEventGroupSelections([selectedLabel]);
+            }
+          }
           if (activeImportRowId) {
             const row = findImportRow(activeImportRowId);
             renderImportEditGroupOptions(row ? row.groups : []);
@@ -2079,6 +2715,7 @@ export function renderAdminPage(config) {
         let memberDirectorySource = [];
         let authToken = sessionStorage.getItem("iwfsa_admin_token");
         let authRole = sessionStorage.getItem("iwfsa_admin_role") || "";
+        let authUsername = sessionStorage.getItem("iwfsa_admin_username") || "";
         let activeImportBatch = null;
         let activeImportBatchId = "";
         let importRowsCache = [];
@@ -2182,6 +2819,57 @@ export function renderAdminPage(config) {
                 "</label>"
             )
             .join("");
+        }
+
+        function renderEventGroupOptions(selected = []) {
+          if (!eventAudienceGroups) {
+            return;
+          }
+          const groups = listConfiguredAudienceGroups();
+          if (groups.length === 0) {
+            eventAudienceGroups.innerHTML = "<p class='muted'>No audience groups configured yet.</p>";
+            return;
+          }
+          const selectedLower = new Set(selected.map((label) => String(label || "").toLowerCase()));
+          eventAudienceGroups.innerHTML = groups
+            .map((groupLabel) => {
+              const isChecked = selectedLower.has(String(groupLabel || "").toLowerCase()) ? " checked" : "";
+              return (
+                "<label class='group-option'>" +
+                "<input type='checkbox' name='event-audience-group' value='" +
+                escapeClientHtml(groupLabel) +
+                "'" +
+                isChecked +
+                " />" +
+                escapeClientHtml(groupLabel) +
+                "</label>"
+              );
+            })
+            .join("");
+        }
+
+        function selectedEventGroups() {
+          if (!eventAudienceGroups) {
+            return [];
+          }
+          return Array.from(eventAudienceGroups.querySelectorAll("input[name='event-audience-group']:checked"))
+            .map((input) => String(input.value || "").trim())
+            .filter(Boolean);
+        }
+
+        function setEventGroupSelections(groups) {
+          if (!eventAudienceGroups) {
+            return;
+          }
+          const normalized = new Set(
+            (Array.isArray(groups) ? groups : [])
+              .map((label) => String(label || "").trim().toLowerCase())
+              .filter(Boolean)
+          );
+          eventAudienceGroups.querySelectorAll("input[name='event-audience-group']").forEach((input) => {
+            const value = String(input.value || "").trim().toLowerCase();
+            input.checked = normalized.has(value);
+          });
         }
 
         function selectedMemberGroups() {
@@ -2299,6 +2987,7 @@ export function renderAdminPage(config) {
           activeEventId = null;
           activeEventSnapshot = null;
           eventForm.reset();
+          setEventGroupSelections([]);
           resetEventFormValidation();
           if (eventSubmitButton) {
             eventSubmitButton.textContent = "Create meeting";
@@ -2431,6 +3120,17 @@ export function renderAdminPage(config) {
             }
             eventAudienceInput.value = selectedAudience;
           }
+          const existingGroups = Array.isArray(eventItem.audienceGroupNames) ? eventItem.audienceGroupNames : [];
+          if (existingGroups.length) {
+            setEventGroupSelections(existingGroups);
+          } else if (selectedAudience && selectedAudience !== "all_members") {
+            const fallbackLabel = eventItem.audienceLabel || "";
+            if (fallbackLabel && fallbackLabel.toLowerCase() !== "groups") {
+              setEventGroupSelections([fallbackLabel]);
+            }
+          } else {
+            setEventGroupSelections([]);
+          }
           resetEventFormValidation();
           if (eventSubmitButton) {
             eventSubmitButton.textContent = "Update meeting";
@@ -2527,18 +3227,38 @@ export function renderAdminPage(config) {
           });
         }
 
-        function setAuthToken(token, role) {
+        function setAuthToken(token, role, username) {
           authToken = token || null;
           authRole = role || authRole || "";
+          authUsername = username || authUsername || "";
           if (authToken) {
             sessionStorage.setItem("iwfsa_admin_token", authToken);
             if (authRole) {
               sessionStorage.setItem("iwfsa_admin_role", authRole);
             }
+            if (authUsername) {
+              sessionStorage.setItem("iwfsa_admin_username", authUsername);
+            }
           } else {
             sessionStorage.removeItem("iwfsa_admin_token");
             sessionStorage.removeItem("iwfsa_admin_role");
+            sessionStorage.removeItem("iwfsa_admin_username");
             authRole = "";
+            authUsername = "";
+          }
+          if (status) {
+            status.textContent = authToken
+              ? "Signed in as " +
+                (authUsername || "admin") +
+                (authRole ? " (" + authRole + ")" : "") +
+                "."
+              : "Not signed in.";
+          }
+          if (form) {
+            form.hidden = Boolean(authToken);
+          }
+          if (logoutButton) {
+            logoutButton.disabled = !authToken;
           }
           refreshEventsButton.disabled = !authToken;
           dispatchRemindersButton.disabled = !authToken || !canUseAdminActions();
@@ -2555,11 +3275,22 @@ export function renderAdminPage(config) {
           }
           refreshDeliveriesButton.disabled = !authToken;
           refreshQueueButton.disabled = !authToken;
+          refreshReportsButton.disabled = !authToken;
+          exportReportsButton.disabled = !authToken;
+          reportWindowDaysInput.disabled = !authToken;
+          addModeratorButton.disabled = !authToken;
+          moderatorUserIdInput.disabled = !authToken;
           if (!authToken) {
             importRestoreRequested = false;
             resetImportView("Sign in to run imports.");
             selectedEventIds = new Set();
             updateEventBulkBar();
+            reportStatus.textContent = "Sign in to load reporting data.";
+            reportEventsBody.innerHTML = "<tr><td colspan='4' class='muted'>Sign in to load reporting data.</td></tr>";
+            reportSmsBody.innerHTML = "<tr><td colspan='4' class='muted'>Sign in to load SMS activity.</td></tr>";
+            moderatorStatus.textContent = "Sign in to manage moderators.";
+            moderatorTableBody.innerHTML = "<tr><td colspan='4' class='muted'>Sign in to load moderators.</td></tr>";
+            moderatorUserIdInput.innerHTML = "<option value=''>Select member</option>";
           } else {
             importStatus.textContent = "Run dry-run to create a new batch, or load an existing batch id.";
             updateImportButtons();
@@ -2689,14 +3420,25 @@ export function renderAdminPage(config) {
           );
         }
 
+        function renderMemberRoles(roles) {
+          if (!Array.isArray(roles) || roles.length === 0) {
+            return "<span class='muted'>Member</span>";
+          }
+          return (
+            "<div class='badge-row member-role-badges'>" +
+            roles.map((name) => "<span class='badge'>" + escapeClientHtml(name) + "</span>").join("") +
+            "</div>"
+          );
+        }
+
         function renderMembers(items) {
           const visibleItems = Array.isArray(items) ? items : [];
           const totalCount = memberDirectorySource.length;
           if (!visibleItems.length) {
             memberTableBody.innerHTML =
               totalCount > 0
-                ? "<tr><td colspan='6' class='muted'>No members match the current search.</td></tr>"
-                : "<tr><td colspan='6' class='muted'>No members found.</td></tr>";
+                ? "<tr><td colspan='7' class='muted'>No members match the current search.</td></tr>"
+                : "<tr><td colspan='7' class='muted'>No members found.</td></tr>";
             memberStatus.textContent = totalCount > 0 ? "" : "No members loaded.";
             memberCount.textContent = totalCount > 0 ? "0 of " + totalCount + " members" : "";
             queueButton.disabled = true;
@@ -2717,6 +3459,7 @@ export function renderAdminPage(config) {
               const name = member.fullName || member.username || "(No name)";
               const organisation = member.organisation || member.company || "â€”";
               const cellPhone = member.cellPhone || member.mobile || member.phone || "â€”";
+              const roles = Array.isArray(member.roles) ? member.roles : [];
               const email = String(member.email || "").trim();
               const emailCell = email
                 ? "<a href='mailto:" + encodeURIComponent(email) + "'>" + escapeClientHtml(email) + "</a>"
@@ -2731,6 +3474,9 @@ export function renderAdminPage(config) {
                 "</td>" +
                 "<td>" +
                 escapeClientHtml(organisation) +
+                "</td>" +
+                "<td>" +
+                renderMemberRoles(roles) +
                 "</td>" +
                 "<td>" +
                 emailCell +
@@ -3015,7 +3761,7 @@ export function renderAdminPage(config) {
           if (!authToken) {
             memberStatus.textContent = "Sign in to load members.";
             memberDirectorySource = [];
-            memberTableBody.innerHTML = "<tr><td colspan='6' class='muted'>Sign in required.</td></tr>";
+            memberTableBody.innerHTML = "<tr><td colspan='7' class='muted'>Sign in required.</td></tr>";
             memberOutput.textContent = "";
             memberCount.textContent = "";
             return;
@@ -3029,22 +3775,219 @@ export function renderAdminPage(config) {
             if (!response.ok) {
               memberStatus.textContent = json.message || "Unable to load members.";
               memberDirectorySource = [];
-              memberTableBody.innerHTML = "<tr><td colspan='6' class='muted'>Unable to load members.</td></tr>";
+              memberTableBody.innerHTML = "<tr><td colspan='7' class='muted'>Unable to load members.</td></tr>";
               memberOutput.textContent = "";
               memberCount.textContent = "";
               return;
             }
             memberDirectorySource = Array.isArray(json.items) ? json.items : [];
             applyMemberFilter();
+            updateModeratorOptions();
+            renderMemberGroupOptions();
+            renderEventGroupOptions(selectedEventGroups());
             if (activeImportBatch) {
               renderImportRows(importRowsCache);
             }
           } catch {
             memberStatus.textContent = "Unable to reach API. Start npm run dev:api first.";
             memberDirectorySource = [];
-            memberTableBody.innerHTML = "<tr><td colspan='6' class='muted'>Unable to reach API.</td></tr>";
+            memberTableBody.innerHTML = "<tr><td colspan='7' class='muted'>Unable to reach API.</td></tr>";
             memberOutput.textContent = "";
             memberCount.textContent = "";
+            updateModeratorOptions();
+          }
+        }
+
+        if (logoutButton) {
+          logoutButton.addEventListener("click", async () => {
+            if (!authToken) {
+              window.location.hash = "#access";
+              return;
+            }
+
+            try {
+              await fetch("${config.apiBaseUrl}/api/auth/logout", {
+                method: "POST",
+                headers: { Authorization: "Bearer " + authToken }
+              });
+            } catch {
+              // Ignore network errors and clear the local session anyway.
+            } finally {
+              setAuthToken(null, "");
+              window.location.hash = "#access";
+            }
+          });
+        }
+
+        function updateModeratorOptions() {
+          const items = Array.isArray(memberDirectorySource) ? memberDirectorySource : [];
+          const options = ["<option value=''>Select member</option>"]
+            .concat(
+              items.map((member) => {
+                const label = String(member.fullName || member.username || "Member").trim();
+                const email = String(member.email || "").trim();
+                return (
+                  "<option value='" +
+                  escapeClientHtml(member.id) +
+                  "'>" +
+                  escapeClientHtml(label + (email ? " (" + email + ")" : "")) +
+                  "</option>"
+                );
+              })
+            )
+            .join("");
+          moderatorUserIdInput.innerHTML = options;
+        }
+
+        function renderReportSummary(report) {
+          const summary = report?.summary || {};
+          reportActiveMembers.textContent = String(summary.activeMembers || 0);
+          reportPublishedEvents.textContent = String(summary.publishedEvents || 0);
+          reportConfirmedSignups.textContent = String(summary.confirmedSignups || 0);
+          reportPublishedDocuments.textContent = String(summary.publishedDocuments || 0);
+        }
+
+        function renderReportEvents(items) {
+          const rows = Array.isArray(items) ? items : [];
+          if (rows.length === 0) {
+            reportEventsBody.innerHTML = "<tr><td colspan='4' class='muted'>No event activity in this window.</td></tr>";
+            return;
+          }
+
+          reportEventsBody.innerHTML = rows
+            .map(
+              (item) =>
+                "<tr>" +
+                "<td>" +
+                escapeClientHtml(item.title || "Untitled Event") +
+                "</td>" +
+                "<td class='numeric-cell'>" +
+                escapeClientHtml(item.confirmedCount) +
+                "</td>" +
+                "<td class='numeric-cell'>" +
+                escapeClientHtml(item.waitlistedCount) +
+                "</td>" +
+                "<td class='numeric-cell'>" +
+                escapeClientHtml(item.attendedCount) +
+                "</td>" +
+                "</tr>"
+            )
+            .join("");
+        }
+
+        function renderRecentSms(items) {
+          const rows = Array.isArray(items) ? items : [];
+          if (rows.length === 0) {
+            reportSmsBody.innerHTML = "<tr><td colspan='4' class='muted'>No SMS activity logged yet.</td></tr>";
+            return;
+          }
+
+          reportSmsBody.innerHTML = rows
+            .map((item) => {
+              const memberLabel = String(item.username || item.email || "Member");
+              const eventLabel = item.eventId ? "Event #" + String(item.eventId) : String(item.eventType || "n/a");
+              const detail = item.blockedReason ? item.status + " (" + item.blockedReason + ")" : item.status;
+              return (
+                "<tr>" +
+                "<td>" +
+                escapeClientHtml(memberLabel) +
+                "</td>" +
+                "<td>" +
+                escapeClientHtml(detail || "n/a") +
+                "</td>" +
+                "<td>" +
+                escapeClientHtml(eventLabel) +
+                "</td>" +
+                "<td>" +
+                escapeClientHtml(item.createdAt || "") +
+                "</td>" +
+                "</tr>"
+              );
+            })
+            .join("");
+        }
+
+        async function loadReports() {
+          if (!authToken) {
+            reportStatus.textContent = "Sign in to load reporting data.";
+            return;
+          }
+
+          reportStatus.textContent = "Loading reporting dashboard...";
+          try {
+            const windowDays = Number(reportWindowDaysInput.value || 30);
+            const response = await fetch(
+              "${config.apiBaseUrl}/api/admin/reports/dashboard?days=" + encodeURIComponent(String(windowDays)),
+              {
+                headers: { Authorization: "Bearer " + authToken }
+              }
+            );
+            const json = await response.json();
+            if (!response.ok) {
+              reportStatus.textContent = json.message || "Unable to load reporting dashboard.";
+              return;
+            }
+
+            renderReportSummary(json);
+            renderReportEvents(json.topEvents || []);
+            renderRecentSms(json.recentSms || []);
+            reportStatus.textContent =
+              "Dashboard updated for the last " + String(json.windowDays || windowDays) + " days.";
+          } catch {
+            reportStatus.textContent = "Unable to reach API for reporting dashboard.";
+          }
+        }
+
+        function renderModerators(items) {
+          const rows = Array.isArray(items) ? items : [];
+          if (rows.length === 0) {
+            moderatorTableBody.innerHTML = "<tr><td colspan='4' class='muted'>No moderators assigned yet.</td></tr>";
+            return;
+          }
+
+          moderatorTableBody.innerHTML = rows
+            .map((item) => {
+              return (
+                "<tr>" +
+                "<td>" +
+                escapeClientHtml(item.username || "Member") +
+                "</td>" +
+                "<td>" +
+                escapeClientHtml(item.email || "") +
+                "</td>" +
+                "<td>" +
+                escapeClientHtml(item.createdAt || "") +
+                "</td>" +
+                "<td><button type='button' data-remove-moderator-id='" +
+                escapeClientHtml(item.userId) +
+                "'>Remove</button></td>" +
+                "</tr>"
+              );
+            })
+            .join("");
+        }
+
+        async function loadModerators() {
+          if (!authToken) {
+            moderatorStatus.textContent = "Sign in to manage moderators.";
+            return;
+          }
+
+          moderatorStatus.textContent = "Loading moderators...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/admin/social/moderators", {
+              headers: { Authorization: "Bearer " + authToken }
+            });
+            const json = await response.json();
+            if (!response.ok) {
+              moderatorStatus.textContent = json.message || "Unable to load moderators.";
+              return;
+            }
+
+            renderModerators(json.items || []);
+            moderatorStatus.textContent = "Moderator list refreshed.";
+          } catch {
+            moderatorStatus.textContent = "Unable to reach API for moderators.";
           }
         }
 
@@ -3066,7 +4009,15 @@ export function renderAdminPage(config) {
             const name = String(member.fullName || member.username || "").toLowerCase();
             const email = String(member.email || "").toLowerCase();
             const groups = Array.isArray(member.groups) ? member.groups.join(" ").toLowerCase() : "";
-            return name.includes(term) || email.includes(term) || groups.includes(term);
+            const roles = Array.isArray(member.roles) ? member.roles.join(" ").toLowerCase() : "";
+            const organisation = String(member.organisation || member.company || "").toLowerCase();
+            return (
+              name.includes(term) ||
+              email.includes(term) ||
+              groups.includes(term) ||
+              roles.includes(term) ||
+              organisation.includes(term)
+            );
           });
           renderMembers(filtered);
         }
@@ -4302,7 +5253,7 @@ export function renderAdminPage(config) {
             currentEvents = Array.isArray(json.items) ? json.items : [];
             renderEvents(currentEvents);
           } catch {
-            eventStatus.textContent = "Unable to reach API. Start npm run dev:api first.";
+            eventStatus.textContent = "Unable to reach the Event Hub API. Start npm run dev:api first.";
           }
         }
 
@@ -4789,6 +5740,7 @@ export function renderAdminPage(config) {
                 eventStatus.textContent = "Meeting created (id " + json.id + ").";
               }
               eventForm.reset();
+              setEventGroupSelections([]);
               resetEventFormValidation();
             }
             await loadEvents();
@@ -4891,6 +5843,136 @@ export function renderAdminPage(config) {
           }
         });
 
+        refreshDeliveriesButton.addEventListener("click", () => {
+          loadDeliveries();
+        });
+
+        refreshQueueButton.addEventListener("click", () => {
+          loadQueueStatus();
+        });
+
+        refreshReportsButton.addEventListener("click", () => {
+          loadReports();
+        });
+
+        reportWindowDaysInput.addEventListener("change", () => {
+          loadReports();
+        });
+
+        exportReportsButton.addEventListener("click", async () => {
+          if (!authToken) {
+            reportStatus.textContent = "Sign in to export dashboard data.";
+            return;
+          }
+
+          reportStatus.textContent = "Exporting CSV...";
+          try {
+            const windowDays = Number(reportWindowDaysInput.value || 30);
+            const response = await fetch(
+              "${config.apiBaseUrl}/api/admin/reports/dashboard.csv?days=" + encodeURIComponent(String(windowDays)),
+              {
+                headers: { Authorization: "Bearer " + authToken }
+              }
+            );
+            if (!response.ok) {
+              let message = "Unable to export dashboard report.";
+              try {
+                const json = await response.json();
+                message = json.message || message;
+              } catch {
+                // no-op
+              }
+              reportStatus.textContent = message;
+              return;
+            }
+
+            const csv = await response.text();
+            const disposition = response.headers.get("content-disposition") || "";
+            const match = disposition.match(/filename=\"?([^\";]+)\"?/i);
+            const filename = match ? match[1] : "admin-dashboard.csv";
+            const blobUrl = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+            const link = document.createElement("a");
+            link.href = blobUrl;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(blobUrl);
+            reportStatus.textContent = "Dashboard export downloaded: " + filename;
+          } catch {
+            reportStatus.textContent = "Unable to reach API for dashboard export.";
+          }
+        });
+
+        addModeratorButton.addEventListener("click", async () => {
+          if (!authToken) {
+            moderatorStatus.textContent = "Sign in to manage moderators.";
+            return;
+          }
+
+          const userId = Number(moderatorUserIdInput.value || 0);
+          if (!Number.isInteger(userId) || userId <= 0) {
+            moderatorStatus.textContent = "Select a member before adding a moderator.";
+            return;
+          }
+
+          moderatorStatus.textContent = "Assigning moderator...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/admin/social/moderators", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer " + authToken
+              },
+              body: JSON.stringify({ userId })
+            });
+            const json = await response.json();
+            if (!response.ok) {
+              moderatorStatus.textContent = json.message || "Unable to assign moderator.";
+              return;
+            }
+
+            moderatorStatus.textContent = "Moderator assigned.";
+            await loadModerators();
+          } catch {
+            moderatorStatus.textContent = "Unable to reach API for moderators.";
+          }
+        });
+
+        moderatorTableBody.addEventListener("click", async (event) => {
+          const button = event.target.closest("[data-remove-moderator-id]");
+          if (!button) {
+            return;
+          }
+          if (!authToken) {
+            moderatorStatus.textContent = "Sign in to manage moderators.";
+            return;
+          }
+
+          const userId = String(button.getAttribute("data-remove-moderator-id") || "").trim();
+          if (!userId) {
+            return;
+          }
+
+          moderatorStatus.textContent = "Removing moderator...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/admin/social/moderators/" + userId, {
+              method: "DELETE",
+              headers: { Authorization: "Bearer " + authToken }
+            });
+            const json = await response.json();
+            if (!response.ok) {
+              moderatorStatus.textContent = json.message || "Unable to remove moderator.";
+              return;
+            }
+
+            moderatorStatus.textContent = "Moderator removed.";
+            await loadModerators();
+          } catch {
+            moderatorStatus.textContent = "Unable to reach API for moderators.";
+          }
+        });
+
         async function handleLogin(event) {
           if (event) {
             event.preventDefault();
@@ -4916,13 +5998,14 @@ export function renderAdminPage(config) {
               return;
             }
 
-            setAuthToken(json.token, json.user.role);
-
-            status.textContent = "Signed in as " + json.user.username + " (" + json.user.role + ").";
+            setAuthToken(json.token, json.user.role, json.user.username);
+            window.location.hash = "#overview";
             await loadMembers();
             await loadEvents();
             await loadDeliveries();
             await loadQueueStatus();
+            await loadReports();
+            await loadModerators();
           } catch {
             status.textContent = "Sign in failed: unable to reach API.";
           }
@@ -4931,12 +6014,18 @@ export function renderAdminPage(config) {
         form.addEventListener("submit", handleLogin);
 
         renderMemberGroupOptions();
+        renderEventGroupOptions();
         persistHelpAndTooltips();
-        setAuthToken(authToken, authRole);
+        setAuthToken(authToken, authRole, authUsername);
+        if (authToken && (!window.location.hash || window.location.hash === "#access")) {
+          window.location.hash = "#overview";
+        }
         loadMembers();
         loadEvents();
         loadDeliveries();
         loadQueueStatus();
+        loadReports();
+        loadModerators();
       </script>
     `
   });
@@ -4946,7 +6035,6 @@ export function renderActivationPage(config) {
   return htmlLayout({
     title: "IWFSA | Activate Account",
     appBaseUrl: config.appBaseUrl,
-    buildTracker: config.buildTracker,
     currentPath: "/member",
     body: `
       <section class="panel">
@@ -5020,7 +6108,6 @@ export function renderResetPage(config) {
   return htmlLayout({
     title: "IWFSA | Reset Password",
     appBaseUrl: config.appBaseUrl,
-    buildTracker: config.buildTracker,
     currentPath: "/member",
     body: `
       <section class="panel">
@@ -5090,7 +6177,6 @@ export function renderMeetingRsvpPage(config) {
   return htmlLayout({
     title: "IWFSA | Confirm RSVP",
     appBaseUrl: config.appBaseUrl,
-    buildTracker: config.buildTracker,
     currentPath: "/member",
     body: `
       <section class="panel">
