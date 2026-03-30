@@ -75,6 +75,9 @@ test("web routes render baseline surfaces", async () => {
     assert.match(activateHtml, /Activate your account/);
     assert.match(resetHtml, /Reset your password/);
     assert.match(rsvpHtml, /Confirm meeting participation/);
+    for (const html of [publicHtml, memberHtml, adminHtml, activateHtml, resetHtml, rsvpHtml]) {
+      assert.match(html, /addEventListener\('pageshow'.*persisted/, "bfcache reload handler must be present on every page");
+    }
   } finally {
     await server.close();
   }
