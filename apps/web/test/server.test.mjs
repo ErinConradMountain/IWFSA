@@ -39,6 +39,7 @@ test("web routes render baseline surfaces", async () => {
     assert.match(publicHtml, /\/member#birthdays/);
     assert.match(publicHtml, /\/member#sms/);
     assert.match(publicHtml, /\/member#celebrations/);
+    assert.match(publicHtml, /href="[^"]*\/admin"[^>]*>Admin Console/);
     assert.match(publicHtml, /\/admin#members/);
     assert.match(publicHtml, /\/admin#imports/);
     assert.match(publicHtml, /\/admin#notifications/);
