@@ -8,6 +8,7 @@
   ],
   "functions": {
     "api/entry.mjs": {
+      "runtime": "nodejs22.x",
       "maxDuration": 60
     }
   }
