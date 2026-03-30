@@ -368,6 +368,29 @@ export function renderMemberPage(config) {
                 <option value="year">Year</option>
               </select>
               <button id="member-refresh-events" type="button" disabled>Refresh events</button>
+              <button id="member-create-event-btn" type="button" class="event-fab" disabled>+ Create Meeting</button>
+            </div>
+            <div id="member-event-form-shell" class="event-form-shell event-form-hidden" style="margin-bottom: 1rem;">
+              <form id="member-event-form" class="login-form">
+                <label for="member-event-title">Title</label>
+                <input id="member-event-title" name="title" required />
+                <label for="member-event-description">Description</label>
+                <textarea id="member-event-description" name="description" rows="3"></textarea>
+                <label for="member-event-start">Start date &amp; time</label>
+                <input id="member-event-start" name="startAt" type="datetime-local" required />
+                <label for="member-event-end">End date &amp; time</label>
+                <input id="member-event-end" name="endAt" type="datetime-local" required />
+                <label for="member-event-venue">Venue Type</label>
+                <select id="member-event-venue" name="venueType" required>
+                  <option value="physical">Physical</option>
+                  <option value="online">Online</option>
+                </select>
+                <label for="member-event-capacity">Capacity</label>
+                <input id="member-event-capacity" name="capacity" type="number" min="0" value="0" required />
+                <button type="submit" id="member-event-submit">Create meeting</button>
+                <button type="button" id="member-event-cancel">Cancel</button>
+              </form>
+              <p id="member-event-form-status" class="muted"></p>
             </div>
             <div id="event-list" class="event-grid">
                <p class="muted">Sign in to load events.</p>
@@ -508,6 +531,11 @@ export function renderMemberPage(config) {
         const birthdayPanel = document.getElementById("member-birthday-panel");
         const viewSelect = document.getElementById("member-event-view");
         const refreshEventsButton = document.getElementById("member-refresh-events");
+        const createEventBtn = document.getElementById("member-create-event-btn");
+        const memberEventFormShell = document.getElementById("member-event-form-shell");
+        const memberEventForm = document.getElementById("member-event-form");
+        const memberEventFormStatus = document.getElementById("member-event-form-status");
+        const memberEventCancelBtn = document.getElementById("member-event-cancel");
         const birthdayWindowSelect = document.getElementById("birthday-window");
         const refreshBirthdaysButton = document.getElementById("refresh-birthdays");
         const refreshNotificationsButton = document.getElementById("member-refresh-notifications");
@@ -593,6 +621,12 @@ export function renderMemberPage(config) {
           }
           viewSelect.disabled = !isSignedIn;
           refreshEventsButton.disabled = !isSignedIn;
+          if (createEventBtn) {
+            createEventBtn.disabled = !isSignedIn;
+          }
+          if (!isSignedIn && memberEventFormShell) {
+            memberEventFormShell.classList.add("event-form-hidden");
+          }
           birthdayWindowSelect.disabled = !isSignedIn;
           refreshBirthdaysButton.disabled = !isSignedIn;
           refreshNotificationsButton.disabled = !isSignedIn;
@@ -1620,6 +1654,85 @@ export function renderMemberPage(config) {
         viewSelect.addEventListener("change", () => {
           loadEvents();
         });
+
+        if (createEventBtn) {
+          createEventBtn.addEventListener("click", () => {
+            if (memberEventFormShell) {
+              memberEventFormShell.classList.toggle("event-form-hidden");
+            }
+          });
+        }
+
+        if (memberEventCancelBtn) {
+          memberEventCancelBtn.addEventListener("click", () => {
+            if (memberEventForm) {
+              memberEventForm.reset();
+            }
+            if (memberEventFormStatus) {
+              memberEventFormStatus.textContent = "";
+            }
+            if (memberEventFormShell) {
+              memberEventFormShell.classList.add("event-form-hidden");
+            }
+          });
+        }
+
+        if (memberEventForm) {
+          memberEventForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const token = getToken();
+            if (!token) {
+              if (memberEventFormStatus) {
+                memberEventFormStatus.textContent = "Sign in to create a meeting.";
+              }
+              return;
+            }
+
+            const formData = new FormData(memberEventForm);
+            const payload = {
+              title: String(formData.get("title") || "").trim(),
+              description: String(formData.get("description") || "").trim(),
+              startAt: String(formData.get("startAt") || "").trim(),
+              endAt: String(formData.get("endAt") || "").trim(),
+              venueType: String(formData.get("venueType") || "").trim(),
+              capacity: Number(formData.get("capacity") || 0)
+            };
+
+            if (memberEventFormStatus) {
+              memberEventFormStatus.textContent = "Creating meeting...";
+            }
+
+            try {
+              const response = await fetch("${config.apiBaseUrl}/api/events", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: "Bearer " + token
+                },
+                body: JSON.stringify(payload)
+              });
+              const json = await response.json();
+              if (!response.ok) {
+                if (memberEventFormStatus) {
+                  memberEventFormStatus.textContent = json.message || "Unable to create meeting.";
+                }
+                return;
+              }
+              memberEventForm.reset();
+              if (memberEventFormStatus) {
+                memberEventFormStatus.textContent = "Meeting created.";
+              }
+              if (memberEventFormShell) {
+                memberEventFormShell.classList.add("event-form-hidden");
+              }
+              await loadEvents();
+            } catch {
+              if (memberEventFormStatus) {
+                memberEventFormStatus.textContent = "Unable to reach API. Please try again.";
+              }
+            }
+          });
+        }
 
         smsForm.addEventListener("submit", async (event) => {
           event.preventDefault();

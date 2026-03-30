@@ -2106,7 +2106,7 @@ video {
 
 .carousel-slide img {
   width: 100%;
-  height: clamp(220px, 44vw, 520px);
+  height: clamp(110px, 22vw, 260px);
   object-fit: cover;
   display: block;
   transition: opacity 0.3s;
