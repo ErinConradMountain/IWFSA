@@ -8,19 +8,97 @@ This is a draft, implementation-agnostic data model.
 - username
 - email
 - passwordHash
-- status (active/suspended)
+- accountStatus (active/blocked/deactivated/invited/notInvited)
 - createdAt
 
 ### MemberProfile
 - userId (FK)
 - fullName
 - company
+- businessTitle
+- businessDetails
+- iwfsaPosition
+- bio (target max 300 chars)
+- linkedinUrl
+- professionalLinksJson
+- contactDetailsJson
+- expertiseTagsJson
+- expertiseFreeText
+- profileConfirmedAt
 - photoUrl
 - birthdayMonth (1-12)
 - birthdayDay (1-31)
 - birthdayVisibility (hidden|membersOnly|membersAndSocial)
 - birthdayConsentConfirmedAt (nullable; when consent was captured)
 - groupMemberships (via join table)
+
+### MembershipCategory
+- id
+- name
+- isDefault
+- isActive
+
+### MemberCategoryAssignment
+- id
+- userId (FK)
+- membershipCategoryId (FK)
+- startsAt (nullable)
+- endsAt (nullable)
+- createdAt
+- updatedAt
+
+### MembershipCycle
+Represents one annual membership cycle.
+
+- id
+- membershipYear
+- dueDate (default: 31 March for the relevant year)
+- status (draft|open|closed|archived)
+- createdAt
+- updatedAt
+
+### MemberFeeAccount
+Tracks a member's standing for a membership cycle.
+
+- id
+- userId (FK)
+- membershipCycleId (FK)
+- amountDue
+- amountPaid
+- balance
+- paymentStatus (paid|outstanding|partial|waived|pendingReview)
+- standingStatus (goodStanding|outstanding|partial|waived|pendingReview|blocked|deactivated)
+- accessStatus (enabled|blocked|deactivated)
+- lastPaymentAt (nullable)
+- reviewedByUserId (nullable FK)
+- reviewedAt (nullable)
+- adminNote (nullable)
+- createdAt
+- updatedAt
+
+### MemberFeeTransaction
+- id
+- memberFeeAccountId (FK)
+- transactionType (payment|waiver|credit|adjustment|reversal)
+- amount
+- referenceText (nullable)
+- notes (nullable)
+- recordedByUserId (FK)
+- recordedAt
+
+### MemberStandingAudit
+- id
+- userId (FK)
+- membershipCycleId (FK)
+- previousPaymentStatus
+- nextPaymentStatus
+- previousStandingStatus
+- nextStandingStatus
+- previousAccessStatus
+- nextAccessStatus
+- reason
+- actorUserId (FK)
+- createdAt
 
 ### GlobalMemberProfile
 Represents an IWF Global member that is *not* an IWFSA member account.
@@ -334,9 +412,12 @@ Tracks per-platform publish attempts and responses.
 - Signup unique constraint: (eventId, userId)
 - Capacity enforcement must be atomic to avoid oversubscription
 - onlineJoinUrl should be access-controlled and not broadly logged
+- Visible member-directory records must satisfy: `accountStatus = active` and current-cycle `standingStatus = goodStanding`
+- Membership categories / committee labels must stay separate from fee standing and access status
 
 ## Notes
 - EventDocument downloads should be authorized (member must be eligible to view the event).
+- Admin is the final authority on standing and access changes, even when the system automatically flags arrears after 31 March.
 
 Credential handling notes:
 - Passwords are stored only as secure hashes (never plaintext).

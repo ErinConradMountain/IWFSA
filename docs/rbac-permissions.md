@@ -13,10 +13,10 @@
 - Access login
 
 ### Member
-- View internal event listing and details (eligible events only)
+- View internal event listing and details (eligible events only, and only while active and in good standing)
 - Register/cancel registration
 - View waitlist status
-- Manage own profile basics
+- Manage own profile basics and extended professional profile fields
 - Create, edit, and publish own meetings
 - Delete own draft meetings
 - Assign/revoke event-scoped editor rights for meetings they created
@@ -32,9 +32,13 @@
 
 ### Admin
 - CRUD members
+- Determine annual membership standing and payment compliance
+- Block or deactivate members immediately when dues are not up to date
 - Bulk import members (Excel)
 - Send/resend onboarding invites
+- Send email and WhatsApp onboarding prompts where configured
 - Trigger credential resets (private delivery to member)
+- Edit/add member profile information on behalf of members
 - CRUD all events/series (including member-authored events)
 - Assign/revoke EventEditor rights per event
 - Manage and override any meeting details/communications lifecycle
@@ -54,7 +58,9 @@
 
 ## Notes
 - All permission changes are audit logged.
+- Standing changes, access blocks/restores, and annual fee decisions are audit logged.
 - Meeting creation/publish, RSVP confirmations, and editor grant changes are audit logged.
 - Closed group events require group membership checks.
 - Social posting is marketing/promotional content and requires explicit member consent and strong audit logging.
 - Pre-approvals must be audit logged and must be revocable.
+- Membership category/committee classification does not itself grant portal access; portal access depends on active status plus good standing.

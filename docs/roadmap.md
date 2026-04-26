@@ -77,9 +77,10 @@ Goal:
 
 Checkpoints:
 1. `4.1` Web push / SMS opt-in.
-2. `4.2` Reporting and exports.
-3. `4.3` Operational intelligence dashboards.
-4. `4.4` Optional social celebration workflow.
+2. `4.2` Membership & fees governance workspace.
+3. `4.3` Reporting and exports.
+4. `4.4` Operational intelligence dashboards.
+5. `4.5` Optional social celebration workflow.
 
 Exit criteria:
 - Enhancements do not regress MVP reliability, security, or governance controls.

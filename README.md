@@ -25,10 +25,12 @@ Default deployment model:
 - Authenticated member event directory with waitlist and calendar support
 - Birthday visibility and celebration tooling with consent-aware handling
 - Admin member import from Excel plus invite and credential-reset flows
+- Admin-controlled annual membership fees and good-standing access governance
 - Event publishing, collaboration, notification delivery, and reporting
 
 ## Documentation Index
 - Product requirements: `docs/product-requirements.md`
+- Membership fees and good-standing implementation plan: `docs/membership-fees-plan.md`
 - Architecture overview: `docs/architecture.md`
 - Web deployment model: `docs/web-deployment-model.md`
 - Security and privacy baseline: `docs/privacy-baseline.md`

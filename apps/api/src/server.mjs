@@ -52,6 +52,24 @@ const EVENT_DOCUMENT_TYPES = new Set(["agenda", "minutes", "attachment"]);
 const EVENT_DOCUMENT_AVAILABILITY_MODES = new Set(["immediate", "after_event", "scheduled"]);
 const EVENT_DOCUMENT_MEMBER_ACCESS_SCOPES = new Set(["all_visible", "invited_attended"]);
 const EVENT_DOCUMENT_MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
+const MEMBER_PROFILE_PHOTO_MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024;
+const MEMBER_PROFILE_PHOTO_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+const BIRTHDAY_VISIBILITY_VALUES = new Set(["hidden", "members_only", "members_and_social"]);
+const MEMBER_NEWS_STATUSES = new Set(["draft", "published", "archived"]);
+const ACCOUNT_STATUS_VALUES = new Set(["active", "blocked", "deactivated", "invited", "not_invited"]);
+const MEMBERSHIP_CYCLE_STATUSES = new Set(["draft", "open", "closed", "archived"]);
+const MEMBER_FEE_PAYMENT_STATUSES = new Set(["paid", "outstanding", "partial", "waived", "pending_review"]);
+const MEMBER_FEE_STANDING_STATUSES = new Set([
+  "good_standing",
+  "outstanding",
+  "partial",
+  "waived",
+  "pending_review",
+  "blocked",
+  "deactivated"
+]);
+const MEMBER_FEE_ACCESS_STATUSES = new Set(["enabled", "blocked", "deactivated"]);
+const MEMBER_PORTAL_ELIGIBLE_STANDING = "good_standing";
 const EVENT_DOCUMENT_ALLOWED_EXTENSIONS = new Set([
   "pdf",
   "txt",
@@ -508,10 +526,13 @@ function mapAudienceCodeToSelection(database, audienceCode) {
   };
 }
 
-function deriveAudiencePresentation(audienceType, groupNames = []) {
+function deriveAudiencePresentation(audienceType, groupNames = [], invitees = []) {
   if (audienceType !== "groups") {
     return { audienceCode: "all_members", audienceLabel: "All Members" };
   }
+
+  const inviteeCount = Array.isArray(invitees) ? invitees.length : 0;
+  const inviteeLabel = inviteeCount === 1 ? "1 selected member" : `${inviteeCount} selected members`;
 
   const normalized = groupNames
     .map((name) => String(name || "").trim())
@@ -529,12 +550,12 @@ function deriveAudiencePresentation(audienceType, groupNames = []) {
   }
 
   if (groupNames.length === 0) {
-    return { audienceCode: "groups", audienceLabel: "Groups" };
+    return { audienceCode: "groups", audienceLabel: inviteeCount > 0 ? inviteeLabel : "Groups" };
   }
 
   return {
     audienceCode: "groups",
-    audienceLabel: groupNames.join(", ")
+    audienceLabel: groupNames.join(", ") + (inviteeCount > 0 ? ` + ${inviteeLabel}` : "")
   };
 }
 
@@ -579,13 +600,21 @@ function parseImportOptions(fields) {
       ? "password_and_username_personalization_required"
       : DEFAULT_ACTIVATION_POLICY;
   const invitePolicy = fields.invite_policy === "none" ? "none" : "queue_on_apply";
+  const membershipCycleYearRaw = String(fields.membership_cycle_year || "").trim();
+  const membershipCycleYear = membershipCycleYearRaw ? parseMembershipYear(membershipCycleYearRaw) : null;
+  const membershipCategoryDefault =
+    toNullableTrimmedString(fields.membership_category_default, { maxLength: 160 }) || "Active Member";
+  const standingDefault = normalizeMemberFeeStandingStatus(fields.standing_default, "pending_review");
 
   return {
     mode,
     defaultStatus: normalizedStatus,
     usernamePolicy,
     activationPolicy,
-    invitePolicy
+    invitePolicy,
+    membershipCycleYear,
+    membershipCategoryDefault,
+    standingDefault
   };
 }
 
@@ -616,12 +645,200 @@ function parseExcelWorkbook(buffer) {
   return { headers, rows: dataRows };
 }
 
+function isPortalMemberRole(role) {
+  const normalized = String(role || "").trim().toLowerCase();
+  return normalized === "member" || normalized === "event_editor";
+}
+
+function normalizeLegacyUserStatus(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (normalized === "suspended") {
+    return "blocked";
+  }
+  if (normalized === "invited") {
+    return "invited";
+  }
+  if (normalized === "not_invited") {
+    return "not_invited";
+  }
+  return "active";
+}
+
+function normalizeAccountStatusValue(accountStatus, legacyStatus = "active") {
+  const normalized = String(accountStatus || "")
+    .trim()
+    .toLowerCase();
+  const legacyNormalized = normalizeLegacyUserStatus(legacyStatus);
+  if (!ACCOUNT_STATUS_VALUES.has(normalized)) {
+    return legacyNormalized;
+  }
+  if (legacyNormalized !== "active" && normalized === "active") {
+    return legacyNormalized;
+  }
+  return normalized;
+}
+
+function loadLatestMemberFeeAccountForUser(database, userId) {
+  return database
+    .prepare(
+      `
+      SELECT
+        mfa.id AS accountId,
+        mfa.membership_cycle_id AS membershipCycleId,
+        mfa.payment_status AS paymentStatus,
+        mfa.standing_status AS standingStatus,
+        mfa.access_status AS accessStatus,
+        mfa.amount_due AS amountDue,
+        mfa.amount_paid AS amountPaid,
+        mfa.balance,
+        mfa.last_payment_at AS lastPaymentAt,
+        mfa.reviewed_at AS reviewedAt,
+        mfa.reviewed_by_user_id AS reviewedByUserId,
+        mfa.admin_note AS adminNote,
+        mc.membership_year AS membershipYear,
+        mc.status AS membershipCycleStatus,
+        mc.due_date AS dueDate
+      FROM member_fee_accounts AS mfa
+      JOIN membership_cycles AS mc ON mc.id = mfa.membership_cycle_id
+      WHERE mfa.user_id = ?
+      ORDER BY
+        CASE mc.status
+          WHEN 'open' THEN 0
+          WHEN 'draft' THEN 1
+          WHEN 'closed' THEN 2
+          WHEN 'archived' THEN 3
+          ELSE 4
+        END,
+        mc.membership_year DESC,
+        mfa.id DESC
+      LIMIT 1
+    `
+    )
+    .get(userId);
+}
+
+function resolveMembershipEligibility(database, { userId, role, accountStatus, legacyStatus }) {
+  const normalizedRole = String(role || "")
+    .trim()
+    .toLowerCase();
+  const normalizedAccountStatus = normalizeAccountStatusValue(accountStatus, legacyStatus);
+  if (!isPortalMemberRole(normalizedRole)) {
+    return {
+      eligible: true,
+      reason: "not_member_role",
+      accountStatus: normalizedAccountStatus,
+      standingStatus: null,
+      accessStatus: null,
+      paymentStatus: null,
+      membershipCycleId: null,
+      membershipYear: null,
+      membershipCycleStatus: null,
+      enforcedByFeeAccount: false
+    };
+  }
+
+  if (normalizedAccountStatus !== "active") {
+    return {
+      eligible: false,
+      reason: "account_status",
+      accountStatus: normalizedAccountStatus,
+      standingStatus: null,
+      accessStatus: null,
+      paymentStatus: null,
+      membershipCycleId: null,
+      membershipYear: null,
+      membershipCycleStatus: null,
+      enforcedByFeeAccount: false
+    };
+  }
+
+  const latestFeeAccount = loadLatestMemberFeeAccountForUser(database, userId);
+  if (!latestFeeAccount) {
+    return {
+      eligible: true,
+      reason: "legacy_default",
+      accountStatus: normalizedAccountStatus,
+      standingStatus: MEMBER_PORTAL_ELIGIBLE_STANDING,
+      accessStatus: "enabled",
+      paymentStatus: "pending_review",
+      membershipCycleId: null,
+      membershipYear: null,
+      membershipCycleStatus: null,
+      enforcedByFeeAccount: false
+    };
+  }
+
+  const standingStatus = String(latestFeeAccount.standingStatus || "pending_review").trim().toLowerCase();
+  const accessStatus = String(latestFeeAccount.accessStatus || "enabled").trim().toLowerCase();
+  const paymentStatus = String(latestFeeAccount.paymentStatus || "pending_review").trim().toLowerCase();
+  const standingEligible = standingStatus === MEMBER_PORTAL_ELIGIBLE_STANDING;
+  const accessEligible = accessStatus === "enabled";
+  return {
+    eligible: standingEligible && accessEligible,
+    reason: standingEligible && accessEligible ? "eligible" : !standingEligible ? "standing_status" : "access_status",
+    accountStatus: normalizedAccountStatus,
+    standingStatus,
+    accessStatus,
+    paymentStatus,
+    membershipCycleId: Number(latestFeeAccount.membershipCycleId || 0) || null,
+    membershipYear: Number(latestFeeAccount.membershipYear || 0) || null,
+    membershipCycleStatus: String(latestFeeAccount.membershipCycleStatus || "").trim().toLowerCase() || null,
+    enforcedByFeeAccount: true
+  };
+}
+
+function filterEligibleMemberUserIds(database, userIds) {
+  const ids = Array.isArray(userIds)
+    ? [...new Set(userIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))]
+    : [];
+  if (ids.length === 0) {
+    return [];
+  }
+  const placeholders = ids.map(() => "?").join(",");
+  const rows = database
+    .prepare(
+      `
+      SELECT id, role, status, account_status AS accountStatus
+      FROM users
+      WHERE id IN (${placeholders})
+    `
+    )
+    .all(...ids);
+  const eligible = new Set();
+  for (const row of rows) {
+    const details = resolveMembershipEligibility(database, {
+      userId: row.id,
+      role: row.role,
+      accountStatus: row.accountStatus,
+      legacyStatus: row.status
+    });
+    if (details.eligible) {
+      eligible.add(Number(row.id));
+    }
+  }
+  return ids.filter((id) => eligible.has(id));
+}
+
 function requireActivationClear(user, response, corsHeaders) {
   if (user?.mustChangePassword) {
     writeJson(
       response,
       403,
       { error: "activation_required", message: "Password change required before access." },
+      corsHeaders
+    );
+    return false;
+  }
+  if (isPortalMemberRole(user?.role) && user?.membershipEligible === false) {
+    writeJson(
+      response,
+      403,
+      {
+        error: "membership_not_in_good_standing",
+        message: "Member access is restricted to active members in good standing."
+      },
       corsHeaders
     );
     return false;
@@ -800,9 +1017,15 @@ function listPublishedEvents(database, user, view) {
           WHERE event_audience_groups.event_id = events.id
             AND group_members.user_id = ?
         )
+        OR EXISTS (
+          SELECT 1
+          FROM event_invitees
+          WHERE event_invitees.event_id = events.id
+            AND event_invitees.user_id = ?
+        )
       )
     `;
-    params.push(user?.id || -1);
+    params.push(user?.id || -1, user?.id || -1);
   }
 
   const filtered = applyDateFilter(sql, view);
@@ -1035,7 +1258,94 @@ function canUserAccessGroupedEvent(database, eventId, userId) {
     `
     )
     .get(eventId, userId);
-  return Boolean(row);
+  if (row) {
+    return true;
+  }
+  const inviteeRow = database
+    .prepare(
+      `
+      SELECT 1
+      FROM event_invitees
+      WHERE event_id = ?
+        AND user_id = ?
+      LIMIT 1
+    `
+    )
+    .get(eventId, userId);
+  return Boolean(inviteeRow);
+}
+
+function normalizeEventInviteeIds(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return [
+    ...new Set(
+      value
+        .map((item) => Number(item))
+        .filter((item) => Number.isInteger(item) && item > 0)
+    )
+  ];
+}
+
+function resolveActiveMemberInviteeIds(database, value) {
+  const userIds = normalizeEventInviteeIds(value);
+  if (userIds.length === 0) {
+    return [];
+  }
+  const placeholders = userIds.map(() => "?").join(",");
+  const rows = database
+    .prepare(
+      `
+      SELECT id
+      FROM users
+      WHERE role = 'member'
+        AND account_status = 'active'
+        AND id IN (${placeholders})
+    `
+    )
+    .all(...userIds);
+  const accountActiveIds = rows.map((row) => Number(row.id)).filter((id) => Number.isInteger(id));
+  const eligibleIds = new Set(filterEligibleMemberUserIds(database, accountActiveIds));
+  if (eligibleIds.size !== userIds.length) {
+    const error = new Error("Selected invitees must be active members in good standing.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  return userIds.filter((id) => eligibleIds.has(id));
+}
+
+function loadEventInviteeUserIds(database, eventId) {
+  const rows = database
+    .prepare(
+      `
+      SELECT event_invitees.user_id AS userId
+      FROM event_invitees
+      JOIN users ON users.id = event_invitees.user_id
+      WHERE event_invitees.event_id = ?
+        AND users.role = 'member'
+        AND users.account_status = 'active'
+      ORDER BY event_invitees.user_id ASC
+    `
+    )
+    .all(eventId);
+  const rawIds = rows.map((row) => Number(row.userId)).filter((id) => Number.isInteger(id));
+  return filterEligibleMemberUserIds(database, rawIds);
+}
+
+function setEventInvitees(database, eventId, userIds, actorUserId = null) {
+  database.prepare("DELETE FROM event_invitees WHERE event_id = ?").run(eventId);
+  const inviteeIds = normalizeEventInviteeIds(userIds);
+  if (inviteeIds.length === 0) {
+    return;
+  }
+  const insert = database.prepare(
+    "INSERT INTO event_invitees (event_id, user_id, invited_by_user_id) VALUES (?, ?, ?)"
+  );
+  for (const userId of inviteeIds) {
+    insert.run(eventId, userId, actorUserId || null);
+  }
 }
 
 function loadEventOverrideMap(database, userId, eventIds) {
@@ -1162,6 +1472,62 @@ function loadEventAudienceGroupMap(database, eventIds) {
   return map;
 }
 
+function loadEventInviteeMap(database, eventIds) {
+  const map = new Map();
+  if (!Array.isArray(eventIds) || eventIds.length === 0) {
+    return map;
+  }
+
+  const placeholders = eventIds.map(() => "?").join(",");
+  const rows = database
+    .prepare(
+      `
+      SELECT
+        event_invitees.event_id AS eventId,
+        users.id AS userId,
+        users.username,
+        users.email,
+        member_profiles.full_name AS fullName,
+        member_profiles.company AS organisation
+      FROM event_invitees
+      JOIN users ON users.id = event_invitees.user_id
+      LEFT JOIN member_profiles ON member_profiles.user_id = users.id
+      WHERE event_invitees.event_id IN (${placeholders})
+        AND users.role = 'member'
+        AND users.account_status = 'active'
+      ORDER BY event_invitees.event_id,
+        CASE WHEN member_profiles.full_name IS NULL OR member_profiles.full_name = '' THEN 1 ELSE 0 END,
+        member_profiles.full_name,
+        users.username
+    `
+    )
+    .all(...eventIds);
+
+  const eligibleIdSet = new Set(
+    filterEligibleMemberUserIds(
+      database,
+      rows.map((row) => Number(row.userId)).filter((id) => Number.isInteger(id))
+    )
+  );
+  for (const row of rows) {
+    if (!eligibleIdSet.has(Number(row.userId))) {
+      continue;
+    }
+    if (!map.has(row.eventId)) {
+      map.set(row.eventId, []);
+    }
+    map.get(row.eventId).push({
+      userId: Number(row.userId),
+      username: row.username || "",
+      email: row.email || "",
+      fullName: row.fullName || "",
+      organisation: row.organisation || ""
+    });
+  }
+
+  return map;
+}
+
 function hasAudienceIntersection(proposedAudienceType, proposedGroupIds, existingAudienceType, existingGroupIds) {
   const normalizedProposedType = proposedAudienceType === "groups" ? "groups" : "all_members";
   const normalizedExistingType = existingAudienceType === "groups" ? "groups" : "all_members";
@@ -1281,6 +1647,7 @@ function decorateEventsForViewer(database, items, user, summaryCache) {
   const draftMap = loadEventDraftMap(database, userId, eventIds);
   const editorGrantMap = loadEventEditorGrantMap(database, userId, eventIds);
   const audienceGroupMap = loadEventAudienceGroupMap(database, eventIds);
+  const inviteeMap = loadEventInviteeMap(database, eventIds);
   const nowMs = Date.now();
   const viewerIsAdmin = isAdminRole(user?.role || "");
 
@@ -1289,7 +1656,8 @@ function decorateEventsForViewer(database, items, user, summaryCache) {
     const signup = signupMap.get(item.id) || null;
     const overrideClosesAt = overrideMap.get(item.id) || null;
     const audienceMeta = audienceGroupMap.get(item.id) || { groupIds: [], groupNames: [] };
-    const audiencePresentation = deriveAudiencePresentation(item.audienceType, audienceMeta.groupNames);
+    const audienceInvitees = inviteeMap.get(item.id) || [];
+    const audiencePresentation = deriveAudiencePresentation(item.audienceType, audienceMeta.groupNames, audienceInvitees);
     const hasEventEditorGrant = Boolean(editorGrantMap.get(item.id));
     const isCreator = Number(item.createdByUserId || 0) === Number(userId || 0);
     const canEdit = viewerIsAdmin || hasEventEditorGrant || (isCreator && item.status !== "cancelled");
@@ -1332,6 +1700,8 @@ function decorateEventsForViewer(database, items, user, summaryCache) {
       audienceLabel: audiencePresentation.audienceLabel,
       audienceGroupIds: audienceMeta.groupIds,
       audienceGroupNames: audienceMeta.groupNames,
+      audienceInviteeIds: audienceInvitees.map((invitee) => invitee.userId),
+      audienceInvitees,
       isCreator,
       hasEventEditorGrant,
       canEdit,
@@ -1586,6 +1956,7 @@ function loadSession(database, token) {
         users.email,
         users.role,
         users.status,
+        users.account_status AS accountStatus,
         users.must_change_password AS mustChangePassword,
         users.must_change_username AS mustChangeUsername
       FROM sessions
@@ -1608,9 +1979,26 @@ function loadSession(database, token) {
     return null;
   }
 
-  if (session.status !== "active") {
+  const accountStatus = normalizeAccountStatusValue(session.accountStatus, session.status);
+  if (accountStatus !== "active") {
     return null;
   }
+
+  const membership = resolveMembershipEligibility(database, {
+    userId: session.userId,
+    role: session.role,
+    accountStatus,
+    legacyStatus: session.status
+  });
+
+  session.accountStatus = accountStatus;
+  session.membershipEligible = membership.eligible;
+  session.membershipStanding = membership.standingStatus;
+  session.membershipAccessStatus = membership.accessStatus;
+  session.membershipPaymentStatus = membership.paymentStatus;
+  session.membershipCycleId = membership.membershipCycleId;
+  session.membershipYear = membership.membershipYear;
+  session.membershipCycleStatus = membership.membershipCycleStatus;
 
   return session;
 }
@@ -1630,6 +2018,14 @@ function requireAuth(database, request, response, corsHeaders) {
       username: session.username,
       email: session.email,
       role: session.role,
+      accountStatus: session.accountStatus,
+      membershipEligible: session.membershipEligible !== false,
+      membershipStanding: session.membershipStanding || null,
+      membershipAccessStatus: session.membershipAccessStatus || null,
+      membershipPaymentStatus: session.membershipPaymentStatus || null,
+      membershipCycleId: session.membershipCycleId || null,
+      membershipYear: session.membershipYear || null,
+      membershipCycleStatus: session.membershipCycleStatus || null,
       mustChangePassword: Boolean(session.mustChangePassword),
       mustChangeUsername: Boolean(session.mustChangeUsername)
     }
@@ -1787,6 +2183,7 @@ function findUserForLogin(database, username) {
         email,
         role,
         status,
+        account_status AS accountStatus,
         must_change_password AS must_change_password,
         must_change_username AS must_change_username,
         password_hash AS passwordHash
@@ -1796,6 +2193,37 @@ function findUserForLogin(database, username) {
     `
     )
     .get(username);
+}
+
+function toAuthUserPayload(user, membership = null) {
+  const accountStatus = normalizeAccountStatusValue(user?.accountStatus, user?.status);
+  const membershipState =
+    membership ||
+    {
+      eligible: true,
+      standingStatus: null,
+      accessStatus: null,
+      paymentStatus: null,
+      membershipCycleId: null,
+      membershipYear: null,
+      membershipCycleStatus: null
+    };
+  return {
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    role: user.role,
+    accountStatus,
+    membershipEligible: membershipState.eligible !== false,
+    membershipStanding: membershipState.standingStatus || null,
+    membershipAccessStatus: membershipState.accessStatus || null,
+    membershipPaymentStatus: membershipState.paymentStatus || null,
+    membershipCycleId: membershipState.membershipCycleId || null,
+    membershipYear: membershipState.membershipYear || null,
+    membershipCycleStatus: membershipState.membershipCycleStatus || null,
+    mustChangePassword: Boolean(user.must_change_password),
+    mustChangeUsername: Boolean(user.must_change_username)
+  };
 }
 
 function listMembers(database) {
@@ -1808,6 +2236,7 @@ function listMembers(database) {
         users.email,
         users.role,
         users.status,
+        users.account_status AS accountStatus,
         users.created_at AS createdAt,
         users.updated_at AS updatedAt,
         member_profiles.full_name AS fullName,
@@ -1816,7 +2245,8 @@ function listMembers(database) {
         member_profiles.photo_url AS photoUrl,
         member_profiles.birthday_month AS birthdayMonth,
         member_profiles.birthday_day AS birthdayDay,
-        member_profiles.birthday_visibility AS birthdayVisibility
+        member_profiles.birthday_visibility AS birthdayVisibility,
+        member_profiles.profile_confirmed_at AS profileConfirmedAt
       FROM users
       LEFT JOIN member_profiles ON member_profiles.user_id = users.id
       WHERE users.role = 'member'
@@ -1878,21 +2308,1533 @@ function listMembers(database) {
     rolesByUser.get(row.userId).push(row.name);
   }
 
-  return members.map((member) => ({
-    ...member,
-    organisation: member.company || "",
-    groups: groupsByUser.get(member.id) || [],
-    roles: rolesByUser.get(member.id) || []
-  }));
+  return members.map((member) => {
+    const membership = resolveMembershipEligibility(database, {
+      userId: member.id,
+      role: member.role,
+      accountStatus: member.accountStatus,
+      legacyStatus: member.status
+    });
+    return {
+      ...member,
+      accountStatus: normalizeAccountStatusValue(member.accountStatus, member.status),
+      membershipEligible: membership.eligible,
+      membershipStanding: membership.standingStatus || null,
+      membershipAccessStatus: membership.accessStatus || null,
+      membershipPaymentStatus: membership.paymentStatus || null,
+      membershipCycleId: membership.membershipCycleId || null,
+      membershipYear: membership.membershipYear || null,
+      membershipCycleStatus: membership.membershipCycleStatus || null,
+      organisation: member.company || "",
+      groups: groupsByUser.get(member.id) || [],
+      roles: rolesByUser.get(member.id) || []
+    };
+  });
 }
 
-function ensureSeedMembers(database) {
-  const existing = database.prepare("SELECT COUNT(1) AS total FROM users WHERE role = 'member'").get();
-  const total = Number(existing?.total || 0);
-  if (total > 0) {
-    return { seeded: false, count: total };
+function listActiveMemberDirectory(database, { search = "", limit = 80 } = {}) {
+  const term = String(search || "").trim().toLowerCase();
+  const maxLimit = Math.max(1, Math.min(Number(limit || 80), 150));
+  return listMembers(database)
+    .filter((member) => {
+      if (member.accountStatus !== "active") {
+        return false;
+      }
+      if (!member.membershipEligible) {
+        return false;
+      }
+      if (!term) {
+        return true;
+      }
+      const haystack = [
+        member.fullName,
+        member.username,
+        member.email,
+        member.organisation,
+        ...(Array.isArray(member.groups) ? member.groups : [])
+      ]
+        .map((value) => String(value || "").toLowerCase())
+        .join(" ");
+      return haystack.includes(term);
+    })
+    .slice(0, maxLimit)
+    .map((member) => ({
+      id: Number(member.id),
+      userId: Number(member.id),
+      username: member.username || "",
+      email: member.email || "",
+      fullName: member.fullName || "",
+      organisation: member.organisation || "",
+      groups: Array.isArray(member.groups) ? member.groups : [],
+      membershipStanding: member.membershipStanding || null,
+      membershipCycleYear: Number(member.membershipYear || 0) || null
+    }));
+}
+
+function normalizeMembershipCycleStatus(value, fallback = "draft") {
+  const normalized = String(value || fallback)
+    .trim()
+    .toLowerCase();
+  if (!MEMBERSHIP_CYCLE_STATUSES.has(normalized)) {
+    const error = new Error("membership cycle status must be draft, open, closed, or archived.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  return normalized;
+}
+
+function normalizeMemberFeePaymentStatus(value, fallback = "pending_review") {
+  const normalized = String(value || fallback)
+    .trim()
+    .toLowerCase();
+  if (!MEMBER_FEE_PAYMENT_STATUSES.has(normalized)) {
+    const error = new Error("payment status is invalid.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  return normalized;
+}
+
+function normalizeMemberFeeStandingStatus(value, fallback = "pending_review") {
+  const normalized = String(value || fallback)
+    .trim()
+    .toLowerCase();
+  if (!MEMBER_FEE_STANDING_STATUSES.has(normalized)) {
+    const error = new Error("standing status is invalid.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  return normalized;
+}
+
+function normalizeMemberFeeAccessStatus(value, fallback = "enabled") {
+  const normalized = String(value || fallback)
+    .trim()
+    .toLowerCase();
+  if (!MEMBER_FEE_ACCESS_STATUSES.has(normalized)) {
+    const error = new Error("access status is invalid.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  return normalized;
+}
+
+function parseMembershipYear(value, fallback = new Date().getUTCFullYear()) {
+  if (value === undefined || value === null || value === "") {
+    return Number(fallback);
+  }
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 2000 || parsed > 2100) {
+    const error = new Error("membershipYear must be between 2000 and 2100.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  return parsed;
+}
+
+function defaultDueDateForMembershipYear(membershipYear) {
+  return `${String(membershipYear)}-03-31`;
+}
+
+function normalizeMembershipDueDate(value, membershipYear) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return defaultDueDateForMembershipYear(membershipYear);
+  }
+  const parsed = Date.parse(raw);
+  if (!Number.isFinite(parsed)) {
+    const error = new Error("dueDate must be a valid date.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  return new Date(parsed).toISOString().slice(0, 10);
+}
+
+function toMembershipCycleResponseItem(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    id: Number(row.id),
+    membershipYear: Number(row.membershipYear || row.membership_year || 0) || null,
+    dueDate: String(row.dueDate || row.due_date || ""),
+    status: String(row.status || "draft"),
+    createdAt: row.createdAt || row.created_at || null,
+    updatedAt: row.updatedAt || row.updated_at || null
+  };
+}
+
+function loadMembershipCycleByYear(database, membershipYear) {
+  return database
+    .prepare(
+      `
+      SELECT
+        id,
+        membership_year AS membershipYear,
+        due_date AS dueDate,
+        status,
+        created_at AS createdAt,
+        updated_at AS updatedAt
+      FROM membership_cycles
+      WHERE membership_year = ?
+      LIMIT 1
+    `
+    )
+    .get(membershipYear);
+}
+
+function loadOpenMembershipCycle(database) {
+  return database
+    .prepare(
+      `
+      SELECT
+        id,
+        membership_year AS membershipYear,
+        due_date AS dueDate,
+        status,
+        created_at AS createdAt,
+        updated_at AS updatedAt
+      FROM membership_cycles
+      WHERE status = 'open'
+      ORDER BY membership_year DESC, id DESC
+      LIMIT 1
+    `
+    )
+    .get();
+}
+
+function loadLatestMembershipCycle(database) {
+  return database
+    .prepare(
+      `
+      SELECT
+        id,
+        membership_year AS membershipYear,
+        due_date AS dueDate,
+        status,
+        created_at AS createdAt,
+        updated_at AS updatedAt
+      FROM membership_cycles
+      ORDER BY membership_year DESC, id DESC
+      LIMIT 1
+    `
+    )
+    .get();
+}
+
+function loadPreferredMembershipCycle(database, requestedMembershipYear = null) {
+  if (requestedMembershipYear !== null && requestedMembershipYear !== undefined && requestedMembershipYear !== "") {
+    return loadMembershipCycleByYear(database, parseMembershipYear(requestedMembershipYear, requestedMembershipYear));
+  }
+  return loadOpenMembershipCycle(database) || loadLatestMembershipCycle(database) || null;
+}
+
+function ensureMembershipCycleForImport(database, { membershipYear, actorUserId }) {
+  if (!membershipYear) {
+    return null;
+  }
+  const parsedYear = parseMembershipYear(membershipYear);
+  const existing = loadMembershipCycleByYear(database, parsedYear);
+  if (existing) {
+    return existing;
+  }
+  const dueDate = defaultDueDateForMembershipYear(parsedYear);
+  runTransaction(database, () => {
+    database
+      .prepare(
+        `
+        UPDATE membership_cycles
+        SET status = 'closed', updated_at = CURRENT_TIMESTAMP
+        WHERE status = 'open' AND membership_year != ?
+      `
+      )
+      .run(parsedYear);
+    database
+      .prepare(
+        `
+        INSERT INTO membership_cycles (membership_year, due_date, status, created_at, updated_at)
+        VALUES (?, ?, 'open', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `
+      )
+      .run(parsedYear, dueDate);
+    database
+      .prepare(
+        `
+        INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+        VALUES (?, 'membership_cycle_created_from_import', 'membership_cycle', ?, ?)
+      `
+      )
+      .run(
+        actorUserId,
+        String(parsedYear),
+        JSON.stringify({
+          membershipYear: parsedYear,
+          dueDate,
+          status: "open"
+        })
+      );
+  });
+  return loadMembershipCycleByYear(database, parsedYear);
+}
+
+function listMembershipCycles(database, { limit = 30 } = {}) {
+  const maxLimit = Math.max(1, Math.min(Number(limit || 30), 200));
+  return database
+    .prepare(
+      `
+      SELECT
+        id,
+        membership_year AS membershipYear,
+        due_date AS dueDate,
+        status,
+        created_at AS createdAt,
+        updated_at AS updatedAt
+      FROM membership_cycles
+      ORDER BY membership_year DESC, id DESC
+      LIMIT ?
+    `
+    )
+    .all(maxLimit)
+    .map((row) => toMembershipCycleResponseItem(row));
+}
+
+function loadMemberFeeAccountForCycle(database, { userId, membershipCycleId }) {
+  return database
+    .prepare(
+      `
+      SELECT
+        id,
+        user_id AS userId,
+        membership_cycle_id AS membershipCycleId,
+        amount_due AS amountDue,
+        amount_paid AS amountPaid,
+        balance,
+        payment_status AS paymentStatus,
+        standing_status AS standingStatus,
+        access_status AS accessStatus,
+        last_payment_at AS lastPaymentAt,
+        reviewed_by_user_id AS reviewedByUserId,
+        reviewed_at AS reviewedAt,
+        admin_note AS adminNote,
+        created_at AS createdAt,
+        updated_at AS updatedAt
+      FROM member_fee_accounts
+      WHERE user_id = ? AND membership_cycle_id = ?
+      LIMIT 1
+    `
+    )
+    .get(userId, membershipCycleId);
+}
+
+function loadMembershipCategoryAssignments(database, userIds) {
+  const ids = Array.isArray(userIds)
+    ? [...new Set(userIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))]
+    : [];
+  if (ids.length === 0) {
+    return new Map();
+  }
+  const placeholders = ids.map(() => "?").join(",");
+  const rows = database
+    .prepare(
+      `
+      SELECT
+        member_category_assignments.user_id AS userId,
+        membership_categories.id AS categoryId,
+        membership_categories.name AS categoryName
+      FROM member_category_assignments
+      JOIN membership_categories ON membership_categories.id = member_category_assignments.membership_category_id
+      WHERE member_category_assignments.user_id IN (${placeholders})
+        AND member_category_assignments.ends_at IS NULL
+      ORDER BY member_category_assignments.updated_at DESC, member_category_assignments.id DESC
+    `
+    )
+    .all(...ids);
+  const map = new Map();
+  for (const row of rows) {
+    if (map.has(Number(row.userId))) {
+      continue;
+    }
+    map.set(Number(row.userId), {
+      categoryId: Number(row.categoryId || 0) || null,
+      categoryName: String(row.categoryName || "Active Member")
+    });
+  }
+  return map;
+}
+
+function normalizeMembershipCategoryName(value) {
+  return toNullableTrimmedString(value, { maxLength: 160 }) || "Active Member";
+}
+
+function ensureMembershipCategory(database, name) {
+  const categoryName = normalizeMembershipCategoryName(name);
+  const existing = database
+    .prepare("SELECT id, name FROM membership_categories WHERE LOWER(name) = LOWER(?) LIMIT 1")
+    .get(categoryName);
+  if (existing) {
+    return { id: Number(existing.id), name: existing.name || categoryName };
+  }
+  const result = database
+    .prepare(
+      `
+      INSERT INTO membership_categories (name, is_default, is_active, created_at, updated_at)
+      VALUES (?, 0, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `
+    )
+    .run(categoryName);
+  return { id: Number(result.lastInsertRowid), name: categoryName };
+}
+
+function assignMembershipCategory(database, { userId, categoryName }) {
+  const parsedUserId = Number(userId);
+  if (!Number.isInteger(parsedUserId) || parsedUserId <= 0) {
+    return null;
+  }
+  const category = ensureMembershipCategory(database, categoryName);
+  database
+    .prepare(
+      `
+      UPDATE member_category_assignments
+      SET ends_at = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE user_id = ?
+        AND ends_at IS NULL
+        AND membership_category_id != ?
+    `
+    )
+    .run(parsedUserId, category.id);
+  database
+    .prepare(
+      `
+      INSERT INTO member_category_assignments (
+        user_id,
+        membership_category_id,
+        starts_at,
+        created_at,
+        updated_at
+      )
+      SELECT ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM member_category_assignments
+        WHERE user_id = ?
+          AND membership_category_id = ?
+          AND ends_at IS NULL
+      )
+    `
+    )
+    .run(parsedUserId, category.id, parsedUserId, category.id);
+  return category;
+}
+
+function loadMembershipDuesReminderMap(database, userIds) {
+  const ids = normalizeMembershipFeeUserIds(userIds);
+  if (ids.length === 0) {
+    return new Map();
+  }
+  const placeholders = ids.map(() => "?").join(",");
+  const rows = database
+    .prepare(
+      `
+      SELECT
+        user_id AS userId,
+        status,
+        channel,
+        created_at AS createdAt
+      FROM notification_deliveries
+      WHERE event_type = 'membership_dues_reminder'
+        AND user_id IN (${placeholders})
+      ORDER BY datetime(created_at) DESC, id DESC
+    `
+    )
+    .all(...ids);
+  const map = new Map();
+  for (const row of rows) {
+    const userId = Number(row.userId);
+    if (!map.has(userId)) {
+      map.set(userId, {
+        status: row.status || "",
+        channel: row.channel || "",
+        sentAt: row.createdAt || null
+      });
+    }
+  }
+  return map;
+}
+
+function listMemberStandingAudit(database, { userId, membershipCycleId = null, limit = 20 } = {}) {
+  const parsedUserId = Number(userId);
+  if (!Number.isInteger(parsedUserId) || parsedUserId <= 0) {
+    return [];
+  }
+  const maxLimit = Math.max(1, Math.min(Number(limit || 20), 100));
+  const params = [parsedUserId];
+  let cycleClause = "";
+  if (membershipCycleId) {
+    cycleClause = "AND member_standing_audit.membership_cycle_id = ?";
+    params.push(Number(membershipCycleId));
+  }
+  params.push(maxLimit);
+  return database
+    .prepare(
+      `
+      SELECT
+        member_standing_audit.id,
+        member_standing_audit.user_id AS userId,
+        member_standing_audit.membership_cycle_id AS membershipCycleId,
+        membership_cycles.membership_year AS membershipYear,
+        member_standing_audit.previous_payment_status AS previousPaymentStatus,
+        member_standing_audit.next_payment_status AS nextPaymentStatus,
+        member_standing_audit.previous_standing_status AS previousStandingStatus,
+        member_standing_audit.next_standing_status AS nextStandingStatus,
+        member_standing_audit.previous_access_status AS previousAccessStatus,
+        member_standing_audit.next_access_status AS nextAccessStatus,
+        member_standing_audit.reason,
+        member_standing_audit.actor_user_id AS actorUserId,
+        users.username AS actorUsername,
+        member_standing_audit.created_at AS createdAt
+      FROM member_standing_audit
+      LEFT JOIN users ON users.id = member_standing_audit.actor_user_id
+      LEFT JOIN membership_cycles ON membership_cycles.id = member_standing_audit.membership_cycle_id
+      WHERE member_standing_audit.user_id = ?
+        ${cycleClause}
+      ORDER BY datetime(member_standing_audit.created_at) DESC, member_standing_audit.id DESC
+      LIMIT ?
+    `
+    )
+    .all(...params)
+    .map((row) => ({
+      id: Number(row.id),
+      userId: Number(row.userId),
+      membershipCycleId: Number(row.membershipCycleId),
+      membershipYear: Number(row.membershipYear || 0) || null,
+      previousPaymentStatus: row.previousPaymentStatus || null,
+      nextPaymentStatus: row.nextPaymentStatus || null,
+      previousStandingStatus: row.previousStandingStatus || null,
+      nextStandingStatus: row.nextStandingStatus || null,
+      previousAccessStatus: row.previousAccessStatus || null,
+      nextAccessStatus: row.nextAccessStatus || null,
+      reason: row.reason || null,
+      actorUserId: Number(row.actorUserId || 0) || null,
+      actorUsername: row.actorUsername || "",
+      createdAt: row.createdAt || null
+    }));
+}
+
+function listMembershipFeeAccountsByCycle(database, membershipCycleId) {
+  if (!Number.isInteger(Number(membershipCycleId)) || Number(membershipCycleId) <= 0) {
+    return [];
+  }
+  return database
+    .prepare(
+      `
+      SELECT
+        id,
+        user_id AS userId,
+        membership_cycle_id AS membershipCycleId,
+        amount_due AS amountDue,
+        amount_paid AS amountPaid,
+        balance,
+        payment_status AS paymentStatus,
+        standing_status AS standingStatus,
+        access_status AS accessStatus,
+        last_payment_at AS lastPaymentAt,
+        reviewed_by_user_id AS reviewedByUserId,
+        reviewed_at AS reviewedAt,
+        admin_note AS adminNote,
+        created_at AS createdAt,
+        updated_at AS updatedAt
+      FROM member_fee_accounts
+      WHERE membership_cycle_id = ?
+      ORDER BY user_id ASC
+    `
+    )
+    .all(Number(membershipCycleId));
+}
+
+function toMembershipFeesMemberItem(member, { cycle, accountByUserId, categoryByUserId, reminderByUserId = new Map() }) {
+  const userId = Number(member.id);
+  const account = accountByUserId.get(userId) || null;
+  const category = categoryByUserId.get(userId) || { categoryId: null, categoryName: "Active Member" };
+  const reminder = reminderByUserId.get(userId) || null;
+  const accountStatus = normalizeAccountStatusValue(member.accountStatus, member.status);
+  const paymentStatus = String(account?.paymentStatus || member.membershipPaymentStatus || "pending_review");
+  const standingStatus = String(account?.standingStatus || member.membershipStanding || "pending_review");
+  const accessStatus = String(account?.accessStatus || member.membershipAccessStatus || "enabled");
+  const amountDue = Number(account?.amountDue || 0);
+  const amountPaid = Number(account?.amountPaid || 0);
+  const balance = Number(account?.balance ?? amountDue - amountPaid);
+  const profileComplete =
+    Boolean(member.profileConfirmedAt) ||
+    (Boolean(String(member.fullName || "").trim()) &&
+      Boolean(String(member.organisation || "").trim()) &&
+      Boolean(String(member.phone || "").trim()));
+  const committeeLabels = [...new Set([...(member.groups || []), ...(member.roles || [])].filter(Boolean))];
+  return {
+    userId,
+    username: member.username || "",
+    fullName: member.fullName || "",
+    email: member.email || "",
+    phone: member.phone || "",
+    company: member.organisation || "",
+    membershipYear: cycle?.membershipYear || member.membershipYear || null,
+    membershipCategoryId: category.categoryId,
+    membershipCategory: category.categoryName || "Active Member",
+    committeeLabels,
+    accountStatus,
+    paymentStatus,
+    standingStatus,
+    accessStatus,
+    amountDue,
+    amountPaid,
+    balance,
+    lastPaymentAt: account?.lastPaymentAt || null,
+    reviewedAt: account?.reviewedAt || null,
+    reviewedByUserId: Number(account?.reviewedByUserId || 0) || null,
+    adminNote: account?.adminNote || null,
+    lastDuesReminderAt: reminder?.sentAt || null,
+    lastDuesReminderStatus: reminder?.status || null,
+    lastDuesReminderChannel: reminder?.channel || null,
+    profileComplete,
+    profileConfirmedAt: member.profileConfirmedAt || null,
+    membershipEligible: accountStatus === "active" && standingStatus === "good_standing" && accessStatus === "enabled"
+  };
+}
+
+function listMembershipFeeMembers(database, { cycle = null, filters = {} } = {}) {
+  const members = listMembers(database);
+  const memberIds = members.map((member) => Number(member.id)).filter((id) => Number.isInteger(id));
+  const accountByUserId = new Map(
+    listMembershipFeeAccountsByCycle(database, cycle?.id || 0).map((row) => [Number(row.userId), row])
+  );
+  const categoryByUserId = loadMembershipCategoryAssignments(database, memberIds);
+  const reminderByUserId = loadMembershipDuesReminderMap(database, memberIds);
+  const term = String(filters.search || "")
+    .trim()
+    .toLowerCase();
+  const standingFilter = String(filters.standingStatus || "all")
+    .trim()
+    .toLowerCase();
+  const accountStatusFilter = String(filters.accountStatus || "all")
+    .trim()
+    .toLowerCase();
+  const categoryFilter = String(filters.category || "")
+    .trim()
+    .toLowerCase();
+  const profileFilter = String(filters.profileCompletion || "all")
+    .trim()
+    .toLowerCase();
+  const maxLimit = Math.max(1, Math.min(Number(filters.limit || 300), 1000));
+  return members
+    .map((member) => toMembershipFeesMemberItem(member, { cycle, accountByUserId, categoryByUserId, reminderByUserId }))
+    .filter((item) => {
+      if (standingFilter !== "all" && standingFilter && item.standingStatus !== standingFilter) {
+        return false;
+      }
+      if (accountStatusFilter !== "all" && accountStatusFilter && item.accountStatus !== accountStatusFilter) {
+        return false;
+      }
+      if (categoryFilter && String(item.membershipCategory || "").toLowerCase() !== categoryFilter) {
+        return false;
+      }
+      if (profileFilter === "complete" && !item.profileComplete) {
+        return false;
+      }
+      if (profileFilter === "incomplete" && item.profileComplete) {
+        return false;
+      }
+      if (!term) {
+        return true;
+      }
+      const haystack = [
+        item.fullName,
+        item.username,
+        item.email,
+        item.company,
+        item.membershipCategory,
+        ...(Array.isArray(item.committeeLabels) ? item.committeeLabels : [])
+      ]
+        .map((value) => String(value || "").toLowerCase())
+        .join(" ");
+      return haystack.includes(term);
+    })
+    .slice(0, maxLimit);
+}
+
+function buildMembershipFeesOverview(database, cycle) {
+  const items = listMembershipFeeMembers(database, { cycle, filters: { limit: 5000 } });
+  const summary = {
+    totalMembers: items.length,
+    activeMembers: items.filter((item) => item.accountStatus === "active").length,
+    goodStandingMembers: items.filter((item) => item.accountStatus === "active" && item.standingStatus === "good_standing")
+      .length,
+    outstandingMembers: items.filter((item) =>
+      ["outstanding", "partial", "pending_review"].includes(String(item.standingStatus || ""))
+    ).length,
+    blockedMembers: items.filter((item) => item.accountStatus === "blocked" || item.accessStatus === "blocked").length,
+    deactivatedMembers: items.filter((item) => item.accountStatus === "deactivated" || item.accessStatus === "deactivated")
+      .length,
+    onboardingMembers: items.filter((item) => item.accountStatus === "invited" || item.accountStatus === "not_invited")
+      .length,
+    feesCollected: items.reduce((sum, item) => sum + Number(item.amountPaid || 0), 0),
+    outstandingBalance: items.reduce((sum, item) => sum + Math.max(0, Number(item.balance || 0)), 0)
+  };
+  return {
+    cycle: toMembershipCycleResponseItem(cycle),
+    summary
+  };
+}
+
+function parseMemberFeeMoney(value, fallback = 0) {
+  if (value === undefined || value === null || value === "") {
+    return Number(fallback || 0);
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    const error = new Error("Amounts must be numbers greater than or equal to 0.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  return Number(parsed);
+}
+
+function normalizeMembershipFeeUserIds(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return [
+    ...new Set(
+      value
+        .map((item) => Number(item))
+        .filter((item) => Number.isInteger(item) && item > 0)
+    )
+  ];
+}
+
+function applyMemberFeeAccountUpdate(database, { actorUserId, userId, cycle, payload }) {
+  const parsedUserId = Number(userId);
+  const userRow = database
+    .prepare(
+      `
+      SELECT id, username, email, role, status, account_status AS accountStatus
+      FROM users
+      WHERE id = ?
+      LIMIT 1
+    `
+    )
+    .get(parsedUserId);
+  if (!userRow || userRow.role !== "member") {
+    const error = new Error("Member not found.");
+    error.httpStatus = 404;
+    error.code = "not_found";
+    throw error;
   }
 
+  const previous = loadMemberFeeAccountForCycle(database, { userId: parsedUserId, membershipCycleId: cycle.id });
+  const amountDue = parseMemberFeeMoney(payload.amountDue, previous?.amountDue || 0);
+  const amountPaid = parseMemberFeeMoney(payload.amountPaid, previous?.amountPaid || 0);
+  const balance =
+    payload.balance !== undefined && payload.balance !== null && payload.balance !== ""
+      ? Number(payload.balance)
+      : Number(amountDue - amountPaid);
+  if (!Number.isFinite(balance)) {
+    const error = new Error("balance must be numeric.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+
+  const paymentStatus = normalizeMemberFeePaymentStatus(payload.paymentStatus, previous?.paymentStatus || "pending_review");
+  const standingStatus = normalizeMemberFeeStandingStatus(payload.standingStatus, previous?.standingStatus || "pending_review");
+  const accessStatus = normalizeMemberFeeAccessStatus(payload.accessStatus, previous?.accessStatus || "enabled");
+  const adminNote =
+    payload.adminNote !== undefined ? toNullableTrimmedString(payload.adminNote, { maxLength: 2000 }) : previous?.adminNote || null;
+  const reason = toNullableTrimmedString(payload.reason, { maxLength: 500 }) || "admin_update";
+  const lastPaymentAtRaw =
+    payload.lastPaymentAt !== undefined ? String(payload.lastPaymentAt || "").trim() : String(previous?.lastPaymentAt || "").trim();
+  const lastPaymentAt = lastPaymentAtRaw ? new Date(lastPaymentAtRaw).toISOString() : null;
+  const standingChanged =
+    String(previous?.standingStatus || "pending_review") !== standingStatus ||
+    String(previous?.accessStatus || "enabled") !== accessStatus ||
+    String(previous?.paymentStatus || "pending_review") !== paymentStatus;
+
+  const nextAccountStatus = accessStatus === "enabled" ? "active" : accessStatus === "blocked" ? "blocked" : "deactivated";
+  const nextLegacyStatus = nextAccountStatus === "active" ? "active" : "suspended";
+  const reviewedAt = new Date().toISOString();
+
+  runTransaction(database, () => {
+    database
+      .prepare(
+        `
+        INSERT INTO member_fee_accounts (
+          user_id,
+          membership_cycle_id,
+          amount_due,
+          amount_paid,
+          balance,
+          payment_status,
+          standing_status,
+          access_status,
+          last_payment_at,
+          reviewed_by_user_id,
+          reviewed_at,
+          admin_note,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id, membership_cycle_id) DO UPDATE SET
+          amount_due = excluded.amount_due,
+          amount_paid = excluded.amount_paid,
+          balance = excluded.balance,
+          payment_status = excluded.payment_status,
+          standing_status = excluded.standing_status,
+          access_status = excluded.access_status,
+          last_payment_at = excluded.last_payment_at,
+          reviewed_by_user_id = excluded.reviewed_by_user_id,
+          reviewed_at = excluded.reviewed_at,
+          admin_note = excluded.admin_note,
+          updated_at = CURRENT_TIMESTAMP
+      `
+      )
+      .run(
+        parsedUserId,
+        cycle.id,
+        amountDue,
+        amountPaid,
+        balance,
+        paymentStatus,
+        standingStatus,
+        accessStatus,
+        lastPaymentAt,
+        actorUserId,
+        reviewedAt,
+        adminNote
+      );
+
+    database
+      .prepare(
+        `
+        UPDATE users
+        SET account_status = ?,
+            status = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `
+      )
+      .run(nextAccountStatus, nextLegacyStatus, parsedUserId);
+
+    if (standingChanged) {
+      database
+        .prepare(
+          `
+          INSERT INTO member_standing_audit (
+            user_id,
+            membership_cycle_id,
+            previous_payment_status,
+            next_payment_status,
+            previous_standing_status,
+            next_standing_status,
+            previous_access_status,
+            next_access_status,
+            reason,
+            actor_user_id,
+            created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `
+        )
+        .run(
+          parsedUserId,
+          cycle.id,
+          previous?.paymentStatus || null,
+          paymentStatus,
+          previous?.standingStatus || null,
+          standingStatus,
+          previous?.accessStatus || null,
+          accessStatus,
+          reason,
+          actorUserId
+        );
+    }
+
+    const transaction = payload.transaction;
+    if (transaction && typeof transaction === "object") {
+      const transactionType = String(transaction.transactionType || "").trim().toLowerCase();
+      const allowedTransactionTypes = new Set(["payment", "waiver", "credit", "adjustment", "reversal"]);
+      if (!allowedTransactionTypes.has(transactionType)) {
+        const error = new Error("transaction.transactionType is invalid.");
+        error.httpStatus = 400;
+        error.code = "validation_error";
+        throw error;
+      }
+      const transactionAmount = Number(transaction.amount);
+      if (!Number.isFinite(transactionAmount) || transactionAmount === 0) {
+        const error = new Error("transaction.amount must be a non-zero number.");
+        error.httpStatus = 400;
+        error.code = "validation_error";
+        throw error;
+      }
+      const refreshedAccount = loadMemberFeeAccountForCycle(database, { userId: parsedUserId, membershipCycleId: cycle.id });
+      database
+        .prepare(
+          `
+          INSERT INTO member_fee_transactions (
+            member_fee_account_id,
+            transaction_type,
+            amount,
+            reference_text,
+            notes,
+            recorded_by_user_id,
+            recorded_at
+          ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `
+        )
+        .run(
+          refreshedAccount.id,
+          transactionType,
+          transactionAmount,
+          toNullableTrimmedString(transaction.referenceText, { maxLength: 160 }),
+          toNullableTrimmedString(transaction.notes, { maxLength: 1000 }),
+          actorUserId
+        );
+    }
+
+    database
+      .prepare(
+        `
+        INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+        VALUES (?, 'membership_fee_account_updated', 'user', ?, ?)
+      `
+      )
+      .run(
+        actorUserId,
+        String(parsedUserId),
+        JSON.stringify({
+          membershipCycleId: cycle.id,
+          membershipYear: cycle.membershipYear,
+          previous: previous
+            ? {
+                paymentStatus: previous.paymentStatus,
+                standingStatus: previous.standingStatus,
+                accessStatus: previous.accessStatus,
+                amountDue: Number(previous.amountDue || 0),
+                amountPaid: Number(previous.amountPaid || 0),
+                balance: Number(previous.balance || 0)
+              }
+            : null,
+          next: {
+            paymentStatus,
+            standingStatus,
+            accessStatus,
+            amountDue,
+            amountPaid,
+            balance,
+            accountStatus: nextAccountStatus
+          },
+          reason
+        })
+      );
+  });
+
+  const refreshedAccount = loadMemberFeeAccountForCycle(database, { userId: parsedUserId, membershipCycleId: cycle.id });
+  if (standingChanged) {
+    createAdminActivityNotifications(database, {
+      eventType: "membership_standing_changed",
+      title: "Membership standing changed",
+      body: `${userRow.username || userRow.email || "Member"} is now ${standingStatus} with ${accessStatus} access.`,
+      metadata: {
+        userId: parsedUserId,
+        membershipCycleId: cycle.id,
+        membershipYear: cycle.membershipYear,
+        paymentStatus,
+        standingStatus,
+        accessStatus,
+        reason
+      },
+      idempotencyKey: `membership_standing_changed:${cycle.id}:${parsedUserId}:${reviewedAt}`
+    });
+  }
+  return {
+    userId: parsedUserId,
+    username: userRow.username,
+    email: userRow.email,
+    accountStatus: nextAccountStatus,
+    paymentStatus: refreshedAccount.paymentStatus,
+    standingStatus: refreshedAccount.standingStatus,
+    accessStatus: refreshedAccount.accessStatus,
+    amountDue: Number(refreshedAccount.amountDue || 0),
+    amountPaid: Number(refreshedAccount.amountPaid || 0),
+    balance: Number(refreshedAccount.balance || 0),
+    lastPaymentAt: refreshedAccount.lastPaymentAt || null,
+    reviewedAt: refreshedAccount.reviewedAt || null,
+    reviewedByUserId: Number(refreshedAccount.reviewedByUserId || 0) || null,
+    adminNote: refreshedAccount.adminNote || null
+  };
+}
+
+function formatMembershipMoney(value) {
+  return `R ${Number(value || 0).toFixed(2)}`;
+}
+
+function loadActiveAdminUserIds(database) {
+  return database
+    .prepare(
+      `
+      SELECT id
+      FROM users
+      WHERE role IN ('admin', 'chief_admin')
+        AND account_status = 'active'
+      ORDER BY id ASC
+    `
+    )
+    .all()
+    .map((row) => Number(row.id))
+    .filter((id) => Number.isInteger(id) && id > 0);
+}
+
+function createAdminActivityNotifications(database, { eventType, title, body, metadata = {}, idempotencyKey }) {
+  const adminIds = loadActiveAdminUserIds(database);
+  for (const adminId of adminIds) {
+    createInAppNotification(database, {
+      userId: adminId,
+      eventType,
+      title,
+      body,
+      metadata,
+      idempotencyKey: `${idempotencyKey}:${adminId}`
+    });
+  }
+  return adminIds.length;
+}
+
+function enqueueMembershipDuesReminders(database, { cycle, userIds, actorUserId, reason }) {
+  const ids = normalizeMembershipFeeUserIds(userIds);
+  if (ids.length === 0) {
+    return { requested: 0, queued: 0, skipped: 0 };
+  }
+  const placeholders = ids.map(() => "?").join(",");
+  const memberRows = database
+    .prepare(
+      `
+      SELECT id
+      FROM users
+      WHERE role = 'member'
+        AND id IN (${placeholders})
+    `
+    )
+    .all(...ids);
+  const memberIds = memberRows.map((row) => Number(row.id)).filter((id) => Number.isInteger(id));
+  const queuedAt = new Date().toISOString();
+  let queued = 0;
+
+  for (const userId of memberIds) {
+    const account = loadMemberFeeAccountForCycle(database, { userId, membershipCycleId: cycle.id });
+    const dispatchId = randomBytes(8).toString("hex");
+    const inserted = enqueueNotification(database, {
+      idempotencyKey: `membership_dues_reminder:${cycle.id}:${userId}:${dispatchId}`,
+      eventType: "membership_dues_reminder",
+      payload: {
+        dispatchId,
+        userId,
+        membershipCycleId: cycle.id,
+        membershipYear: cycle.membershipYear,
+        dueDate: cycle.dueDate,
+        amountDue: Number(account?.amountDue || 0),
+        amountPaid: Number(account?.amountPaid || 0),
+        balance: Number(account?.balance || 0),
+        paymentStatus: account?.paymentStatus || "pending_review",
+        standingStatus: account?.standingStatus || "pending_review",
+        reason: reason || "dues_reminder",
+        queuedAt
+      }
+    });
+    if (inserted) {
+      queued += 1;
+    }
+  }
+
+  database
+    .prepare(
+      `
+      INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+      VALUES (?, 'membership_dues_reminders_queued', 'membership_cycle', ?, ?)
+    `
+    )
+    .run(
+      actorUserId,
+      String(cycle.id),
+      JSON.stringify({
+        membershipCycleId: cycle.id,
+        membershipYear: cycle.membershipYear,
+        requested: ids.length,
+        queued,
+        skipped: Math.max(0, ids.length - queued),
+        userIds: memberIds,
+        reason: reason || "dues_reminder"
+      })
+    );
+
+  if (queued > 0) {
+    createAdminActivityNotifications(database, {
+      eventType: "membership_dues_reminders_queued",
+      title: "Membership dues reminders queued",
+      body: `${queued} dues reminder(s) queued for ${cycle.membershipYear}.`,
+      metadata: {
+        membershipCycleId: cycle.id,
+        membershipYear: cycle.membershipYear,
+        requested: ids.length,
+        queued,
+        skipped: Math.max(0, ids.length - queued),
+        userIds: memberIds,
+        reason: reason || "dues_reminder"
+      },
+      idempotencyKey: `membership_dues_reminders_queued:${cycle.id}:${Date.now()}`
+    });
+  }
+
+  return { requested: ids.length, queued, skipped: Math.max(0, ids.length - queued) };
+}
+
+function upsertImportedMemberFeeAccount(database, { userId, cycle, standingStatus, actorUserId, reason }) {
+  const parsedUserId = Number(userId);
+  if (!Number.isInteger(parsedUserId) || parsedUserId <= 0 || !cycle) {
+    return false;
+  }
+  const normalizedStanding = normalizeMemberFeeStandingStatus(standingStatus, "pending_review");
+  const paymentStatus =
+    normalizedStanding === "good_standing"
+      ? "paid"
+      : normalizedStanding === "waived"
+        ? "waived"
+        : normalizedStanding === "partial"
+          ? "partial"
+          : normalizedStanding === "outstanding" || normalizedStanding === "blocked" || normalizedStanding === "deactivated"
+            ? "outstanding"
+            : "pending_review";
+  const accessStatus =
+    normalizedStanding === "blocked" ? "blocked" : normalizedStanding === "deactivated" ? "deactivated" : "enabled";
+  const reviewedAt = new Date().toISOString();
+  database
+    .prepare(
+      `
+      INSERT INTO member_fee_accounts (
+        user_id,
+        membership_cycle_id,
+        payment_status,
+        standing_status,
+        access_status,
+        reviewed_by_user_id,
+        reviewed_at,
+        admin_note,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ON CONFLICT(user_id, membership_cycle_id) DO UPDATE SET
+        payment_status = excluded.payment_status,
+        standing_status = excluded.standing_status,
+        access_status = excluded.access_status,
+        reviewed_by_user_id = excluded.reviewed_by_user_id,
+        reviewed_at = excluded.reviewed_at,
+        admin_note = excluded.admin_note,
+        updated_at = CURRENT_TIMESTAMP
+    `
+    )
+    .run(
+      parsedUserId,
+      cycle.id,
+      paymentStatus,
+      normalizedStanding,
+      accessStatus,
+      actorUserId,
+      reviewedAt,
+      reason || "created_from_member_import"
+    );
+  return true;
+}
+
+function toNullableTrimmedString(value, { maxLength = 160 } = {}) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  const trimmed = String(value).trim();
+  if (!trimmed) {
+    return null;
+  }
+  return trimmed.slice(0, Math.max(1, maxLength));
+}
+
+function toOptionalInteger(value) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed)) {
+    return null;
+  }
+  return parsed;
+}
+
+function isValidBirthdayMonthDay(month, day) {
+  if (!Number.isInteger(month) || month < 1 || month > 12) {
+    return false;
+  }
+  if (!Number.isInteger(day) || day < 1 || day > 31) {
+    return false;
+  }
+  const probe = new Date(Date.UTC(2000, month - 1, day));
+  return probe.getUTCMonth() === month - 1 && probe.getUTCDate() === day;
+}
+
+function normalizeBirthdayVisibility(value, fallback = "hidden") {
+  const visibility = String(value || "").trim().toLowerCase();
+  if (!visibility) {
+    return fallback;
+  }
+  if (!BIRTHDAY_VISIBILITY_VALUES.has(visibility)) {
+    const error = new Error("birthdayVisibility must be hidden, members_only, or members_and_social.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  return visibility;
+}
+
+function mapInvitationStatus(signupStatus) {
+  if (signupStatus === "confirmed") {
+    return "confirmed";
+  }
+  if (signupStatus === "waitlisted") {
+    return "waitlisted";
+  }
+  if (signupStatus === "cancelled") {
+    return "declined";
+  }
+  return "awaiting_response";
+}
+
+function loadMemberProfile(database, userId) {
+  return database
+    .prepare(
+      `
+      SELECT
+        users.id AS userId,
+        users.username,
+        users.email,
+        member_profiles.full_name AS fullName,
+        member_profiles.company AS company,
+        member_profiles.phone AS phone,
+        member_profiles.photo_url AS photoUrl,
+        member_profiles.birthday_month AS birthdayMonth,
+        member_profiles.birthday_day AS birthdayDay,
+        member_profiles.birthday_visibility AS birthdayVisibility,
+        member_profiles.updated_at AS profileUpdatedAt
+      FROM users
+      LEFT JOIN member_profiles ON member_profiles.user_id = users.id
+      WHERE users.id = ?
+      LIMIT 1
+    `
+    )
+    .get(userId);
+}
+
+function toMemberProfileResponse(profileRow) {
+  return {
+    userId: Number(profileRow?.userId || 0),
+    username: String(profileRow?.username || ""),
+    email: String(profileRow?.email || ""),
+    fullName: String(profileRow?.fullName || ""),
+    company: String(profileRow?.company || ""),
+    phone: String(profileRow?.phone || ""),
+    photoUrl: profileRow?.photoUrl || null,
+    birthdayMonth: Number.isInteger(Number(profileRow?.birthdayMonth)) ? Number(profileRow.birthdayMonth) : null,
+    birthdayDay: Number.isInteger(Number(profileRow?.birthdayDay)) ? Number(profileRow.birthdayDay) : null,
+    birthdayVisibility: String(profileRow?.birthdayVisibility || "hidden"),
+    updatedAt: profileRow?.profileUpdatedAt || null
+  };
+}
+
+function upsertMemberProfile(database, userId, profile) {
+  database
+    .prepare(
+      `
+      INSERT INTO member_profiles (
+        user_id,
+        full_name,
+        company,
+        phone,
+        photo_url,
+        birthday_month,
+        birthday_day,
+        birthday_visibility,
+        birthday_consent_confirmed_at,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ON CONFLICT(user_id) DO UPDATE SET
+        full_name = excluded.full_name,
+        company = excluded.company,
+        phone = excluded.phone,
+        photo_url = excluded.photo_url,
+        birthday_month = excluded.birthday_month,
+        birthday_day = excluded.birthday_day,
+        birthday_visibility = excluded.birthday_visibility,
+        birthday_consent_confirmed_at = excluded.birthday_consent_confirmed_at,
+        updated_at = CURRENT_TIMESTAMP
+    `
+    )
+    .run(
+      userId,
+      profile.fullName,
+      profile.company,
+      profile.phone,
+      profile.photoUrl,
+      profile.birthdayMonth,
+      profile.birthdayDay,
+      profile.birthdayVisibility,
+      profile.birthdayConsentConfirmedAt
+    );
+}
+
+function normalizeMemberNewsStatus(value, fallback = "draft") {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) {
+    return fallback;
+  }
+  if (!MEMBER_NEWS_STATUSES.has(normalized)) {
+    const error = new Error("status must be draft, published, or archived.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  return normalized;
+}
+
+function normalizeMemberNewsStatusFilter(value, fallback = "all") {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) {
+    return fallback;
+  }
+  if (normalized === "all") {
+    return "all";
+  }
+  if (!MEMBER_NEWS_STATUSES.has(normalized)) {
+    const error = new Error("status filter must be all, draft, published, or archived.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  return normalized;
+}
+
+function toMemberNewsResponseItem(newsRow, { memberView = false } = {}) {
+  const status = String(newsRow?.status || "draft");
+  const publishedAt = newsRow?.publishedAt || null;
+  const isPinned = Number(newsRow?.isPinned || 0) === 1;
+  const pinnedAt = newsRow?.pinnedAt || null;
+  return {
+    id: Number(newsRow?.id || 0),
+    eventType: memberView ? "organisation_news" : "admin_news",
+    title: String(newsRow?.title || "IWFSA Update"),
+    body: String(newsRow?.bodyText || newsRow?.body || ""),
+    status,
+    isPinned,
+    pinnedAt,
+    source: memberView ? "admin_news" : "admin_console",
+    createdAt: publishedAt || newsRow?.createdAt || null,
+    publishedAt,
+    updatedAt: newsRow?.updatedAt || null,
+    authorUserId: Number(newsRow?.authorUserId || 0),
+    authorUsername: String(newsRow?.authorUsername || ""),
+    updatedByUserId: Number(newsRow?.updatedByUserId || 0) || null,
+    updatedByUsername: newsRow?.updatedByUsername || null
+  };
+}
+
+function loadMemberNewsPost(database, newsId) {
+  return database
+    .prepare(
+      `
+      SELECT
+        member_news_posts.id,
+        member_news_posts.title,
+        member_news_posts.body_text AS bodyText,
+        member_news_posts.status,
+        member_news_posts.is_pinned AS isPinned,
+        member_news_posts.pinned_at AS pinnedAt,
+        member_news_posts.published_at AS publishedAt,
+        member_news_posts.created_at AS createdAt,
+        member_news_posts.updated_at AS updatedAt,
+        member_news_posts.author_user_id AS authorUserId,
+        member_news_posts.updated_by_user_id AS updatedByUserId,
+        author.username AS authorUsername,
+        updater.username AS updatedByUsername
+      FROM member_news_posts
+      LEFT JOIN users AS author ON author.id = member_news_posts.author_user_id
+      LEFT JOIN users AS updater ON updater.id = member_news_posts.updated_by_user_id
+      WHERE member_news_posts.id = ?
+      LIMIT 1
+    `
+    )
+    .get(newsId);
+}
+
+function listAdminNewsPosts(database, { status = "all", limit = 50 } = {}) {
+  const maxLimit = Math.max(1, Math.min(Number(limit || 50), 200));
+  const normalizedStatus = normalizeMemberNewsStatusFilter(status, "all");
+  const baseSql = `
+    SELECT
+      member_news_posts.id,
+      member_news_posts.title,
+      member_news_posts.body_text AS bodyText,
+      member_news_posts.status,
+      member_news_posts.is_pinned AS isPinned,
+      member_news_posts.pinned_at AS pinnedAt,
+      member_news_posts.published_at AS publishedAt,
+      member_news_posts.created_at AS createdAt,
+      member_news_posts.updated_at AS updatedAt,
+      member_news_posts.author_user_id AS authorUserId,
+      member_news_posts.updated_by_user_id AS updatedByUserId,
+      author.username AS authorUsername,
+      updater.username AS updatedByUsername
+    FROM member_news_posts
+    LEFT JOIN users AS author ON author.id = member_news_posts.author_user_id
+    LEFT JOIN users AS updater ON updater.id = member_news_posts.updated_by_user_id
+  `;
+  const orderSql = `
+    ORDER BY
+      member_news_posts.is_pinned DESC,
+      member_news_posts.pinned_at DESC,
+      CASE member_news_posts.status
+        WHEN 'published' THEN 0
+        WHEN 'draft' THEN 1
+        ELSE 2
+      END,
+      COALESCE(member_news_posts.published_at, member_news_posts.updated_at, member_news_posts.created_at) DESC,
+      member_news_posts.id DESC
+    LIMIT ?
+  `;
+  const rows =
+    normalizedStatus === "all"
+      ? database.prepare(`${baseSql}\n${orderSql}`).all(maxLimit)
+      : database.prepare(`${baseSql}\nWHERE member_news_posts.status = ?\n${orderSql}`).all(normalizedStatus, maxLimit);
+  return rows.map((row) => toMemberNewsResponseItem(row));
+}
+
+function listPublishedMemberNewsItems(database, { limit = 8 } = {}) {
+  const maxLimit = Math.max(1, Math.min(Number(limit || 8), 30));
+  const rows = database
+    .prepare(
+      `
+      SELECT
+        member_news_posts.id,
+        member_news_posts.title,
+        member_news_posts.body_text AS bodyText,
+        member_news_posts.status,
+        member_news_posts.is_pinned AS isPinned,
+        member_news_posts.pinned_at AS pinnedAt,
+        member_news_posts.published_at AS publishedAt,
+        member_news_posts.created_at AS createdAt,
+        member_news_posts.updated_at AS updatedAt,
+        member_news_posts.author_user_id AS authorUserId,
+        author.username AS authorUsername
+      FROM member_news_posts
+      LEFT JOIN users AS author ON author.id = member_news_posts.author_user_id
+      WHERE member_news_posts.status = 'published'
+      ORDER BY
+        member_news_posts.is_pinned DESC,
+        member_news_posts.pinned_at DESC,
+        COALESCE(member_news_posts.published_at, member_news_posts.created_at) DESC,
+        member_news_posts.id DESC
+      LIMIT ?
+    `
+    )
+    .all(maxLimit);
+
+  return rows.map((row) => toMemberNewsResponseItem(row, { memberView: true }));
+}
+
+function listMemberNotificationNewsItems(database, userId, { limit = 8 } = {}) {
+  const maxLimit = Math.max(1, Math.min(Number(limit || 8), 30));
+  return database
+    .prepare(
+      `
+      SELECT
+        id,
+        event_type AS eventType,
+        title,
+        body,
+        created_at AS createdAt,
+        read_at AS readAt
+      FROM notifications
+      WHERE user_id = ?
+      ORDER BY created_at DESC
+      LIMIT ?
+    `
+    )
+    .all(userId, maxLimit)
+    .map((row) => ({
+      id: Number(row.id),
+      eventType: String(row.eventType || "news"),
+      title: String(row.title || "IWFSA Update"),
+      body: String(row.body || ""),
+      source: "notifications",
+      createdAt: row.createdAt,
+      publishedAt: null,
+      readAt: row.readAt || null
+    }));
+}
+
+function listMemberBirthdayHighlights(database, { windowDays = 30, limit = 5 } = {}) {
+  const rows = database
+    .prepare(
+      `
+      SELECT
+        users.id AS userId,
+        member_profiles.full_name AS fullName,
+        member_profiles.photo_url AS photoUrl,
+        member_profiles.birthday_month AS birthdayMonth,
+        member_profiles.birthday_day AS birthdayDay,
+        member_profiles.birthday_visibility AS birthdayVisibility
+      FROM users
+      JOIN member_profiles ON member_profiles.user_id = users.id
+      WHERE users.role = 'member'
+        AND users.account_status = 'active'
+        AND member_profiles.birthday_visibility IN ('members_only', 'members_and_social')
+        AND member_profiles.birthday_month IS NOT NULL
+        AND member_profiles.birthday_day IS NOT NULL
+    `
+    )
+    .all();
+
+  const eligibleIdSet = new Set(
+    filterEligibleMemberUserIds(
+      database,
+      rows.map((row) => Number(row.userId)).filter((id) => Number.isInteger(id))
+    )
+  );
+  const list = listUpcomingBirthdays({
+    nowMs: Date.now(),
+    windowDays: Math.max(1, Math.min(Number(windowDays || 30), 60)),
+    people: rows.filter((row) => eligibleIdSet.has(Number(row.userId)))
+  });
+
+  return list.slice(0, Math.max(1, Math.min(Number(limit || 5), 20))).map((item) => ({
+    userId: Number(item.userId),
+    fullName: String(item.fullName || "Member"),
+    photoUrl: item.photoUrl || null,
+    occursOn: item.occursOn,
+    daysUntil: Number(item.daysUntil || 0)
+  }));
+}
+function ensureSeedMembers(database) {
+  const seedPassword = "IwfsaTest2026!";
   const seedMembers = [
     {
       username: "nomsa",
@@ -1949,7 +3891,41 @@ function ensureSeedMembers(database) {
       groups: ["Catalytic Strategy and Voice"]
     }
   ];
-
+  const seedUsernames = seedMembers.map((member) => member.username);
+  const seedEmails = seedMembers.map((member) => String(member.email || "").toLowerCase());
+  const usernamePlaceholders = seedUsernames.map(() => "?").join(",");
+  const emailPlaceholders = seedEmails.map(() => "?").join(",");
+  const existingSeedRows =
+    seedUsernames.length === 0 && seedEmails.length === 0
+      ? []
+      : database
+          .prepare(
+            `
+            SELECT id, username, email
+            FROM users
+            WHERE username IN (${usernamePlaceholders})
+               OR LOWER(email) IN (${emailPlaceholders})
+          `
+          )
+          .all(...seedUsernames, ...seedEmails);
+  const existingSeedByUsername = new Map();
+  const existingSeedByEmail = new Map();
+  for (const row of existingSeedRows) {
+    const rowId = Number(row.id);
+    if (!Number.isInteger(rowId) || rowId <= 0) {
+      continue;
+    }
+    const usernameKey = String(row.username || "").trim().toLowerCase();
+    const emailKey = String(row.email || "").trim().toLowerCase();
+    if (usernameKey) {
+      existingSeedByUsername.set(usernameKey, rowId);
+    }
+    if (emailKey) {
+      existingSeedByEmail.set(emailKey, rowId);
+    }
+  }
+  const passwordHash = hashPassword(seedPassword);
+  let insertedCount = 0;
   const allGroups = seedMembers.flatMap((member) => member.groups || []);
   const allRoles = seedMembers.flatMap((member) => member.roles || []);
 
@@ -1963,13 +3939,31 @@ function ensureSeedMembers(database) {
         email,
         password_hash,
         role,
+        account_status,
         status,
         desired_status,
         must_change_password,
         must_change_username,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, 'member', 'active', 'active', 1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ) VALUES (?, ?, ?, 'member', 'active', 'active', 'active', 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `
+    );
+    const refreshSeedUserCredentials = database.prepare(
+      `
+      UPDATE users
+      SET
+        username = ?,
+        email = ?,
+        password_hash = ?,
+        role = 'member',
+        account_status = 'active',
+        status = 'active',
+        desired_status = 'active',
+        must_change_password = 0,
+        must_change_username = 0,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
     `
     );
     const insertProfile = database.prepare(
@@ -1980,11 +3974,26 @@ function ensureSeedMembers(database) {
     );
 
     for (const seed of seedMembers) {
-      const email = seed.email.toLowerCase();
-      const passwordHash = hashPassword(randomBytes(16).toString("hex"));
-      const insertResult = insertUser.run(seed.username, email, passwordHash);
-      const userId = insertResult.lastInsertRowid;
-      insertProfile.run(userId, seed.fullName, seed.company || null, seed.phone || null);
+      const email = String(seed.email || "").toLowerCase();
+      const usernameKey = String(seed.username || "").trim().toLowerCase();
+      const emailKey = String(email || "").trim().toLowerCase();
+      let userId = existingSeedByUsername.get(usernameKey) || existingSeedByEmail.get(emailKey) || null;
+      if (Number.isInteger(userId) && userId > 0) {
+        refreshSeedUserCredentials.run(seed.username, email, passwordHash, userId);
+      } else {
+        const insertResult = insertUser.run(seed.username, email, passwordHash);
+        userId = Number(insertResult.lastInsertRowid);
+        insertedCount += 1;
+        insertProfile.run(userId, seed.fullName, seed.company || null, seed.phone || null);
+      }
+      if (Number.isInteger(userId) && userId > 0) {
+        existingSeedByUsername.set(usernameKey, userId);
+        existingSeedByEmail.set(emailKey, userId);
+      }
+
+      if (!Number.isInteger(userId) || userId <= 0) {
+        continue;
+      }
 
       const groupIds = (seed.groups || [])
         .map((name) => groupMap.get(name))
@@ -1998,7 +4007,10 @@ function ensureSeedMembers(database) {
     }
   });
 
-  return { seeded: true, count: seedMembers.length };
+  return {
+    seeded: insertedCount > 0,
+    count: insertedCount
+  };
 }
 
 function queueMemberInvites(database, userIds, actorUserId, { expiryHours = 72 } = {}) {
@@ -2010,7 +4022,7 @@ function queueMemberInvites(database, userIds, actorUserId, { expiryHours = 72 }
   const members = database
     .prepare(
       `
-      SELECT id, username, email, status
+      SELECT id, username, email, status, account_status AS accountStatus
       FROM users
       WHERE role = 'member' AND id IN (${placeholders})
     `
@@ -2030,7 +4042,10 @@ function queueMemberInvites(database, userIds, actorUserId, { expiryHours = 72 }
       .prepare(
         `
         UPDATE users
-        SET status = 'invited', must_change_password = 1, updated_at = CURRENT_TIMESTAMP
+        SET status = 'invited',
+            account_status = 'invited',
+            must_change_password = 1,
+            updated_at = CURRENT_TIMESTAMP
         WHERE id IN (${updatePlaceholders})
           AND status IN ('not_invited', 'invited')
       `
@@ -2103,7 +4118,10 @@ function queueCredentialResets(database, userIds, actorUserId, { expiryHours = 7
     return { queued: [], skipped: [] };
   }
 
-  const eligible = members.filter((member) => member.status === "active" || member.status === "suspended");
+  const eligible = members.filter((member) => {
+    const accountStatus = normalizeAccountStatusValue(member.accountStatus, member.status);
+    return accountStatus === "active" || accountStatus === "blocked";
+  });
   const eligibleIds = eligible.map((member) => member.id);
   const skipped = members
     .filter((member) => !eligibleIds.includes(member.id))
@@ -2111,7 +4129,7 @@ function queueCredentialResets(database, userIds, actorUserId, { expiryHours = 7
       id: member.id,
       username: member.username,
       email: member.email,
-      status: member.status,
+      status: normalizeAccountStatusValue(member.accountStatus, member.status),
       reason: "Account not active"
     }));
 
@@ -2581,7 +4599,7 @@ function listEventAttendance(database, eventId) {
       LEFT JOIN signups ON signups.event_id = ? AND signups.user_id = users.id
       LEFT JOIN event_attendance ON event_attendance.event_id = ? AND event_attendance.user_id = users.id
       WHERE users.role IN ('member', 'event_editor', 'admin', 'chief_admin')
-        AND users.status = 'active'
+        AND users.account_status = 'active'
         AND (signups.id IS NOT NULL)
       ORDER BY LOWER(COALESCE(users.username, users.email, '')) ASC
     `
@@ -3035,7 +5053,7 @@ function buildAdminEngagementReport(database, windowDays = 30) {
       SELECT
         COUNT(*) AS activeMembers
       FROM users
-      WHERE role = 'member' AND status = 'active'
+      WHERE role = 'member' AND account_status = 'active'
     `
     )
     .get();
@@ -3724,17 +5742,28 @@ function loadEventAudienceUserIds(database, eventId, audienceType) {
     const rows = database
       .prepare(
         `
-        SELECT DISTINCT group_members.user_id AS userId
-        FROM event_audience_groups
-        JOIN group_members ON group_members.group_id = event_audience_groups.group_id
-        JOIN users ON users.id = group_members.user_id
-        WHERE event_audience_groups.event_id = ?
-          AND users.role = 'member'
-          AND users.status = 'active'
+        SELECT DISTINCT userId
+        FROM (
+          SELECT group_members.user_id AS userId
+          FROM event_audience_groups
+          JOIN group_members ON group_members.group_id = event_audience_groups.group_id
+          JOIN users ON users.id = group_members.user_id
+           WHERE event_audience_groups.event_id = ?
+             AND users.role = 'member'
+             AND users.account_status = 'active'
+           UNION
+           SELECT event_invitees.user_id AS userId
+           FROM event_invitees
+           JOIN users ON users.id = event_invitees.user_id
+           WHERE event_invitees.event_id = ?
+             AND users.role = 'member'
+             AND users.account_status = 'active'
+         )
+         ORDER BY userId ASC
       `
       )
-      .all(eventId);
-    return rows.map((row) => row.userId);
+      .all(eventId, eventId);
+    return filterEligibleMemberUserIds(database, rows.map((row) => Number(row.userId)));
   }
 
   const rows = database
@@ -3742,11 +5771,11 @@ function loadEventAudienceUserIds(database, eventId, audienceType) {
       `
       SELECT id AS userId
       FROM users
-      WHERE role = 'member' AND status = 'active'
+      WHERE role = 'member' AND account_status = 'active'
     `
     )
     .all();
-  return rows.map((row) => row.userId);
+  return filterEligibleMemberUserIds(database, rows.map((row) => Number(row.userId)));
 }
 
 function loadEventParticipantUserIds(database, eventId) {
@@ -3800,7 +5829,8 @@ function buildEventSnapshot(database, eventId) {
     .all(eventId);
   return {
     event: eventRow,
-    groupIds: groupRows.map((row) => row.groupId)
+    groupIds: groupRows.map((row) => row.groupId),
+    inviteeUserIds: loadEventInviteeUserIds(database, eventId)
   };
 }
 
@@ -4151,6 +6181,101 @@ function processNotificationQueue(database, { limit = 50, supportEmail = "suppor
               errorMessage: "missing_email"
             });
             errors.push(`missing_email:${userId}`);
+          }
+        }
+      }
+
+      if (row.eventType === "membership_dues_reminder") {
+        const userId = Number(payload.userId || 0);
+        const cycle = payload.membershipCycleId
+          ? database
+              .prepare(
+                `
+                SELECT
+                  id,
+                  membership_year AS membershipYear,
+                  due_date AS dueDate,
+                  status,
+                  created_at AS createdAt,
+                  updated_at AS updatedAt
+                FROM membership_cycles
+                WHERE id = ?
+                LIMIT 1
+              `
+              )
+              .get(Number(payload.membershipCycleId))
+          : null;
+        if (!Number.isInteger(userId) || userId <= 0 || !cycle) {
+          throw new Error("Membership dues reminder target not found.");
+        }
+        const contact = loadUserContacts(database, [userId]).get(userId);
+        const account = loadMemberFeeAccountForCycle(database, { userId, membershipCycleId: cycle.id });
+        const amountDue = Number(account?.amountDue ?? payload.amountDue ?? 0);
+        const amountPaid = Number(account?.amountPaid ?? payload.amountPaid ?? 0);
+        const balance = Number(account?.balance ?? payload.balance ?? amountDue - amountPaid);
+        const dueDate = cycle.dueDate || payload.dueDate || `${cycle.membershipYear}-03-31`;
+        const title = `Membership dues reminder: ${cycle.membershipYear}`;
+        const body =
+          `Membership fees for ${cycle.membershipYear} are due by ${dueDate}. ` +
+          `Current balance: ${formatMembershipMoney(balance)}.`;
+        const dispatchId = payload.dispatchId || String(row.id);
+        const inAppKey = `membership_dues_reminder:${dispatchId}:${userId}`;
+        createInAppNotification(database, {
+          userId,
+          eventType: row.eventType,
+          title,
+          body,
+          metadata: {
+            membershipCycleId: cycle.id,
+            membershipYear: cycle.membershipYear,
+            dueDate,
+            amountDue,
+            amountPaid,
+            balance
+          },
+          idempotencyKey: inAppKey
+        });
+
+        const emailKey = `membership_dues_reminder_email:${dispatchId}:${userId}`;
+        if (!contact || !contact.email) {
+          recordNotificationDelivery(database, {
+            userId,
+            channel: "email",
+            eventType: row.eventType,
+            status: "failed",
+            idempotencyKey: emailKey,
+            errorMessage: "missing_email"
+          });
+          errors.push(`missing_email:${userId}`);
+        } else {
+          try {
+            sendTransactionalEmail({
+              to: contact.email,
+              subject: title,
+              text:
+                `Hello ${contact.fullName || contact.username || "Member"},\n\n` +
+                `${body}\n\n` +
+                "Please contact IWFSA Admin if you have already paid or need assistance.\n\n" +
+                "Regards,\nIWFSA Admin",
+              metadata: { template: "membership_dues_reminder" }
+            });
+            recordNotificationDelivery(database, {
+              userId,
+              channel: "email",
+              eventType: row.eventType,
+              status: "sent",
+              idempotencyKey: emailKey
+            });
+          } catch (emailError) {
+            recordNotificationDelivery(database, {
+              userId,
+              channel: "email",
+              eventType: row.eventType,
+              status: "failed",
+              idempotencyKey: emailKey,
+              errorMessage: String(emailError.message || emailError)
+            });
+            errors.push(`email_failed:${userId}`);
           }
         }
       }
@@ -5198,9 +7323,12 @@ IWF Administrator`
 
 export async function startApiServer(config) {
   const database = openDatabase(config.databasePath);
+  const seedMembersEnabled = config.seedMembersEnabled !== false;
   try {
     ensureBootstrapAdmin(database);
-    ensureSeedMembers(database);
+    if (seedMembersEnabled) {
+      ensureSeedMembers(database);
+    }
   } catch (error) {
     console.error(
       JSON.stringify({
@@ -5299,6 +7427,376 @@ export async function startApiServer(config) {
         },
         corsHeaders
       );
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/member/profile") {
+      const auth = requireAuth(database, request, response, corsHeaders);
+      if (!auth) {
+        return;
+      }
+      if (!requireRole(auth.user, INTERNAL_PORTAL_ROLES, response, corsHeaders)) {
+        return;
+      }
+
+      const profileRow = loadMemberProfile(database, auth.user.id);
+      if (!profileRow) {
+        writeJson(response, 404, { error: "not_found", message: "Member profile not found." }, corsHeaders);
+        return;
+      }
+
+      writeJson(response, 200, { item: toMemberProfileResponse(profileRow) }, corsHeaders);
+      return;
+    }
+
+    if (request.method === "PUT" && requestUrl.pathname === "/api/member/profile") {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, INTERNAL_PORTAL_ROLES, response, corsHeaders)) {
+          return;
+        }
+
+        const payload = await readJsonBody(request);
+        const profileRow = loadMemberProfile(database, auth.user.id);
+        if (!profileRow) {
+          writeJson(response, 404, { error: "not_found", message: "Member profile not found." }, corsHeaders);
+          return;
+        }
+
+        const current = toMemberProfileResponse(profileRow);
+        const fullName =
+          payload.fullName !== undefined
+            ? toNullableTrimmedString(payload.fullName, { maxLength: 160 })
+            : toNullableTrimmedString(current.fullName, { maxLength: 160 });
+        if (!fullName) {
+          writeJson(response, 400, { error: "validation_error", message: "Full name is required." }, corsHeaders);
+          return;
+        }
+
+        const company =
+          payload.company !== undefined
+            ? toNullableTrimmedString(payload.company, { maxLength: 180 })
+            : toNullableTrimmedString(current.company, { maxLength: 180 });
+        const phone =
+          payload.phone !== undefined
+            ? toNullableTrimmedString(payload.phone, { maxLength: 48 })
+            : toNullableTrimmedString(current.phone, { maxLength: 48 });
+
+        const birthdayVisibility =
+          payload.birthdayVisibility !== undefined
+            ? normalizeBirthdayVisibility(payload.birthdayVisibility, current.birthdayVisibility || "hidden")
+            : normalizeBirthdayVisibility(current.birthdayVisibility || "hidden", "hidden");
+
+        let birthdayMonth = current.birthdayMonth;
+        let birthdayDay = current.birthdayDay;
+        const clearBirthday = parseBooleanInput(payload.clearBirthday, false);
+        const birthdayTouched =
+          clearBirthday || payload.birthdayMonth !== undefined || payload.birthdayDay !== undefined;
+
+        if (birthdayTouched) {
+          if (clearBirthday) {
+            birthdayMonth = null;
+            birthdayDay = null;
+          } else {
+            const nextMonth = toOptionalInteger(payload.birthdayMonth);
+            const nextDay = toOptionalInteger(payload.birthdayDay);
+            if (!Number.isInteger(nextMonth) || !Number.isInteger(nextDay)) {
+              writeJson(
+                response,
+                400,
+                { error: "validation_error", message: "Birthday month and day must both be provided." },
+                corsHeaders
+              );
+              return;
+            }
+            if (!isValidBirthdayMonthDay(nextMonth, nextDay)) {
+              writeJson(response, 400, { error: "validation_error", message: "Birthday is not valid." }, corsHeaders);
+              return;
+            }
+            birthdayMonth = nextMonth;
+            birthdayDay = nextDay;
+          }
+        }
+
+        if ((birthdayMonth === null) !== (birthdayDay === null)) {
+          writeJson(
+            response,
+            400,
+            { error: "validation_error", message: "Birthday month and day must both be set or both be empty." },
+            corsHeaders
+          );
+          return;
+        }
+
+        const birthdayConsentConfirmedAt =
+          birthdayMonth !== null && birthdayDay !== null && birthdayVisibility !== "hidden"
+            ? new Date().toISOString()
+            : null;
+
+        upsertMemberProfile(database, auth.user.id, {
+          fullName,
+          company,
+          phone,
+          photoUrl: current.photoUrl,
+          birthdayMonth,
+          birthdayDay,
+          birthdayVisibility,
+          birthdayConsentConfirmedAt
+        });
+
+        database
+          .prepare(
+            `
+            INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+            VALUES (?, 'member_profile_updated', 'user', ?, ?)
+          `
+          )
+          .run(
+            auth.user.id,
+            String(auth.user.id),
+            JSON.stringify({
+              fullName,
+              hasCompany: Boolean(company),
+              hasPhone: Boolean(phone),
+              birthdayMonth,
+              birthdayDay,
+              birthdayVisibility
+            })
+          );
+
+        const refreshed = loadMemberProfile(database, auth.user.id);
+        writeJson(response, 200, { updated: true, item: toMemberProfileResponse(refreshed) }, corsHeaders);
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 400),
+          { error: error.code || "invalid_json", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/member/profile/photo") {
+      const auth = requireAuth(database, request, response, corsHeaders);
+      if (!auth) {
+        return;
+      }
+      if (!requireRole(auth.user, INTERNAL_PORTAL_ROLES, response, corsHeaders)) {
+        return;
+      }
+
+      let formData;
+      try {
+        formData = await readMultipartForm(request, { maxFileSizeBytes: MEMBER_PROFILE_PHOTO_MAX_FILE_SIZE_BYTES });
+      } catch (error) {
+        if (String(error.message || error) === "file_too_large") {
+          writeJson(response, 413, { error: "file_too_large", message: "Photo exceeds the size limit." }, corsHeaders);
+          return;
+        }
+        writeJson(response, 400, { error: "invalid_form", message: "Unable to parse photo upload." }, corsHeaders);
+        return;
+      }
+
+      if (!formData.file?.buffer || formData.file.buffer.length === 0) {
+        writeJson(response, 400, { error: "validation_error", message: "Photo file is required." }, corsHeaders);
+        return;
+      }
+
+      const mimeType = String(formData.file.mimeType || "").trim().toLowerCase();
+      if (!MEMBER_PROFILE_PHOTO_MIME_TYPES.has(mimeType)) {
+        writeJson(
+          response,
+          400,
+          { error: "validation_error", message: "Photo must be jpeg, png, webp, or gif." },
+          corsHeaders
+        );
+        return;
+      }
+
+      const profileRow = loadMemberProfile(database, auth.user.id);
+      if (!profileRow) {
+        writeJson(response, 404, { error: "not_found", message: "Member profile not found." }, corsHeaders);
+        return;
+      }
+
+      const current = toMemberProfileResponse(profileRow);
+      const photoUrl = `data:${mimeType};base64,${formData.file.buffer.toString("base64")}`;
+
+      upsertMemberProfile(database, auth.user.id, {
+        fullName: toNullableTrimmedString(current.fullName, { maxLength: 160 }) || auth.user.username,
+        company: toNullableTrimmedString(current.company, { maxLength: 180 }),
+        phone: toNullableTrimmedString(current.phone, { maxLength: 48 }),
+        photoUrl,
+        birthdayMonth: current.birthdayMonth,
+        birthdayDay: current.birthdayDay,
+        birthdayVisibility: normalizeBirthdayVisibility(current.birthdayVisibility || "hidden", "hidden"),
+        birthdayConsentConfirmedAt:
+          current.birthdayMonth && current.birthdayDay && current.birthdayVisibility !== "hidden"
+            ? new Date().toISOString()
+            : null
+      });
+
+      database
+        .prepare(
+          `
+          INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+          VALUES (?, 'member_profile_photo_uploaded', 'user', ?, ?)
+        `
+        )
+        .run(auth.user.id, String(auth.user.id), JSON.stringify({ mimeType, size: formData.file.buffer.length }));
+
+      writeJson(response, 200, { updated: true, photoUrl }, corsHeaders);
+      return;
+    }
+
+    if (request.method === "DELETE" && requestUrl.pathname === "/api/member/profile/photo") {
+      const auth = requireAuth(database, request, response, corsHeaders);
+      if (!auth) {
+        return;
+      }
+      if (!requireRole(auth.user, INTERNAL_PORTAL_ROLES, response, corsHeaders)) {
+        return;
+      }
+
+      const profileRow = loadMemberProfile(database, auth.user.id);
+      if (!profileRow) {
+        writeJson(response, 404, { error: "not_found", message: "Member profile not found." }, corsHeaders);
+        return;
+      }
+
+      const current = toMemberProfileResponse(profileRow);
+      upsertMemberProfile(database, auth.user.id, {
+        fullName: toNullableTrimmedString(current.fullName, { maxLength: 160 }) || auth.user.username,
+        company: toNullableTrimmedString(current.company, { maxLength: 180 }),
+        phone: toNullableTrimmedString(current.phone, { maxLength: 48 }),
+        photoUrl: null,
+        birthdayMonth: current.birthdayMonth,
+        birthdayDay: current.birthdayDay,
+        birthdayVisibility: normalizeBirthdayVisibility(current.birthdayVisibility || "hidden", "hidden"),
+        birthdayConsentConfirmedAt:
+          current.birthdayMonth && current.birthdayDay && current.birthdayVisibility !== "hidden"
+            ? new Date().toISOString()
+            : null
+      });
+
+      database
+        .prepare(
+          `
+          INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+          VALUES (?, 'member_profile_photo_removed', 'user', ?, ?)
+        `
+        )
+        .run(auth.user.id, String(auth.user.id), JSON.stringify({ removed: true }));
+
+      writeJson(response, 200, { updated: true, photoUrl: null }, corsHeaders);
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/member/home") {
+      const auth = requireAuth(database, request, response, corsHeaders);
+      if (!auth) {
+        return;
+      }
+      if (!requireRole(auth.user, INTERNAL_PORTAL_ROLES, response, corsHeaders)) {
+        return;
+      }
+
+      const decoratedEvents = decorateEventsForViewer(
+        database,
+        listPublishedEvents(database, auth.user, ""),
+        auth.user,
+        eventSummaryCache
+      );
+      const nowMs = Date.now();
+      const invites = decoratedEvents
+        .filter((item) => {
+          const endAtMs = parseIsoToMs(item.endAt);
+          return endAtMs === null || endAtMs >= nowMs - 6 * 60 * 60 * 1000;
+        })
+        .sort((left, right) => {
+          const leftMs = parseIsoToMs(left.startAt) || 0;
+          const rightMs = parseIsoToMs(right.startAt) || 0;
+          return leftMs - rightMs;
+        })
+        .slice(0, 12)
+        .map((item) => ({
+          id: Number(item.id),
+          title: String(item.title || "Untitled Event"),
+          startAt: item.startAt,
+          endAt: item.endAt,
+          venueType: item.venueType,
+          venueName: item.venueName || null,
+          venueAddress: item.venueAddress || null,
+          onlineJoinUrl: item.onlineJoinUrl || null,
+          registrationClosesAt: item.countdownEndsAt || item.registrationClosesAt || null,
+          invitationStatus: mapInvitationStatus(item.mySignupStatus),
+          mySignupStatus: item.mySignupStatus,
+          audienceLabel: item.audienceLabel || "All Members"
+        }));
+
+      const awaitingResponseCount = invites.filter((item) => item.invitationStatus === "awaiting_response").length;
+
+      let newsItems = listPublishedMemberNewsItems(database, { limit: 8 });
+      if (newsItems.length === 0) {
+        newsItems = listMemberNotificationNewsItems(database, auth.user.id, { limit: 8 });
+      }
+      if (newsItems.length === 0) {
+        newsItems = invites.slice(0, 4).map((invite) => ({
+          id: invite.id,
+          eventType: "event_invite",
+          title: `Invitation: ${invite.title}`,
+          body: "You have an event invitation in your member portal.",
+          createdAt: invite.startAt,
+          readAt: null
+        }));
+      }
+
+      const birthdayHighlights = listMemberBirthdayHighlights(database, { windowDays: 30, limit: 5 });
+
+      writeJson(
+        response,
+        200,
+        {
+          generatedAt: new Date().toISOString(),
+          invites: {
+            total: invites.length,
+            awaitingResponse: awaitingResponseCount,
+            items: invites
+          },
+          news: {
+            total: newsItems.length,
+            items: newsItems
+          },
+          birthdays: {
+            total: birthdayHighlights.length,
+            items: birthdayHighlights
+          }
+        },
+        corsHeaders
+      );
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/member/directory") {
+      const auth = requireAuth(database, request, response, corsHeaders);
+      if (!auth) {
+        return;
+      }
+      if (!requireRole(auth.user, INTERNAL_PORTAL_ROLES, response, corsHeaders)) {
+        return;
+      }
+      if (!requireActivationClear(auth.user, response, corsHeaders)) {
+        return;
+      }
+
+      const search = requestUrl.searchParams.get("search") || "";
+      const limit = Number(requestUrl.searchParams.get("limit") || 80);
+      const items = listActiveMemberDirectory(database, { search, limit });
+      writeJson(response, 200, { items }, corsHeaders);
       return;
     }
 
@@ -6296,7 +8794,7 @@ export async function startApiServer(config) {
             LEFT JOIN member_role_assignments ON member_role_assignments.user_id = users.id
             LEFT JOIN member_roles ON member_roles.id = member_role_assignments.role_id
             WHERE users.role = 'member'
-              AND users.status = 'active'
+              AND users.account_status = 'active'
               AND member_profiles.birthday_visibility IN ('hidden', 'members_only', 'members_and_social')
               AND member_profiles.birthday_month IS NOT NULL
               AND member_profiles.birthday_day IS NOT NULL
@@ -6305,15 +8803,23 @@ export async function startApiServer(config) {
           )
           .all();
 
-        const people = rows.map((row) => ({
-          userId: row.userId,
-          fullName: row.fullName,
-          photoUrl: row.photoUrl,
-          birthdayMonth: row.birthdayMonth,
-          birthdayDay: row.birthdayDay,
-          birthdayVisibility: row.birthdayVisibility,
-          roles: row.rolesCsv ? String(row.rolesCsv).split(",").map((name) => name.trim()).filter(Boolean) : []
-        }));
+        const eligibleIdSet = new Set(
+          filterEligibleMemberUserIds(
+            database,
+            rows.map((row) => Number(row.userId)).filter((id) => Number.isInteger(id))
+          )
+        );
+        const people = rows
+          .filter((row) => eligibleIdSet.has(Number(row.userId)))
+          .map((row) => ({
+            userId: row.userId,
+            fullName: row.fullName,
+            photoUrl: row.photoUrl,
+            birthdayMonth: row.birthdayMonth,
+            birthdayDay: row.birthdayDay,
+            birthdayVisibility: row.birthdayVisibility,
+            roles: row.rolesCsv ? String(row.rolesCsv).split(",").map((name) => name.trim()).filter(Boolean) : []
+          }));
 
         const items = listUpcomingBirthdays({
           nowMs: Date.now(),
@@ -6719,6 +9225,363 @@ export async function startApiServer(config) {
         writeJson(response, 200, { updated: result.changes }, corsHeaders);
       } catch {
         writeJson(response, 400, { error: "invalid_json", message: "Request body must be valid JSON." }, corsHeaders);
+      }
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/admin/news") {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, ADMIN_ROLES, response, corsHeaders)) {
+          return;
+        }
+
+        const statusFilter = normalizeMemberNewsStatusFilter(requestUrl.searchParams.get("status"), "all");
+        const limit = Math.max(1, Math.min(Number(requestUrl.searchParams.get("limit") || 50), 200));
+        const items = listAdminNewsPosts(database, { status: statusFilter, limit });
+        writeJson(response, 200, { status: statusFilter, limit, items }, corsHeaders);
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 500),
+          { error: error.code || "internal_error", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/admin/news") {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, ADMIN_ROLES, response, corsHeaders)) {
+          return;
+        }
+
+        const payload = await readJsonBody(request);
+        const title = toNullableTrimmedString(payload.title, { maxLength: 180 });
+        const bodyText = toNullableTrimmedString(payload.body, { maxLength: 5000 });
+        const status = normalizeMemberNewsStatus(payload.status, "draft");
+        const isPinned = parseBooleanInput(payload.isPinned, false);
+        if (!title) {
+          writeJson(response, 400, { error: "validation_error", message: "title is required." }, corsHeaders);
+          return;
+        }
+        if (!bodyText) {
+          writeJson(response, 400, { error: "validation_error", message: "body is required." }, corsHeaders);
+          return;
+        }
+        const publishedAt = status === "published" ? new Date().toISOString() : null;
+        const pinnedAt = isPinned ? new Date().toISOString() : null;
+
+        const result = database
+          .prepare(
+            `
+            INSERT INTO member_news_posts (
+              title,
+              body_text,
+              status,
+              is_pinned,
+              pinned_at,
+              published_at,
+              author_user_id,
+              updated_by_user_id,
+              created_at,
+              updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          `
+          )
+          .run(title, bodyText, status, isPinned ? 1 : 0, pinnedAt, publishedAt, auth.user.id, auth.user.id);
+
+        const newsId = Number(result.lastInsertRowid);
+        database
+          .prepare(
+            `
+            INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+            VALUES (?, 'member_news_created', 'member_news', ?, ?)
+          `
+          )
+          .run(
+            auth.user.id,
+            String(newsId),
+            JSON.stringify({ status, isPinned, pinnedAt, publishedAt, titleLength: title.length, bodyLength: bodyText.length })
+          );
+
+        const created = loadMemberNewsPost(database, newsId);
+        writeJson(response, 201, { created: true, item: toMemberNewsResponseItem(created) }, corsHeaders);
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 400),
+          { error: error.code || "invalid_json", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "PATCH" && /^\/api\/admin\/news\/\d+$/.test(requestUrl.pathname)) {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, ADMIN_ROLES, response, corsHeaders)) {
+          return;
+        }
+
+        const parts = requestUrl.pathname.split("/");
+        const newsId = Number(parts[4]);
+        if (!Number.isInteger(newsId) || newsId <= 0) {
+          writeJson(response, 400, { error: "validation_error", message: "News id is required." }, corsHeaders);
+          return;
+        }
+
+        const existing = loadMemberNewsPost(database, newsId);
+        if (!existing) {
+          writeJson(response, 404, { error: "not_found", message: "News post not found." }, corsHeaders);
+          return;
+        }
+
+        const payload = await readJsonBody(request);
+        const hasTitle = payload.title !== undefined;
+        const hasBody = payload.body !== undefined;
+        const hasStatus = payload.status !== undefined;
+        const hasPinned = payload.isPinned !== undefined;
+        if (!hasTitle && !hasBody && !hasStatus && !hasPinned) {
+          writeJson(response, 400, { error: "validation_error", message: "No fields to update." }, corsHeaders);
+          return;
+        }
+
+        const nextTitle = hasTitle
+          ? toNullableTrimmedString(payload.title, { maxLength: 180 })
+          : toNullableTrimmedString(existing.title, { maxLength: 180 });
+        const nextBodyText = hasBody
+          ? toNullableTrimmedString(payload.body, { maxLength: 5000 })
+          : toNullableTrimmedString(existing.bodyText, { maxLength: 5000 });
+        if (!nextTitle) {
+          writeJson(response, 400, { error: "validation_error", message: "title is required." }, corsHeaders);
+          return;
+        }
+        if (!nextBodyText) {
+          writeJson(response, 400, { error: "validation_error", message: "body is required." }, corsHeaders);
+          return;
+        }
+
+        const nextStatus = hasStatus
+          ? normalizeMemberNewsStatus(payload.status, existing.status || "draft")
+          : normalizeMemberNewsStatus(existing.status || "draft", "draft");
+        let nextPublishedAt = existing.publishedAt || null;
+        if (nextStatus === "published" && !nextPublishedAt) {
+          nextPublishedAt = new Date().toISOString();
+        } else if (hasStatus && nextStatus === "draft") {
+          nextPublishedAt = null;
+        }
+        const nextIsPinned = hasPinned ? parseBooleanInput(payload.isPinned, false) : Number(existing.isPinned || 0) === 1;
+        let nextPinnedAt = existing.pinnedAt || null;
+        if (nextIsPinned && !nextPinnedAt) {
+          nextPinnedAt = new Date().toISOString();
+        }
+        if (!nextIsPinned) {
+          nextPinnedAt = null;
+        }
+
+        database
+          .prepare(
+            `
+            UPDATE member_news_posts
+            SET
+              title = ?,
+              body_text = ?,
+              status = ?,
+              is_pinned = ?,
+              pinned_at = ?,
+              published_at = ?,
+              updated_by_user_id = ?,
+              updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `
+          )
+          .run(nextTitle, nextBodyText, nextStatus, nextIsPinned ? 1 : 0, nextPinnedAt, nextPublishedAt, auth.user.id, newsId);
+
+        database
+          .prepare(
+            `
+            INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+            VALUES (?, 'member_news_updated', 'member_news', ?, ?)
+          `
+          )
+          .run(
+            auth.user.id,
+            String(newsId),
+            JSON.stringify({
+              previousStatus: existing.status || "draft",
+              status: nextStatus,
+              previousIsPinned: Number(existing.isPinned || 0) === 1,
+              isPinned: nextIsPinned,
+              pinnedAt: nextPinnedAt,
+              publishedAt: nextPublishedAt,
+              titleChanged: nextTitle !== String(existing.title || ""),
+              bodyChanged: nextBodyText !== String(existing.bodyText || "")
+            })
+          );
+
+        const refreshed = loadMemberNewsPost(database, newsId);
+        writeJson(response, 200, { updated: true, item: toMemberNewsResponseItem(refreshed) }, corsHeaders);
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 400),
+          { error: error.code || "invalid_json", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "POST" && /^\/api\/admin\/news\/\d+\/publish$/.test(requestUrl.pathname)) {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, ADMIN_ROLES, response, corsHeaders)) {
+          return;
+        }
+
+        const parts = requestUrl.pathname.split("/");
+        const newsId = Number(parts[4]);
+        if (!Number.isInteger(newsId) || newsId <= 0) {
+          writeJson(response, 400, { error: "validation_error", message: "News id is required." }, corsHeaders);
+          return;
+        }
+
+        const existing = loadMemberNewsPost(database, newsId);
+        if (!existing) {
+          writeJson(response, 404, { error: "not_found", message: "News post not found." }, corsHeaders);
+          return;
+        }
+
+        const publishAt = existing.publishedAt || new Date().toISOString();
+        const isPinned = Number(existing.isPinned || 0) === 1;
+        const pinnedAt = isPinned ? existing.pinnedAt || new Date().toISOString() : null;
+        database
+          .prepare(
+            `
+            UPDATE member_news_posts
+            SET
+              status = 'published',
+              is_pinned = ?,
+              pinned_at = ?,
+              published_at = ?,
+              updated_by_user_id = ?,
+              updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `
+          )
+          .run(isPinned ? 1 : 0, pinnedAt, publishAt, auth.user.id, newsId);
+
+        database
+          .prepare(
+            `
+            INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+            VALUES (?, 'member_news_published', 'member_news', ?, ?)
+          `
+          )
+          .run(
+            auth.user.id,
+            String(newsId),
+            JSON.stringify({
+              previousStatus: existing.status || "draft",
+              isPinned,
+              pinnedAt,
+              publishedAt: publishAt
+            })
+          );
+
+        const refreshed = loadMemberNewsPost(database, newsId);
+        writeJson(response, 200, { published: true, item: toMemberNewsResponseItem(refreshed) }, corsHeaders);
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 500),
+          { error: error.code || "internal_error", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "POST" && /^\/api\/admin\/news\/\d+\/archive$/.test(requestUrl.pathname)) {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, ADMIN_ROLES, response, corsHeaders)) {
+          return;
+        }
+
+        const parts = requestUrl.pathname.split("/");
+        const newsId = Number(parts[4]);
+        if (!Number.isInteger(newsId) || newsId <= 0) {
+          writeJson(response, 400, { error: "validation_error", message: "News id is required." }, corsHeaders);
+          return;
+        }
+
+        const existing = loadMemberNewsPost(database, newsId);
+        if (!existing) {
+          writeJson(response, 404, { error: "not_found", message: "News post not found." }, corsHeaders);
+          return;
+        }
+
+        database
+          .prepare(
+            `
+            UPDATE member_news_posts
+            SET
+              status = 'archived',
+              is_pinned = 0,
+              pinned_at = NULL,
+              updated_by_user_id = ?,
+              updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `
+          )
+          .run(auth.user.id, newsId);
+
+        database
+          .prepare(
+            `
+            INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+            VALUES (?, 'member_news_archived', 'member_news', ?, ?)
+          `
+          )
+          .run(
+            auth.user.id,
+            String(newsId),
+            JSON.stringify({
+              previousStatus: existing.status || "draft",
+              previousIsPinned: Number(existing.isPinned || 0) === 1
+            })
+          );
+
+        const refreshed = loadMemberNewsPost(database, newsId);
+        writeJson(response, 200, { archived: true, item: toMemberNewsResponseItem(refreshed) }, corsHeaders);
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 500),
+          { error: error.code || "internal_error", message: String(error.message || error) },
+          corsHeaders
+        );
       }
       return;
     }
@@ -7206,14 +10069,14 @@ export async function startApiServer(config) {
         const userRow = database
           .prepare(
             `
-            SELECT id, role, status
+            SELECT id, role, status, account_status AS accountStatus
             FROM users
             WHERE id = ?
             LIMIT 1
           `
           )
           .get(userId);
-        if (!userRow || userRow.status !== "active") {
+        if (!userRow || normalizeAccountStatusValue(userRow.accountStatus, userRow.status) !== "active") {
           writeJson(response, 404, { error: "not_found", message: "User not found." }, corsHeaders);
           return;
         }
@@ -7341,6 +10204,8 @@ export async function startApiServer(config) {
           ? payload.groupNames.map((name) => String(name || "").trim()).filter(Boolean)
           : [];
         const hasGroupNames = groupNamesInput.length > 0;
+        const inviteeIdsInput =
+          payload.inviteeUserIds !== undefined ? payload.inviteeUserIds : payload.audienceUserIds;
         if (hasGroupNames) {
           const groupMap = ensureGroupIds(database, groupNamesInput);
           groupIds = groupNamesInput
@@ -7362,6 +10227,10 @@ export async function startApiServer(config) {
           }
           audienceType = mappedAudience.audienceType;
           groupIds = mappedAudience.groupIds;
+        }
+        const inviteeUserIds = resolveActiveMemberInviteeIds(database, inviteeIdsInput);
+        if (inviteeUserIds.length > 0 && audienceType === "all_members" && groupIds.length === 0) {
+          audienceType = "groups";
         }
 
         if (!title || !startAt || !endAt || !venueType) {
@@ -7429,11 +10298,11 @@ export async function startApiServer(config) {
           return;
         }
 
-        if (audienceType === "groups" && groupIds.length === 0) {
+        if (audienceType === "groups" && groupIds.length === 0 && inviteeUserIds.length === 0) {
           writeJson(
             response,
             400,
-            { error: "validation_error", message: "Select at least one group for group-only events." },
+            { error: "validation_error", message: "Select at least one group or individual member for targeted events." },
             corsHeaders
           );
           return;
@@ -7491,6 +10360,7 @@ export async function startApiServer(config) {
         const eventId = result.lastInsertRowid;
         if (audienceType === "groups") {
           setEventAudienceGroups(database, eventId, groupIds);
+          setEventInvitees(database, eventId, inviteeUserIds, auth.user.id);
         }
         eventSummaryCache.invalidate(eventId);
         database
@@ -7507,6 +10377,7 @@ export async function startApiServer(config) {
               status: "draft",
               audienceType,
               audienceCode: audienceCode || (audienceType === "all_members" ? "all_members" : "groups"),
+              inviteeCount: audienceType === "groups" ? inviteeUserIds.length : 0,
               clashCount: clashWarning.count,
               autoPublished: false
             })
@@ -7537,6 +10408,7 @@ export async function startApiServer(config) {
           {
             id: eventId,
             status: "draft",
+            inviteeUserIds: audienceType === "groups" ? inviteeUserIds : [],
             clashWarning: {
               hasClash: clashWarning.count > 0,
               conflictCount: clashWarning.count,
@@ -8516,9 +11388,17 @@ export async function startApiServer(config) {
 
         const payload = await readJsonBody(request);
         const currentGroupIds = loadEventAudienceGroupIds(database, eventId);
+        const currentInviteeUserIds = loadEventInviteeUserIds(database, eventId);
         let nextAudienceType = payload.audienceType === "groups" ? "groups" : eventRow.audience_type;
         let nextGroupIds = Array.isArray(payload.groupIds)
           ? payload.groupIds.map((id) => Number(id)).filter((id) => Number.isInteger(id))
+          : null;
+        const hasInviteeIdsInput = payload.inviteeUserIds !== undefined || payload.audienceUserIds !== undefined;
+        let nextInviteeUserIds = hasInviteeIdsInput
+          ? resolveActiveMemberInviteeIds(
+              database,
+              payload.inviteeUserIds !== undefined ? payload.inviteeUserIds : payload.audienceUserIds
+            )
           : null;
         const groupNamesInput = Array.isArray(payload.groupNames)
           ? payload.groupNames.map((name) => String(name || "").trim()).filter(Boolean)
@@ -8545,6 +11425,21 @@ export async function startApiServer(config) {
           }
           nextAudienceType = mappedAudience.audienceType;
           nextGroupIds = mappedAudience.groupIds;
+          if (!hasInviteeIdsInput && nextAudienceType === "all_members") {
+            nextInviteeUserIds = [];
+          }
+        }
+        const effectiveInviteeUserIds = Array.isArray(nextInviteeUserIds)
+          ? nextInviteeUserIds
+          : currentInviteeUserIds;
+        const effectiveGroupIdsForAudience = Array.isArray(nextGroupIds) ? nextGroupIds : currentGroupIds;
+        if (
+          effectiveInviteeUserIds.length > 0 &&
+          nextAudienceType === "all_members" &&
+          effectiveGroupIdsForAudience.length === 0 &&
+          hasInviteeIdsInput
+        ) {
+          nextAudienceType = "groups";
         }
         const next = {
           title: payload.title !== undefined ? String(payload.title || "").trim() : eventRow.title,
@@ -8575,7 +11470,8 @@ export async function startApiServer(config) {
               ? String(payload.registrationClosesAt || "").trim()
               : eventRow.registration_closes_at,
           audienceType: nextAudienceType,
-          groupIds: nextGroupIds
+          groupIds: nextGroupIds,
+          inviteeUserIds: nextInviteeUserIds
         };
         const nextStartAtMs = parseIsoToMs(next.startAt);
         const nextEndAtMs = parseIsoToMs(next.endAt);
@@ -8600,6 +11496,12 @@ export async function startApiServer(config) {
           (next.audienceType === "groups" && !hasSameIntegerSet(currentGroupIds, effectiveNextGroupIds))
         ) {
           changes.push("Audience changed");
+        }
+        const effectiveNextInviteeUserIds = Array.isArray(next.inviteeUserIds)
+          ? next.inviteeUserIds
+          : currentInviteeUserIds;
+        if (Array.isArray(next.inviteeUserIds) && !hasSameIntegerSet(currentInviteeUserIds, effectiveNextInviteeUserIds)) {
+          changes.push("Audience members changed");
         }
 
         if (!next.title || !next.startAt || !next.endAt || !next.venueType) {
@@ -8669,11 +11571,12 @@ export async function startApiServer(config) {
 
         if (next.audienceType === "groups") {
           const effectiveGroupIds = Array.isArray(next.groupIds) ? next.groupIds : currentGroupIds;
-          if (effectiveGroupIds.length === 0) {
+          const effectiveInviteeIds = Array.isArray(next.inviteeUserIds) ? next.inviteeUserIds : currentInviteeUserIds;
+          if (effectiveGroupIds.length === 0 && effectiveInviteeIds.length === 0) {
             writeJson(
               response,
               400,
-              { error: "validation_error", message: "Select at least one group for group-only events." },
+              { error: "validation_error", message: "Select at least one group or individual member for targeted events." },
               corsHeaders
             );
             return;
@@ -8735,6 +11638,14 @@ export async function startApiServer(config) {
             setEventAudienceGroups(database, eventId, []);
           }
         }
+        if (Array.isArray(next.inviteeUserIds)) {
+          setEventInvitees(
+            database,
+            eventId,
+            next.audienceType === "groups" ? next.inviteeUserIds : [],
+            auth.user.id
+          );
+        }
         eventSummaryCache.invalidate(eventId);
 
         if (changes.length > 0) {
@@ -8751,7 +11662,8 @@ export async function startApiServer(config) {
               JSON.stringify({
                 revisionId,
                 changes,
-                audienceCode: audienceCode || (next.audienceType === "all_members" ? "all_members" : "groups")
+                audienceCode: audienceCode || (next.audienceType === "all_members" ? "all_members" : "groups"),
+                inviteeCount: next.audienceType === "groups" ? effectiveNextInviteeUserIds.length : 0
               })
             );
         }
@@ -8968,7 +11880,9 @@ export async function startApiServer(config) {
           eventRow
         });
         let teamsAutomation = { attempted: false, automated: false, reason: "not_applicable" };
+        let notificationDispatch = { attempted: false, completed: false };
         if (submission.submitted && !submission.alreadyPublished) {
+          notificationDispatch.attempted = true;
           try {
             teamsAutomation = await syncTeamsMeetingForEvent(database, {
               teamsGraphClient,
@@ -8988,6 +11902,19 @@ export async function startApiServer(config) {
             operation: "upsert",
             actorUserId: auth.user.id
           });
+          try {
+            processNotificationQueue(database, { appBaseUrl: config.appBaseUrl });
+            notificationDispatch.completed = true;
+          } catch (notificationError) {
+            console.error(
+              JSON.stringify({
+                level: "error",
+                event: "event_publish_notification_dispatch_failed",
+                eventId,
+                message: String(notificationError.message || notificationError)
+              })
+            );
+          }
         }
         writeJson(
           response,
@@ -8996,7 +11923,8 @@ export async function startApiServer(config) {
             status: submission.status,
             alreadySubmitted: submission.alreadySubmitted,
             alreadyPublished: submission.alreadyPublished,
-            teamsAutomation
+            teamsAutomation,
+            notificationDispatch
           },
           corsHeaders
         );
@@ -9158,6 +12086,718 @@ export async function startApiServer(config) {
       return;
     }
 
+    if (request.method === "GET" && requestUrl.pathname === "/api/admin/membership-fees/cycles") {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, ["admin", "chief_admin"], response, corsHeaders)) {
+          return;
+        }
+        const limit = Math.max(1, Math.min(Number(requestUrl.searchParams.get("limit") || 30), 200));
+        const items = listMembershipCycles(database, { limit });
+        const activeCycle = loadOpenMembershipCycle(database) || (items.length > 0 ? items[0] : null);
+        writeJson(
+          response,
+          200,
+          {
+            items,
+            activeCycle: activeCycle ? toMembershipCycleResponseItem(activeCycle) : null
+          },
+          corsHeaders
+        );
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 500),
+          { error: error.code || "internal_error", message: String(error.message || "Unable to load membership cycles.") },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/admin/membership-fees/cycles") {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, ["admin", "chief_admin"], response, corsHeaders)) {
+          return;
+        }
+
+        const payload = await readJsonBody(request);
+        const membershipYear = parseMembershipYear(payload.membershipYear);
+        const status = normalizeMembershipCycleStatus(payload.status, "open");
+        const dueDate = normalizeMembershipDueDate(payload.dueDate, membershipYear);
+        let cycle = null;
+        let created = false;
+        let closedOpenCycles = 0;
+
+        runTransaction(database, () => {
+          const existing = loadMembershipCycleByYear(database, membershipYear);
+          if (status === "open") {
+            const closeResult = database
+              .prepare(
+                `
+                UPDATE membership_cycles
+                SET status = 'closed', updated_at = CURRENT_TIMESTAMP
+                WHERE status = 'open' AND membership_year != ?
+              `
+              )
+              .run(membershipYear);
+            closedOpenCycles = Number(closeResult.changes || 0);
+          }
+
+          if (existing) {
+            database
+              .prepare(
+                `
+                UPDATE membership_cycles
+                SET due_date = ?, status = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+              `
+              )
+              .run(dueDate, status, existing.id);
+          } else {
+            database
+              .prepare(
+                `
+                INSERT INTO membership_cycles (membership_year, due_date, status, created_at, updated_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+              `
+              )
+              .run(membershipYear, dueDate, status);
+            created = true;
+          }
+
+          cycle = loadMembershipCycleByYear(database, membershipYear);
+
+          database
+            .prepare(
+              `
+              INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+              VALUES (?, 'membership_cycle_upserted', 'membership_cycle', ?, ?)
+            `
+            )
+            .run(
+              auth.user.id,
+              String(cycle?.id || membershipYear),
+              JSON.stringify({
+                membershipYear,
+                dueDate,
+                status,
+                created,
+                closedOpenCycles
+              })
+            );
+        });
+
+        writeJson(
+          response,
+          created ? 201 : 200,
+          {
+            created,
+            closedOpenCycles,
+            item: toMembershipCycleResponseItem(cycle)
+          },
+          corsHeaders
+        );
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 400),
+          { error: error.code || "invalid_json", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/admin/membership-fees/overview") {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, ["admin", "chief_admin"], response, corsHeaders)) {
+          return;
+        }
+        const requestedYearRaw = requestUrl.searchParams.get("membershipYear");
+        const cycle = loadPreferredMembershipCycle(database, requestedYearRaw);
+        if (!cycle) {
+          writeJson(
+            response,
+            200,
+            {
+              cycle: null,
+              summary: {
+                totalMembers: 0,
+                activeMembers: 0,
+                goodStandingMembers: 0,
+                outstandingMembers: 0,
+                blockedMembers: 0,
+                deactivatedMembers: 0,
+                onboardingMembers: 0,
+                feesCollected: 0,
+                outstandingBalance: 0
+              }
+            },
+            corsHeaders
+          );
+          return;
+        }
+        writeJson(response, 200, buildMembershipFeesOverview(database, cycle), corsHeaders);
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 500),
+          {
+            error: error.code || "internal_error",
+            message: String(error.message || "Unable to load membership overview.")
+          },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/admin/membership-fees/members") {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, ["admin", "chief_admin"], response, corsHeaders)) {
+          return;
+        }
+        const requestedYearRaw = requestUrl.searchParams.get("membershipYear");
+        const cycle = loadPreferredMembershipCycle(database, requestedYearRaw);
+        const filters = {
+          search: requestUrl.searchParams.get("search") || "",
+          standingStatus: requestUrl.searchParams.get("standingStatus") || "all",
+          accountStatus: requestUrl.searchParams.get("accountStatus") || "all",
+          category: requestUrl.searchParams.get("category") || "",
+          profileCompletion: requestUrl.searchParams.get("profileCompletion") || "all",
+          limit: Number(requestUrl.searchParams.get("limit") || 300)
+        };
+        const items = listMembershipFeeMembers(database, { cycle, filters });
+        writeJson(
+          response,
+          200,
+          {
+            cycle: toMembershipCycleResponseItem(cycle),
+            total: items.length,
+            items
+          },
+          corsHeaders
+        );
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 500),
+          { error: error.code || "internal_error", message: String(error.message || "Unable to load member fee records.") },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/admin/membership-fees/accounts/bulk") {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, ["admin", "chief_admin"], response, corsHeaders)) {
+          return;
+        }
+
+        const payload = await readJsonBody(request);
+        const userIds = normalizeMembershipFeeUserIds(payload.userIds);
+        if (userIds.length === 0) {
+          writeJson(response, 400, { error: "validation_error", message: "Select at least one member." }, corsHeaders);
+          return;
+        }
+        if (userIds.length > 250) {
+          writeJson(response, 400, { error: "validation_error", message: "Bulk updates are limited to 250 members." }, corsHeaders);
+          return;
+        }
+        const requestedYearRaw = payload.membershipYear ?? requestUrl.searchParams.get("membershipYear");
+        const cycle = loadPreferredMembershipCycle(database, requestedYearRaw);
+        if (!cycle) {
+          writeJson(
+            response,
+            409,
+            { error: "invalid_state", message: "Create a membership cycle before updating member fee records." },
+            corsHeaders
+          );
+          return;
+        }
+
+        const patchPayload = {
+          paymentStatus: payload.paymentStatus,
+          standingStatus: payload.standingStatus,
+          accessStatus: payload.accessStatus,
+          amountDue: payload.amountDue,
+          amountPaid: payload.amountPaid,
+          adminNote: payload.adminNote,
+          reason: toNullableTrimmedString(payload.reason, { maxLength: 500 }) || "bulk_membership_fee_update"
+        };
+        const updated = [];
+        const failed = [];
+        for (const userId of userIds) {
+          try {
+            updated.push(
+              applyMemberFeeAccountUpdate(database, {
+                actorUserId: auth.user.id,
+                userId,
+                cycle,
+                payload: patchPayload
+              })
+            );
+          } catch (error) {
+            failed.push({
+              userId,
+              error: error.code || "update_failed",
+              message: String(error.message || error)
+            });
+          }
+        }
+
+        writeJson(
+          response,
+          failed.length > 0 && updated.length === 0 ? 400 : 200,
+          {
+            updated: updated.length,
+            failed: failed.length,
+            cycle: toMembershipCycleResponseItem(cycle),
+            items: updated,
+            errors: failed
+          },
+          corsHeaders
+        );
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 400),
+          { error: error.code || "invalid_json", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/admin/membership-fees/dues-reminders") {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, ["admin", "chief_admin"], response, corsHeaders)) {
+          return;
+        }
+
+        const payload = await readJsonBody(request);
+        const userIds = normalizeMembershipFeeUserIds(payload.userIds);
+        if (userIds.length === 0) {
+          writeJson(response, 400, { error: "validation_error", message: "Select at least one member." }, corsHeaders);
+          return;
+        }
+        if (userIds.length > 250) {
+          writeJson(response, 400, { error: "validation_error", message: "Dues reminders are limited to 250 members." }, corsHeaders);
+          return;
+        }
+        const requestedYearRaw = payload.membershipYear ?? requestUrl.searchParams.get("membershipYear");
+        const cycle = loadPreferredMembershipCycle(database, requestedYearRaw);
+        if (!cycle) {
+          writeJson(
+            response,
+            409,
+            { error: "invalid_state", message: "Create a membership cycle before sending dues reminders." },
+            corsHeaders
+          );
+          return;
+        }
+
+        const result = enqueueMembershipDuesReminders(database, {
+          cycle,
+          userIds,
+          actorUserId: auth.user.id,
+          reason: toNullableTrimmedString(payload.reason, { maxLength: 500 }) || "dues_reminder"
+        });
+        writeJson(response, 202, { cycle: toMembershipCycleResponseItem(cycle), ...result }, corsHeaders);
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 400),
+          { error: error.code || "invalid_json", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (
+      request.method === "GET" &&
+      requestUrl.pathname.startsWith("/api/admin/membership-fees/accounts/") &&
+      requestUrl.pathname.endsWith("/audit")
+    ) {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, ["admin", "chief_admin"], response, corsHeaders)) {
+          return;
+        }
+
+        const parts = requestUrl.pathname.split("/");
+        if (parts.length !== 7 || parts[5] === "") {
+          writeJson(response, 400, { error: "validation_error", message: "Member user id is required." }, corsHeaders);
+          return;
+        }
+        const userId = Number(parts[5]);
+        if (!Number.isInteger(userId) || userId <= 0) {
+          writeJson(response, 400, { error: "validation_error", message: "Member user id is required." }, corsHeaders);
+          return;
+        }
+        const requestedYearRaw = requestUrl.searchParams.get("membershipYear");
+        const cycle = requestedYearRaw ? loadPreferredMembershipCycle(database, requestedYearRaw) : null;
+        const items = listMemberStandingAudit(database, {
+          userId,
+          membershipCycleId: cycle?.id || null,
+          limit: Number(requestUrl.searchParams.get("limit") || 20)
+        });
+        writeJson(
+          response,
+          200,
+          {
+            userId,
+            cycle: cycle ? toMembershipCycleResponseItem(cycle) : null,
+            items
+          },
+          corsHeaders
+        );
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 400),
+          { error: error.code || "invalid_json", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "PATCH" && requestUrl.pathname.startsWith("/api/admin/membership-fees/accounts/")) {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, ["admin", "chief_admin"], response, corsHeaders)) {
+          return;
+        }
+        const parts = requestUrl.pathname.split("/");
+        if (parts.length !== 6 || parts[5] === "") {
+          writeJson(response, 400, { error: "validation_error", message: "Member user id is required." }, corsHeaders);
+          return;
+        }
+        const userId = Number(parts[5]);
+        if (!Number.isInteger(userId) || userId <= 0) {
+          writeJson(response, 400, { error: "validation_error", message: "Member user id is required." }, corsHeaders);
+          return;
+        }
+
+        const userRow = database
+          .prepare(
+            `
+            SELECT id, username, email, role, status, account_status AS accountStatus
+            FROM users
+            WHERE id = ?
+            LIMIT 1
+          `
+          )
+          .get(userId);
+        if (!userRow || userRow.role !== "member") {
+          writeJson(response, 404, { error: "not_found", message: "Member not found." }, corsHeaders);
+          return;
+        }
+
+        const payload = await readJsonBody(request);
+        const requestedYearRaw = payload.membershipYear ?? requestUrl.searchParams.get("membershipYear");
+        const cycle = loadPreferredMembershipCycle(database, requestedYearRaw);
+        if (!cycle) {
+          writeJson(
+            response,
+            409,
+            { error: "invalid_state", message: "Create a membership cycle before updating member fee records." },
+            corsHeaders
+          );
+          return;
+        }
+
+        const previous = loadMemberFeeAccountForCycle(database, { userId, membershipCycleId: cycle.id });
+        const parseMoney = (value, fallback = 0) => {
+          if (value === undefined || value === null || value === "") {
+            return Number(fallback || 0);
+          }
+          const parsed = Number(value);
+          if (!Number.isFinite(parsed) || parsed < 0) {
+            const error = new Error("Amounts must be numbers greater than or equal to 0.");
+            error.httpStatus = 400;
+            error.code = "validation_error";
+            throw error;
+          }
+          return Number(parsed);
+        };
+
+        const amountDue = parseMoney(payload.amountDue, previous?.amountDue || 0);
+        const amountPaid = parseMoney(payload.amountPaid, previous?.amountPaid || 0);
+        const balance =
+          payload.balance !== undefined && payload.balance !== null && payload.balance !== ""
+            ? Number(payload.balance)
+            : Number(amountDue - amountPaid);
+        if (!Number.isFinite(balance)) {
+          writeJson(response, 400, { error: "validation_error", message: "balance must be numeric." }, corsHeaders);
+          return;
+        }
+
+        const paymentStatus = normalizeMemberFeePaymentStatus(payload.paymentStatus, previous?.paymentStatus || "pending_review");
+        const standingStatus = normalizeMemberFeeStandingStatus(
+          payload.standingStatus,
+          previous?.standingStatus || "pending_review"
+        );
+        const accessStatus = normalizeMemberFeeAccessStatus(payload.accessStatus, previous?.accessStatus || "enabled");
+        const adminNote =
+          payload.adminNote !== undefined ? toNullableTrimmedString(payload.adminNote, { maxLength: 2000 }) : previous?.adminNote || null;
+        const reason = toNullableTrimmedString(payload.reason, { maxLength: 500 }) || "admin_update";
+        const lastPaymentAtRaw =
+          payload.lastPaymentAt !== undefined ? String(payload.lastPaymentAt || "").trim() : String(previous?.lastPaymentAt || "").trim();
+        const lastPaymentAt = lastPaymentAtRaw ? new Date(lastPaymentAtRaw).toISOString() : null;
+        const standingChanged =
+          String(previous?.standingStatus || "pending_review") !== standingStatus ||
+          String(previous?.accessStatus || "enabled") !== accessStatus ||
+          String(previous?.paymentStatus || "pending_review") !== paymentStatus;
+
+        const nextAccountStatus =
+          accessStatus === "enabled" ? "active" : accessStatus === "blocked" ? "blocked" : "deactivated";
+        const nextLegacyStatus = nextAccountStatus === "active" ? "active" : "suspended";
+        const reviewedAt = new Date().toISOString();
+
+        runTransaction(database, () => {
+          database
+            .prepare(
+              `
+              INSERT INTO member_fee_accounts (
+                user_id,
+                membership_cycle_id,
+                amount_due,
+                amount_paid,
+                balance,
+                payment_status,
+                standing_status,
+                access_status,
+                last_payment_at,
+                reviewed_by_user_id,
+                reviewed_at,
+                admin_note,
+                created_at,
+                updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+              ON CONFLICT(user_id, membership_cycle_id) DO UPDATE SET
+                amount_due = excluded.amount_due,
+                amount_paid = excluded.amount_paid,
+                balance = excluded.balance,
+                payment_status = excluded.payment_status,
+                standing_status = excluded.standing_status,
+                access_status = excluded.access_status,
+                last_payment_at = excluded.last_payment_at,
+                reviewed_by_user_id = excluded.reviewed_by_user_id,
+                reviewed_at = excluded.reviewed_at,
+                admin_note = excluded.admin_note,
+                updated_at = CURRENT_TIMESTAMP
+            `
+            )
+            .run(
+              userId,
+              cycle.id,
+              amountDue,
+              amountPaid,
+              balance,
+              paymentStatus,
+              standingStatus,
+              accessStatus,
+              lastPaymentAt,
+              auth.user.id,
+              reviewedAt,
+              adminNote
+            );
+
+          database
+            .prepare(
+              `
+              UPDATE users
+              SET account_status = ?,
+                  status = ?,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE id = ?
+            `
+            )
+            .run(nextAccountStatus, nextLegacyStatus, userId);
+
+          if (standingChanged) {
+            database
+              .prepare(
+                `
+                INSERT INTO member_standing_audit (
+                  user_id,
+                  membership_cycle_id,
+                  previous_payment_status,
+                  next_payment_status,
+                  previous_standing_status,
+                  next_standing_status,
+                  previous_access_status,
+                  next_access_status,
+                  reason,
+                  actor_user_id,
+                  created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+              `
+              )
+              .run(
+                userId,
+                cycle.id,
+                previous?.paymentStatus || null,
+                paymentStatus,
+                previous?.standingStatus || null,
+                standingStatus,
+                previous?.accessStatus || null,
+                accessStatus,
+                reason,
+                auth.user.id
+              );
+          }
+
+          const transaction = payload.transaction;
+          if (transaction && typeof transaction === "object") {
+            const transactionType = String(transaction.transactionType || "").trim().toLowerCase();
+            const allowedTransactionTypes = new Set(["payment", "waiver", "credit", "adjustment", "reversal"]);
+            if (!allowedTransactionTypes.has(transactionType)) {
+              const error = new Error("transaction.transactionType is invalid.");
+              error.httpStatus = 400;
+              error.code = "validation_error";
+              throw error;
+            }
+            const transactionAmount = Number(transaction.amount);
+            if (!Number.isFinite(transactionAmount) || transactionAmount === 0) {
+              const error = new Error("transaction.amount must be a non-zero number.");
+              error.httpStatus = 400;
+              error.code = "validation_error";
+              throw error;
+            }
+            const refreshedAccount = loadMemberFeeAccountForCycle(database, { userId, membershipCycleId: cycle.id });
+            database
+              .prepare(
+                `
+                INSERT INTO member_fee_transactions (
+                  member_fee_account_id,
+                  transaction_type,
+                  amount,
+                  reference_text,
+                  notes,
+                  recorded_by_user_id,
+                  recorded_at
+                ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+              `
+              )
+              .run(
+                refreshedAccount.id,
+                transactionType,
+                transactionAmount,
+                toNullableTrimmedString(transaction.referenceText, { maxLength: 160 }),
+                toNullableTrimmedString(transaction.notes, { maxLength: 1000 }),
+                auth.user.id
+              );
+          }
+
+          database
+            .prepare(
+              `
+              INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+              VALUES (?, 'membership_fee_account_updated', 'user', ?, ?)
+            `
+            )
+            .run(
+              auth.user.id,
+              String(userId),
+              JSON.stringify({
+                membershipCycleId: cycle.id,
+                membershipYear: cycle.membershipYear,
+                previous: previous
+                  ? {
+                      paymentStatus: previous.paymentStatus,
+                      standingStatus: previous.standingStatus,
+                      accessStatus: previous.accessStatus,
+                      amountDue: Number(previous.amountDue || 0),
+                      amountPaid: Number(previous.amountPaid || 0),
+                      balance: Number(previous.balance || 0)
+                    }
+                  : null,
+                next: {
+                  paymentStatus,
+                  standingStatus,
+                  accessStatus,
+                  amountDue,
+                  amountPaid,
+                  balance,
+                  accountStatus: nextAccountStatus
+                },
+                reason
+              })
+            );
+        });
+
+        const refreshedAccount = loadMemberFeeAccountForCycle(database, { userId, membershipCycleId: cycle.id });
+        writeJson(
+          response,
+          200,
+          {
+            updated: true,
+            cycle: toMembershipCycleResponseItem(cycle),
+            item: {
+              userId,
+              username: userRow.username,
+              email: userRow.email,
+              accountStatus: nextAccountStatus,
+              paymentStatus: refreshedAccount.paymentStatus,
+              standingStatus: refreshedAccount.standingStatus,
+              accessStatus: refreshedAccount.accessStatus,
+              amountDue: Number(refreshedAccount.amountDue || 0),
+              amountPaid: Number(refreshedAccount.amountPaid || 0),
+              balance: Number(refreshedAccount.balance || 0),
+              lastPaymentAt: refreshedAccount.lastPaymentAt || null,
+              reviewedAt: refreshedAccount.reviewedAt || null,
+              reviewedByUserId: Number(refreshedAccount.reviewedByUserId || 0) || null,
+              adminNote: refreshedAccount.adminNote || null
+            }
+          },
+          corsHeaders
+        );
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 400),
+          { error: error.code || "invalid_json", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
     if (request.method === "GET" && requestUrl.pathname === "/api/members") {
       try {
         const auth = requireAuth(database, request, response, corsHeaders);
@@ -9245,13 +12885,14 @@ export async function startApiServer(config) {
               email,
               password_hash,
               role,
+              account_status,
               status,
               desired_status,
               must_change_password,
               must_change_username,
               created_at,
               updated_at
-            ) VALUES (?, ?, ?, 'member', 'invited', 'active', 1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ) VALUES (?, ?, ?, 'member', 'invited', 'invited', 'active', 1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
           `
           )
           .run(username, email, hashPassword(tempPassword));
@@ -9789,6 +13430,9 @@ export async function startApiServer(config) {
               activation_policy,
               invite_policy,
               status,
+              membership_cycle_year,
+              membership_category_default,
+              standing_default,
               membership_set_json,
               total_rows,
               create_count,
@@ -9797,7 +13441,7 @@ export async function startApiServer(config) {
               error_count,
               blocking_issue_count,
               has_blocking_issues
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `
           )
           .run(
@@ -9810,6 +13454,9 @@ export async function startApiServer(config) {
             options.usernamePolicy,
             options.activationPolicy,
             options.invitePolicy,
+            options.membershipCycleYear,
+            options.membershipCategoryDefault,
+            options.standingDefault,
             serializeImportMembershipSetJson(rowResults),
             totalRows,
             summary.createCount,
@@ -9837,7 +13484,10 @@ export async function startApiServer(config) {
               default_status: options.defaultStatus,
               username_policy: options.usernamePolicy,
               activation_policy: options.activationPolicy,
-              invite_policy: options.invitePolicy
+              invite_policy: options.invitePolicy,
+              membership_cycle_year: options.membershipCycleYear,
+              membership_category_default: options.membershipCategoryDefault,
+              standing_default: options.standingDefault
             })
           );
 
@@ -9850,6 +13500,9 @@ export async function startApiServer(config) {
             source_filename: filename,
             reused_source_batch_id: reusedSourceBatchId || null,
             mode: options.mode,
+            membership_cycle_year: options.membershipCycleYear,
+            membership_category_default: options.membershipCategoryDefault,
+            standing_default: options.standingDefault,
             summary: {
               total_rows: totalRows,
               create: summary.createCount,
@@ -10311,6 +13964,9 @@ export async function startApiServer(config) {
             error_count AS errorCount,
             blocking_issue_count AS blockingIssueCount,
             has_blocking_issues AS hasBlockingIssues,
+            membership_cycle_year AS membershipCycleYear,
+            membership_category_default AS membershipCategoryDefault,
+            standing_default AS standingDefault,
             created_at AS createdAt,
             applied_at AS appliedAt,
             invites_queued AS invitesQueued,
@@ -10338,6 +13994,9 @@ export async function startApiServer(config) {
           username_policy: batch.usernamePolicy,
           activation_policy: batch.activationPolicy,
           invite_policy: batch.invitePolicy,
+          membership_cycle_year: batch.membershipCycleYear || null,
+          membership_category_default: batch.membershipCategoryDefault || "Active Member",
+          standing_default: batch.standingDefault || "pending_review",
           status: batch.status,
           summary: {
             total_rows: batch.totalRows,
@@ -10420,7 +14079,10 @@ export async function startApiServer(config) {
               invites: {
                 queued: batch.invites_queued,
                 failed: batch.invites_failed
-              }
+              },
+              membership_cycle_year: batch.membership_cycle_year || null,
+              membership_category_default: batch.membership_category_default || "Active Member",
+              standing_default: batch.standing_default || "pending_review"
             },
             corsHeaders
           );
@@ -10432,6 +14094,12 @@ export async function startApiServer(config) {
         const requestedInviteExpiryHours = Number(payload.invite_expiry_hours);
         const inviteExpiryHours =
           Number.isFinite(requestedInviteExpiryHours) && requestedInviteExpiryHours > 0 ? requestedInviteExpiryHours : 72;
+        const importMembershipYear = batch.membership_cycle_year ? parseMembershipYear(batch.membership_cycle_year) : null;
+        const importCycle = importMembershipYear
+          ? ensureMembershipCycleForImport(database, { membershipYear: importMembershipYear, actorUserId: auth.user.id })
+          : null;
+        const importCategoryDefault = normalizeMembershipCategoryName(batch.membership_category_default || "Active Member");
+        const importStandingDefault = normalizeMemberFeeStandingStatus(batch.standing_default, "pending_review");
 
         const rows = loadImportMembershipSet(database, batchId, batch.membership_set_json)
           .slice()
@@ -10470,19 +14138,21 @@ export async function startApiServer(config) {
                       email,
                       password_hash,
                       role,
+                      account_status,
                       status,
                       desired_status,
                       must_change_password,
                       must_change_username,
                       created_at,
                       updated_at
-                    ) VALUES (?, ?, ?, 'member', ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ) VALUES (?, ?, ?, 'member', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                   `
                   )
                   .run(
                     row.username,
                     row.email,
                     hashPassword(tempPassword),
+                    status === "suspended" ? "blocked" : status === "not_invited" ? "not_invited" : "invited",
                     status,
                     desiredStatus,
                     mustChangePassword ? 1 : 0,
@@ -10508,6 +14178,7 @@ export async function startApiServer(config) {
                 const roleMap = ensureRoleIds(database, row.roles || []);
                 const roleIds = (row.roles || []).map((name) => roleMap.get(name)).filter(Boolean);
                 setRoleAssignments(database, userId, roleIds);
+                assignMembershipCategory(database, { userId, categoryName: importCategoryDefault });
               }
 
               if (row.action === "update") {
@@ -10521,7 +14192,7 @@ export async function startApiServer(config) {
                 }
 
                 const current = database
-                  .prepare("SELECT id, status, username FROM users WHERE id = ?")
+                  .prepare("SELECT id, status, account_status AS accountStatus, username FROM users WHERE id = ?")
                   .get(userId);
                 if (!current) {
                   throw new Error("User not found for update.");
@@ -10549,11 +14220,25 @@ export async function startApiServer(config) {
                   .prepare(
                     `
                     UPDATE users
-                    SET username = ?, desired_status = ?, status = ?, updated_at = CURRENT_TIMESTAMP
+                    SET username = ?,
+                        desired_status = ?,
+                        status = ?,
+                        account_status = ?,
+                        updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
                   `
                   )
-                  .run(usernameUpdate, desiredStatus, statusUpdate, userId);
+                  .run(
+                    usernameUpdate,
+                    desiredStatus,
+                    statusUpdate,
+                    statusUpdate === "suspended"
+                      ? "blocked"
+                      : String(current.accountStatus || "") === "invited" || String(current.accountStatus || "") === "not_invited"
+                        ? String(current.accountStatus || "not_invited")
+                        : "active",
+                    userId
+                  );
 
                 database
                   .prepare(
@@ -10572,6 +14257,7 @@ export async function startApiServer(config) {
                 const roleMap = ensureRoleIds(database, row.roles || []);
                 const roleIds = (row.roles || []).map((name) => roleMap.get(name)).filter(Boolean);
                 setRoleAssignments(database, userId, roleIds);
+                assignMembershipCategory(database, { userId, categoryName: importCategoryDefault });
 
                 updatedUserIds.push(userId);
               }
@@ -10590,6 +14276,23 @@ export async function startApiServer(config) {
         }
 
         const refreshed = summarizeImportMembershipSet(rows);
+        const feeAccountUserIds = [...new Set([...createdUserIds, ...updatedUserIds])];
+        let feeAccountsCreated = 0;
+        if (importCycle) {
+          for (const userId of feeAccountUserIds) {
+            if (
+              upsertImportedMemberFeeAccount(database, {
+                userId,
+                cycle: importCycle,
+                standingStatus: importStandingDefault,
+                actorUserId: auth.user.id,
+                reason: "created_from_member_import"
+              })
+            ) {
+              feeAccountsCreated += 1;
+            }
+          }
+        }
 
         let invitesQueued = 0;
         let invitesFailed = 0;
@@ -10720,6 +14423,10 @@ export async function startApiServer(config) {
               invite_expiry_hours: inviteExpiryHours,
               invites_queued: invitesQueued,
               invites_failed: invitesFailed,
+              membership_cycle_year: importMembershipYear,
+              membership_category_default: importCategoryDefault,
+              standing_default: importStandingDefault,
+              fee_accounts_created: feeAccountsCreated,
               summary: {
                 create: refreshed.createCount,
                 update: refreshed.updateCount,
@@ -10745,7 +14452,11 @@ export async function startApiServer(config) {
             invites: {
               queued: invitesQueued,
               failed: invitesFailed
-            }
+            },
+            membership_cycle_year: importMembershipYear,
+            membership_category_default: importCategoryDefault,
+            standing_default: importStandingDefault,
+            fee_accounts_created: feeAccountsCreated
           },
           corsHeaders
         );
@@ -10778,6 +14489,8 @@ export async function startApiServer(config) {
         const payload = await readJsonBody(request);
         const username = typeof payload.username === "string" ? payload.username.trim() : "";
         const password = typeof payload.password === "string" ? payload.password : "";
+        const impersonateAsMember = payload.impersonateAsMember === true;
+        const adminUsername = typeof payload.adminUsername === "string" ? payload.adminUsername.trim() : "";
 
         if (!username || !password) {
           writeJson(
@@ -10789,14 +14502,143 @@ export async function startApiServer(config) {
           return;
         }
 
+        if (impersonateAsMember) {
+          if (!adminUsername) {
+            writeJson(
+              response,
+              400,
+              { error: "validation_error", message: "Admin username is required for impersonation." },
+              corsHeaders
+            );
+            return;
+          }
+
+          const targetUser = findUserForLogin(database, username);
+          if (!targetUser || targetUser.role !== "member") {
+            writeJson(
+              response,
+              401,
+              { error: "invalid_credentials", message: "Invalid username or password." },
+              corsHeaders
+            );
+            return;
+          }
+
+          const targetAccountStatus = normalizeAccountStatusValue(targetUser.accountStatus, targetUser.status);
+          if (targetAccountStatus !== "active") {
+            writeJson(
+              response,
+              403,
+              { error: "inactive_account", message: "Target member account is not active." },
+              corsHeaders
+            );
+            return;
+          }
+          const targetMembership = resolveMembershipEligibility(database, {
+            userId: targetUser.id,
+            role: targetUser.role,
+            accountStatus: targetAccountStatus,
+            legacyStatus: targetUser.status
+          });
+          if (!targetMembership.eligible) {
+            writeJson(
+              response,
+              403,
+              {
+                error: "membership_not_in_good_standing",
+                message: "Target member does not currently have portal access."
+              },
+              corsHeaders
+            );
+            return;
+          }
+
+          const adminUser = findUserForLogin(database, adminUsername);
+          const adminAccountStatus = normalizeAccountStatusValue(adminUser?.accountStatus, adminUser?.status);
+          const adminHasAccess =
+            Boolean(adminUser) &&
+            isAdminRole(adminUser.role) &&
+            adminAccountStatus === "active" &&
+            verifyPassword(password, adminUser.passwordHash);
+
+          if (!adminHasAccess) {
+            writeJson(
+              response,
+              401,
+              { error: "invalid_credentials", message: "Invalid username or password." },
+              corsHeaders
+            );
+            return;
+          }
+
+          const session = createSession(database, targetUser.id);
+
+          database
+            .prepare(
+              `
+              INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+              VALUES (?, 'member_impersonation_login', 'user', ?, ?)
+            `
+            )
+            .run(
+              adminUser.id,
+              String(targetUser.id),
+              JSON.stringify({
+                admin_username: adminUser.username,
+                admin_role: adminUser.role,
+                target_username: targetUser.username
+              })
+            );
+
+          writeJson(
+            response,
+            200,
+            {
+              authenticated: true,
+              token: session.token,
+              expiresAt: session.expiresAt,
+              user: toAuthUserPayload(targetUser, targetMembership),
+              impersonation: {
+                active: true,
+                adminUser: {
+                  id: adminUser.id,
+                  username: adminUser.username,
+                  role: adminUser.role
+                }
+              }
+            },
+            corsHeaders
+          );
+          return;
+        }
+
         const user = findUserForLogin(database, username);
         if (!user || !verifyPassword(password, user.passwordHash)) {
           writeJson(response, 401, { error: "invalid_credentials", message: "Invalid username or password." }, corsHeaders);
           return;
         }
 
-        if (user.status !== "active") {
+        const accountStatus = normalizeAccountStatusValue(user.accountStatus, user.status);
+        if (accountStatus !== "active") {
           writeJson(response, 403, { error: "inactive_account", message: "Account is not active." }, corsHeaders);
+          return;
+        }
+        const membership = resolveMembershipEligibility(database, {
+          userId: user.id,
+          role: user.role,
+          accountStatus,
+          legacyStatus: user.status
+        });
+        if (isPortalMemberRole(user.role) && !membership.eligible) {
+          writeJson(
+            response,
+            403,
+            {
+              error: "membership_not_in_good_standing",
+              message: "Portal access is restricted to active members in good standing."
+            },
+            corsHeaders
+          );
           return;
         }
 
@@ -10809,14 +14651,8 @@ export async function startApiServer(config) {
             authenticated: true,
             token: session.token,
             expiresAt: session.expiresAt,
-            user: {
-              id: user.id,
-              username: user.username,
-              email: user.email,
-              role: user.role,
-              mustChangePassword: Boolean(user.must_change_password),
-              mustChangeUsername: Boolean(user.must_change_username)
-            }
+            user: toAuthUserPayload(user, membership),
+            impersonation: null
           },
           corsHeaders
         );
@@ -10989,6 +14825,7 @@ export async function startApiServer(config) {
 
         const nextHash = hashPassword(newPassword);
         const nextStatus = user.desiredStatus === "suspended" ? "suspended" : "active";
+        const nextAccountStatus = nextStatus === "active" ? "active" : "blocked";
 
         runTransaction(database, () => {
           database
@@ -10998,13 +14835,14 @@ export async function startApiServer(config) {
               SET username = ?,
                   password_hash = ?,
                   status = ?,
+                  account_status = ?,
                   must_change_password = 0,
                   must_change_username = 0,
                   updated_at = CURRENT_TIMESTAMP
               WHERE id = ?
             `
             )
-            .run(finalUsername, nextHash, nextStatus, user.id);
+            .run(finalUsername, nextHash, nextStatus, nextAccountStatus, user.id);
 
           markTokenUsed(database, "member_invite_tokens", record.id);
         });

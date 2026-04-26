@@ -43,8 +43,9 @@ Hardening implications for Phase 2.2:
 
 ## Import Goals
 - Allow admins to create the initial member set quickly.
-- Support safe re-import updates.
+- Support safe annual re-import updates for the active-member list.
 - Produce a clear batch report: `created`, `updated`, `skipped`, `failed`.
+- Support annual membership administration and onboarding for the current cycle.
 
 ## Header Schema (Row 1)
 Expected columns:
@@ -55,6 +56,10 @@ Expected columns:
 - `Organisation`
 - `Username`
 - `Status`
+- `Membership Category`
+- `Current IWFSA Position`
+- `Company Role`
+- `Phone`
 - `Groups`
 - `Roles`
 
@@ -73,6 +78,9 @@ Optional:
 - `Organisation`
 - `Username`
 - `Status`
+- `Membership Category`
+- `Current IWFSA Position`
+- `Company Role`
 - `Groups` (comma-separated)
 - `Roles` (comma-separated)
 - `Phone` (or legacy `Mobile`)
@@ -94,6 +102,9 @@ Supported import modes:
 - First sign-in requires password change.
 - Username personalization is policy-driven (optional unless activation policy requires it).
 - Unactivated accounts remain stored for administration but cannot authenticate.
+- Imported active members should receive onboarding by email and WhatsApp where a valid mobile number is available.
+- Default imported membership category should be `Active Member` when blank.
+- Imported account access and standing defaults must support admin review before final block/deactivate actions.
 
 Email template and POPIA wording source:
 - `docs/notifications.md` ("Member Onboarding / Credential Emails")

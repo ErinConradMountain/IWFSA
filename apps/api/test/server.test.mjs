@@ -308,6 +308,7 @@ async function createRunningServer(options = {}) {
     host: "127.0.0.1",
     port: 0,
     databasePath,
+    seedMembersEnabled: false,
     appBaseUrl: "http://127.0.0.1:3000",
     notificationDispatchIntervalMs: 25,
     sharePointClient: options.sharePointClient,
@@ -464,6 +465,88 @@ test("POST /api/auth/login rejects invalid credentials", async () => {
       body: JSON.stringify({
         username: "akeida",
         password: "wrong-password"
+      })
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 401);
+    assert.equal(payload.error, "invalid_credentials");
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("POST /api/auth/login allows admin to impersonate a member", async () => {
+  const { server, workingDirectory, databasePath, adminId, memberId } = await createRunningServer();
+
+  try {
+    const response = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: "member1",
+        password: "adminpass",
+        impersonateAsMember: true,
+        adminUsername: "admin1"
+      })
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.authenticated, true);
+    assert.equal(payload.user.username, "member1");
+    assert.equal(payload.user.role, "member");
+    assert.equal(payload.impersonation?.active, true);
+    assert.equal(payload.impersonation?.adminUser?.username, "admin1");
+
+    const membersResponse = await fetch(`http://${server.host}:${server.port}/api/members`, {
+      headers: { Authorization: `Bearer ${payload.token}` }
+    });
+    const membersPayload = await membersResponse.json();
+    assert.equal(membersResponse.status, 403);
+    assert.equal(membersPayload.error, "forbidden");
+
+    const database = openDatabase(databasePath);
+    try {
+      const auditRow = database
+        .prepare(
+          `
+          SELECT actor_user_id AS actorUserId, target_id AS targetId, metadata_json AS metadataJson
+          FROM audit_logs
+          WHERE action_type = 'member_impersonation_login'
+          ORDER BY id DESC
+          LIMIT 1
+        `
+        )
+        .get();
+
+      assert.equal(Number(auditRow.actorUserId), adminId);
+      assert.equal(String(auditRow.targetId), String(memberId));
+      const metadata = JSON.parse(auditRow.metadataJson || "{}");
+      assert.equal(metadata.admin_username, "admin1");
+      assert.equal(metadata.target_username, "member1");
+    } finally {
+      database.close();
+    }
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("POST /api/auth/login impersonation rejects non-admin credentials", async () => {
+  const { server, workingDirectory } = await createRunningServer();
+
+  try {
+    const response = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: "member1",
+        password: "memberpass",
+        impersonateAsMember: true,
+        adminUsername: "member1"
       })
     });
     const payload = await response.json();
@@ -679,6 +762,387 @@ test("Member event listing respects audience groups", async () => {
 
     const editorTitles = editorEvents.items.map((item) => item.title).sort();
     assert.deepEqual(editorTitles, ["Leadership Roundtable"]);
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Membership & Fees endpoints enforce good-standing login and directory rules", async () => {
+  const { server, workingDirectory, member2Id } = await createRunningServer();
+  const membershipYear = new Date().getUTCFullYear();
+
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
+    });
+    const adminPayload = await adminLogin.json();
+    assert.equal(adminLogin.status, 200);
+
+    const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const memberPayload = await memberLogin.json();
+    assert.equal(memberLogin.status, 200);
+
+    const createCycleResponse = await fetch(`http://${server.host}:${server.port}/api/admin/membership-fees/cycles`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({
+        membershipYear,
+        dueDate: `${membershipYear}-03-31`,
+        status: "open"
+      })
+    });
+    const createCyclePayload = await createCycleResponse.json();
+    assert.equal(createCycleResponse.status, 201);
+    assert.equal(createCyclePayload.item.membershipYear, membershipYear);
+    assert.equal(createCyclePayload.item.status, "open");
+
+    const updateStandingResponse = await fetch(
+      `http://${server.host}:${server.port}/api/admin/membership-fees/accounts/${member2Id}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${adminPayload.token}`
+        },
+        body: JSON.stringify({
+          membershipYear,
+          amountDue: 1200,
+          amountPaid: 0,
+          paymentStatus: "outstanding",
+          standingStatus: "outstanding",
+          accessStatus: "enabled",
+          reason: "dues_pending"
+        })
+      }
+    );
+    const updateStandingPayload = await updateStandingResponse.json();
+    assert.equal(updateStandingResponse.status, 200);
+    assert.equal(updateStandingPayload.item.userId, member2Id);
+    assert.equal(updateStandingPayload.item.standingStatus, "outstanding");
+    assert.equal(updateStandingPayload.item.accessStatus, "enabled");
+    assert.equal(updateStandingPayload.item.accountStatus, "active");
+
+    const overviewResponse = await fetch(
+      `http://${server.host}:${server.port}/api/admin/membership-fees/overview?membershipYear=${membershipYear}`,
+      { headers: { Authorization: `Bearer ${adminPayload.token}` } }
+    );
+    const overviewPayload = await overviewResponse.json();
+    assert.equal(overviewResponse.status, 200);
+    assert.equal(overviewPayload.cycle.membershipYear, membershipYear);
+    assert.ok(Number(overviewPayload.summary.outstandingMembers || 0) >= 1);
+
+    const membersResponse = await fetch(
+      `http://${server.host}:${server.port}/api/admin/membership-fees/members?membershipYear=${membershipYear}&standingStatus=outstanding`,
+      { headers: { Authorization: `Bearer ${adminPayload.token}` } }
+    );
+    const membersPayload = await membersResponse.json();
+    assert.equal(membersResponse.status, 200);
+    assert.ok((membersPayload.items || []).some((item) => Number(item.userId) === Number(member2Id)));
+
+    const blockedMemberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member2", password: "member2pass" })
+    });
+    const blockedMemberPayload = await blockedMemberLogin.json();
+    assert.equal(blockedMemberLogin.status, 403);
+    assert.equal(blockedMemberPayload.error, "membership_not_in_good_standing");
+
+    const directoryResponse = await fetch(
+      `http://${server.host}:${server.port}/api/member/directory?search=member2`,
+      {
+        headers: { Authorization: `Bearer ${memberPayload.token}` }
+      }
+    );
+    const directoryPayload = await directoryResponse.json();
+    assert.equal(directoryResponse.status, 200);
+    assert.equal(
+      (directoryPayload.items || []).some((item) => Number(item.userId) === Number(member2Id)),
+      false
+    );
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Membership & Fees bulk update, audit history, and dues reminders queue notifications", async () => {
+  globalThis[EMAIL_OUTBOX_GLOBAL_KEY] = [];
+  const { server, workingDirectory, databasePath, memberId, member2Id } = await createRunningServer();
+  const membershipYear = new Date().getUTCFullYear();
+
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
+    });
+    const adminPayload = await adminLogin.json();
+    assert.equal(adminLogin.status, 200);
+
+    const createCycleResponse = await fetch(`http://${server.host}:${server.port}/api/admin/membership-fees/cycles`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({
+        membershipYear,
+        dueDate: `${membershipYear}-03-31`,
+        status: "open"
+      })
+    });
+    assert.equal(createCycleResponse.status, 201);
+
+    const bulkResponse = await fetch(`http://${server.host}:${server.port}/api/admin/membership-fees/accounts/bulk`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({
+        userIds: [memberId, member2Id],
+        membershipYear,
+        amountDue: 1500,
+        amountPaid: 250,
+        paymentStatus: "partial",
+        standingStatus: "partial",
+        accessStatus: "blocked",
+        reason: "bulk_dues_review"
+      })
+    });
+    const bulkPayload = await bulkResponse.json();
+    assert.equal(bulkResponse.status, 200);
+    assert.equal(bulkPayload.updated, 2);
+    assert.equal(bulkPayload.failed, 0);
+    assert.equal((bulkPayload.items || []).every((item) => item.standingStatus === "partial"), true);
+    assert.equal((bulkPayload.items || []).every((item) => item.accessStatus === "blocked"), true);
+
+    const auditResponse = await fetch(
+      `http://${server.host}:${server.port}/api/admin/membership-fees/accounts/${memberId}/audit?membershipYear=${membershipYear}`,
+      { headers: { Authorization: `Bearer ${adminPayload.token}` } }
+    );
+    const auditPayload = await auditResponse.json();
+    assert.equal(auditResponse.status, 200);
+    assert.equal(auditPayload.cycle.membershipYear, membershipYear);
+    assert.ok((auditPayload.items || []).some((item) => item.reason === "bulk_dues_review"));
+
+    const membersResponse = await fetch(
+      `http://${server.host}:${server.port}/api/admin/membership-fees/members?membershipYear=${membershipYear}&accountStatus=blocked`,
+      { headers: { Authorization: `Bearer ${adminPayload.token}` } }
+    );
+    const membersPayload = await membersResponse.json();
+    assert.equal(membersResponse.status, 200);
+    assert.equal(
+      [memberId, member2Id].every((id) => (membersPayload.items || []).some((item) => Number(item.userId) === Number(id))),
+      true
+    );
+
+    const reminderResponse = await fetch(`http://${server.host}:${server.port}/api/admin/membership-fees/dues-reminders`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({
+        userIds: [memberId, member2Id],
+        membershipYear,
+        reason: "bulk_dues_reminder"
+      })
+    });
+    const reminderPayload = await reminderResponse.json();
+    assert.equal(reminderResponse.status, 202);
+    assert.equal(reminderPayload.queued, 2);
+
+    await waitFor(
+      async () => {
+        const deliveryResponse = await fetch(
+          `http://${server.host}:${server.port}/api/admin/notification-deliveries?limit=200`,
+          { headers: { Authorization: `Bearer ${adminPayload.token}` } }
+        );
+        const deliveryPayload = await deliveryResponse.json();
+        const duesDeliveries = (deliveryPayload.items || []).filter((item) => item.eventType === "membership_dues_reminder");
+        if (duesDeliveries.length >= 4) return duesDeliveries;
+        return null;
+      },
+      { label: "membership dues reminder delivery" }
+    );
+
+    const outbox = globalThis[EMAIL_OUTBOX_GLOBAL_KEY];
+    assert.ok(outbox.some((entry) => entry.metadata?.template === "membership_dues_reminder"));
+
+    const refreshedMembersResponse = await fetch(
+      `http://${server.host}:${server.port}/api/admin/membership-fees/members?membershipYear=${membershipYear}&accountStatus=blocked`,
+      { headers: { Authorization: `Bearer ${adminPayload.token}` } }
+    );
+    const refreshedMembersPayload = await refreshedMembersResponse.json();
+    const refreshedMember = (refreshedMembersPayload.items || []).find(
+      (item) => Number(item.userId) === Number(memberId)
+    );
+    assert.equal(refreshedMembersResponse.status, 200);
+    assert.equal(refreshedMember.lastDuesReminderStatus, "sent");
+    assert.equal(refreshedMember.lastDuesReminderChannel, "email");
+    assert.ok(refreshedMember.lastDuesReminderAt);
+
+    const database = openDatabase(databasePath);
+    try {
+      const adminActivityRows = database
+        .prepare(
+          `
+          SELECT event_type AS eventType, COUNT(*) AS count
+          FROM notification_deliveries
+          WHERE event_type IN ('membership_standing_changed', 'membership_dues_reminders_queued')
+          GROUP BY event_type
+        `
+        )
+        .all();
+      const adminActivityByType = new Map(adminActivityRows.map((row) => [row.eventType, Number(row.count)]));
+      assert.ok((adminActivityByType.get("membership_standing_changed") || 0) >= 2);
+      assert.ok((adminActivityByType.get("membership_dues_reminders_queued") || 0) >= 1);
+    } finally {
+      database.close();
+    }
+  } finally {
+    delete globalThis[EMAIL_OUTBOX_GLOBAL_KEY];
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Individual event invitees are searchable, visible, and emailed on publish", async () => {
+  const { server, workingDirectory, databasePath, memberId, member2Id } = await createRunningServer();
+
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
+    });
+    const adminPayload = await adminLogin.json();
+
+    const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const memberPayload = await memberLogin.json();
+
+    const directoryResponse = await fetch(
+      `http://${server.host}:${server.port}/api/member/directory?search=member2`,
+      { headers: { Authorization: `Bearer ${memberPayload.token}` } }
+    );
+    const directoryPayload = await directoryResponse.json();
+    assert.equal(directoryResponse.status, 200);
+    assert.equal(
+      (directoryPayload.items || []).some((item) => Number(item.userId) === Number(member2Id)),
+      true
+    );
+
+    const createResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({
+        title: "Individual Invite Test",
+        description: "Invite one member outside group selections.",
+        startAt: isoDaysFromNow(6),
+        endAt: isoDaysFromNow(6, 2),
+        venueType: "physical",
+        venueName: "Johannesburg",
+        capacity: 20,
+        audienceType: "groups",
+        inviteeUserIds: [member2Id]
+      })
+    });
+    const createPayload = await createResponse.json();
+    assert.equal(createResponse.status, 201);
+    assert.deepEqual(createPayload.inviteeUserIds, [member2Id]);
+
+    const publishResponse = await fetch(
+      `http://${server.host}:${server.port}/api/events/${createPayload.id}/submit`,
+      { method: "POST", headers: { Authorization: `Bearer ${adminPayload.token}` } }
+    );
+    assert.equal(publishResponse.status, 200);
+
+    await waitFor(
+      async () => {
+        const database = openDatabase(databasePath);
+        try {
+          const rows = database
+            .prepare(
+              `
+              SELECT user_id AS userId, channel, status
+              FROM notification_deliveries
+              WHERE event_type = 'event_published'
+              ORDER BY user_id, channel
+            `
+            )
+            .all();
+          if (rows.length < 2) return null;
+          return rows;
+        } finally {
+          database.close();
+        }
+      },
+      { label: "individual invite publish email dispatch" }
+    );
+
+    const invitedLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member2", password: "member2pass" })
+    });
+    const invitedPayload = await invitedLogin.json();
+
+    const invitedEventsResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      headers: { Authorization: `Bearer ${invitedPayload.token}` }
+    });
+    const invitedEvents = await invitedEventsResponse.json();
+    assert.equal(invitedEventsResponse.status, 200);
+    assert.equal(
+      invitedEvents.items.some((item) => item.id === createPayload.id && item.audienceInviteeIds.includes(member2Id)),
+      true
+    );
+
+    const memberEventsResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      headers: { Authorization: `Bearer ${memberPayload.token}` }
+    });
+    const memberEvents = await memberEventsResponse.json();
+    assert.equal(memberEventsResponse.status, 200);
+    assert.equal(memberEvents.items.some((item) => item.id === createPayload.id), false);
+
+    const database = openDatabase(databasePath);
+    try {
+      const deliveryRows = database
+        .prepare(
+          `
+          SELECT user_id AS userId, channel, status
+          FROM notification_deliveries
+          WHERE event_type = 'event_published'
+          ORDER BY user_id, channel
+        `
+        )
+        .all();
+      assert.deepEqual(
+        deliveryRows.map((row) => `${row.userId}:${row.channel}:${row.status}`),
+        [`${member2Id}:email:sent`, `${member2Id}:in_app:sent`]
+      );
+      assert.equal(deliveryRows.some((row) => Number(row.userId) === Number(memberId)), false);
+    } finally {
+      database.close();
+    }
   } finally {
     await server.close();
     rmSync(workingDirectory, { recursive: true, force: true });
@@ -3852,6 +4316,9 @@ test("Member import dry-run and apply create members", async () => {
       "members.xlsx"
     );
     form.set("mode", "create_only");
+    form.set("membership_cycle_year", "2027");
+    form.set("membership_category_default", "Board of Directors");
+    form.set("standing_default", "good_standing");
 
     const dryRunResponse = await fetch(
       `http://${server.host}:${server.port}/api/admin/member-imports/dry-run`,
@@ -3866,6 +4333,9 @@ test("Member import dry-run and apply create members", async () => {
     assert.equal(dryRunResponse.status, 200);
     assert.equal(dryRunPayload.has_blocking_issues, false);
     assert.equal(dryRunPayload.summary.create, 1);
+    assert.equal(dryRunPayload.membership_cycle_year, 2027);
+    assert.equal(dryRunPayload.membership_category_default, "Board of Directors");
+    assert.equal(dryRunPayload.standing_default, "good_standing");
 
     const applyResponse = await fetch(
       `http://${server.host}:${server.port}/api/admin/member-imports/${dryRunPayload.batch_id}/apply`,
@@ -3884,6 +4354,10 @@ test("Member import dry-run and apply create members", async () => {
     assert.equal(applyPayload.summary.create, 1);
     assert.equal(applyPayload.invites.queued, 1);
     assert.equal(applyPayload.invites.failed, 0);
+    assert.equal(applyPayload.membership_cycle_year, 2027);
+    assert.equal(applyPayload.membership_category_default, "Board of Directors");
+    assert.equal(applyPayload.standing_default, "good_standing");
+    assert.equal(applyPayload.fee_accounts_created, 1);
 
     const membersResponse = await fetch(`http://${server.host}:${server.port}/api/members`, {
       headers: { Authorization: `Bearer ${adminPayload.token}` }
@@ -3914,6 +4388,38 @@ test("Member import dry-run and apply create members", async () => {
     try {
       const importedRow = database.prepare("SELECT id FROM users WHERE email = ? LIMIT 1").get("ada@iwfsa.local");
       assert.ok(importedRow);
+
+      const feeAccountRow = database
+        .prepare(
+          `
+          SELECT
+            member_fee_accounts.standing_status AS standingStatus,
+            member_fee_accounts.access_status AS accessStatus,
+            membership_cycles.membership_year AS membershipYear
+          FROM member_fee_accounts
+          JOIN membership_cycles ON membership_cycles.id = member_fee_accounts.membership_cycle_id
+          WHERE member_fee_accounts.user_id = ?
+          LIMIT 1
+        `
+        )
+        .get(importedRow.id);
+      assert.equal(feeAccountRow.standingStatus, "good_standing");
+      assert.equal(feeAccountRow.accessStatus, "enabled");
+      assert.equal(feeAccountRow.membershipYear, 2027);
+
+      const categoryRow = database
+        .prepare(
+          `
+          SELECT membership_categories.name
+          FROM member_category_assignments
+          JOIN membership_categories ON membership_categories.id = member_category_assignments.membership_category_id
+          WHERE member_category_assignments.user_id = ?
+            AND member_category_assignments.ends_at IS NULL
+          LIMIT 1
+        `
+        )
+        .get(importedRow.id);
+      assert.equal(categoryRow.name, "Board of Directors");
 
       const inviteTokenRow = database
         .prepare(
@@ -5197,6 +5703,108 @@ test("Checkpoint 1.6: mark-read works for individual and markAll", async () => {
 // ────────────────────────────────────────────────────────────────
 // Checkpoint 1.7 – Calendar Actions and Teams Fallback
 // ────────────────────────────────────────────────────────────────
+
+test("Admin published news appears in member home feed", async () => {
+  const { server, workingDirectory } = await createRunningServer();
+
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "admin1", password: "adminpass" })
+    });
+    const adminPayload = await adminLogin.json();
+    assert.equal(adminLogin.status, 200);
+
+    const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const memberPayload = await memberLogin.json();
+    assert.equal(memberLogin.status, 200);
+
+    const title = `Curated member update ${Date.now()}`;
+    const body = "Draft update before publish.";
+    const createResponse = await fetch(`http://${server.host}:${server.port}/api/admin/news`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({ title, body, status: "draft" })
+    });
+    const createPayload = await createResponse.json();
+    assert.equal(createResponse.status, 201);
+    assert.equal(createPayload.item.status, "draft");
+
+    const prePublishHomeResponse = await fetch(`http://${server.host}:${server.port}/api/member/home`, {
+      headers: { Authorization: `Bearer ${memberPayload.token}` }
+    });
+    const prePublishHomePayload = await prePublishHomeResponse.json();
+    assert.equal(prePublishHomeResponse.status, 200);
+    const prePublishMatch = (prePublishHomePayload.news?.items || []).find((item) => item.title === title);
+    assert.equal(prePublishMatch, undefined);
+
+    const publishResponse = await fetch(
+      `http://${server.host}:${server.port}/api/admin/news/${createPayload.item.id}/publish`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${adminPayload.token}` }
+      }
+    );
+    const publishPayload = await publishResponse.json();
+    assert.equal(publishResponse.status, 200);
+    assert.equal(publishPayload.item.status, "published");
+    assert.equal(publishPayload.item.isPinned, false);
+
+    const secondTitle = `Secondary update ${Date.now()}`;
+    const secondResponse = await fetch(`http://${server.host}:${server.port}/api/admin/news`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({ title: secondTitle, body: "Second published item.", status: "published", isPinned: false })
+    });
+    const secondPayload = await secondResponse.json();
+    assert.equal(secondResponse.status, 201);
+    assert.equal(secondPayload.item.status, "published");
+    assert.equal(secondPayload.item.isPinned, false);
+
+    const pinResponse = await fetch(`http://${server.host}:${server.port}/api/admin/news/${createPayload.item.id}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({ isPinned: true })
+    });
+    const pinPayload = await pinResponse.json();
+    assert.equal(pinResponse.status, 200);
+    assert.equal(pinPayload.item.isPinned, true);
+
+    const homeResponse = await fetch(`http://${server.host}:${server.port}/api/member/home`, {
+      headers: { Authorization: `Bearer ${memberPayload.token}` }
+    });
+    const homePayload = await homeResponse.json();
+    assert.equal(homeResponse.status, 200);
+    const newsItems = homePayload.news?.items || [];
+    assert.ok(newsItems.length > 0, "Member home feed includes at least one news item");
+    assert.ok(newsItems.every((item) => item.source === "admin_news"), "Member feed prefers curated admin news");
+
+    const publishedItem = newsItems.find((item) => item.title === title);
+    assert.ok(publishedItem, "Published post is included in member feed");
+    assert.equal(publishedItem.body, body);
+    assert.equal(publishedItem.status, "published");
+    assert.equal(publishedItem.eventType, "organisation_news");
+    assert.equal(publishedItem.isPinned, true);
+    assert.equal(newsItems[0].id, createPayload.item.id, "Pinned post is first in member feed");
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
 
 test("Checkpoint 1.7: create online event with Teams link and provider", async () => {
   const { server, workingDirectory } = await createRunningServer();

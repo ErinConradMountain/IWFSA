@@ -27,6 +27,37 @@ Use this structure for each new proposal:
 
 ## Entries
 
+### CAL-010 - Membership fees, good-standing access control, and annual active-member administration
+- Date: 2026-04-26
+- Status: Resolved
+- Classification: Enhancement (non-breaking)
+- Potential break:
+  - Existing docs described member status in general terms but did not define annual fee standing, the 31 March due-date rule, or Admin-controlled good-standing access across the full app.
+  - Without a shared plan, future implementation could drift across directory visibility, login access, imports, onboarding, notifications, and admin operations.
+- Non-breaking checklist result:
+  - MVP scope + feature flags preserved: Yes.
+  - role/permission + consent expectations preserved: Yes.
+  - API/workflow compatibility preserved (or versioned): Yes, this change documents and stages future implementation rather than silently changing live behavior.
+  - reliability expectations preserved (idempotency, auditability, admin reporting): Yes.
+- Impacted docs:
+  - `README.md`
+  - `docs/membership-fees-plan.md`
+  - `docs/product-requirements.md`
+  - `docs/data-model.md`
+  - `docs/rbac-permissions.md`
+  - `docs/member-import.md`
+  - `docs/member-import-service-contract.md`
+  - `docs/notifications.md`
+  - `docs/admin-runbook.md`
+  - `docs/roadmap.md`
+- Alignment decision:
+  - Adopt one canonical documentation plan for annual membership fees and good-standing access.
+  - Keep Admin as the final authority for standing, access block/deactivate actions, and yearly member-cycle oversight.
+  - Treat the new documentation set as the basis for future code changes in the membership workspace.
+- Mitigation applied:
+  - Added a canonical membership-fees implementation plan.
+  - Updated requirements, data model, permissions, imports, notifications, runbook, and roadmap docs to align to the same policy.
+
 ### CAL-001 - Activation policy consistency for onboarding
 - Date: 2026-02-07
 - Status: Resolved

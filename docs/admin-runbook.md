@@ -3,7 +3,7 @@
 This runbook describes day-to-day operations for the IWFSA application.
 
 ## 0) Using the Admin Console
-- **Navigation**: Use the top-level tabs to switch between public site, Member Portal, and Admin Console. Inside the Admin Console, use the sub-navigation links to jump between modules (Directory, Imports, Event Hub, Notifications).
+- **Navigation**: Use the top-level tabs to switch between public site, Member Portal, and Admin Console. Inside the Admin Console, use the sub-navigation links to jump between modules (Directory, Membership & Fees, Imports, Event Hub, Notifications).
 - **Event Hub**: Use this dashboard to see all upcoming events (published and draft) and access planning tools.
 - **Help Banners**: Most admin screens have a help banner at the top explaining key tasks. You can click the **"X"** to dismiss these instructions. They will stay hidden on your device unless you clear your browser data.
 - **Queue Status**: Check the "Notification Queue Status" card on the main admin dashboard for a quick health check of the email system (`Healthy`, `Degraded`, etc.).
@@ -56,8 +56,27 @@ This runbook describes day-to-day operations for the IWFSA application.
 
 ## 3) Managing members
 ### Add or update member records (Admin)
-- Maintain member profile data (name, company, photo) and membership status.
+- Maintain member profile data (name, company, photo, biography, links, expertise, role details) and membership status.
 - Assign group/committee memberships.
+
+### Annual membership and fees control
+1. Open Admin -> Membership & Fees.
+2. Confirm the active membership cycle and due date of **31 March**.
+3. Review dashboard KPIs:
+   - active members
+   - good standing
+   - outstanding
+   - blocked
+   - deactivated
+   - onboarding incomplete
+4. Review members flagged after the due date.
+5. For any member whose dues are not up to date, Admin may:
+   - mark paid / partially paid / waived
+   - block access immediately
+   - deactivate the member immediately
+   - restore access when the record is corrected
+6. Record the reason/note for each standing or access change.
+7. Confirm audit history is present for the action.
 
 ### Initial provisioning (Excel import) + onboarding invites
 1. Go to Admin → Members → Import from Excel.
@@ -69,7 +88,22 @@ This runbook describes day-to-day operations for the IWFSA application.
 5. Send onboarding invites:
    - From Admin → Members → Invites/Onboarding, select members and click “Send invites”.
    - The invite email includes preset login details (temporary) and a secure onboarding link.
+   - Where mobile numbers are available and the channel is configured, send a WhatsApp onboarding prompt as well.
 6. Confirm invite delivery status and follow up on bounces.
+
+### Member profile requirements
+Members should be asked to complete or update:
+- profile confirmation
+- image
+- biography (target max 300 characters)
+- LinkedIn and professional links
+- contact details
+- current IWFSA position
+- company / business details
+- business role / title
+- expertise / sector selections
+
+Admin may edit or add to the same information when needed.
 
 ### Credential reset (Admin-triggered)
 - Use when a member needs to reset their login credentials.
@@ -80,6 +114,7 @@ This runbook describes day-to-day operations for the IWFSA application.
 ### Disable an account
 - Suspend login and remove elevated permissions.
 - Member should no longer access internal listings.
+- A blocked or deactivated member should no longer appear in the member directory used by members.
 
 ## 4) Events: capacity, waitlist, and eligibility
 ### Capacity rules
@@ -137,6 +172,16 @@ This runbook describes day-to-day operations for the IWFSA application.
 - Use the **Notification Delivery Report** (member name, email, phone, organisation + status) to follow up on failed deliveries or to confirm who received a given notification.
 - Track bounces/complaints and update member contact details.
 - Avoid repeated sends: system must use idempotency keys.
+
+### Membership activity alerts
+- Review admin alerts for:
+   - profile confirmations
+   - profile edits
+   - image/bio/contact changes
+   - onboarding delivery failures
+   - members still incomplete after invitation
+   - members flagged after 31 March
+   - standing/access changes
 
 ## 8) Incident checklist (quick)
 - Wrong audience visibility: unpublish → fix audience/groups → republish.

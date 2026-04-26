@@ -2,6 +2,7 @@
 
 ## Goals
 - Members who signed up must be notified automatically when events are postponed, rescheduled, or cancelled.
+- Membership operations must notify members and admins about onboarding, annual dues status, and profile activity.
 
 ## Queue status (plain language)
 - Think of the notification queue as a simple health indicator, not a technical log. The admin console shows a compact status card that answers:
@@ -31,6 +32,7 @@
 ## MVP Channels
 1. In-app notifications (notification center)
 2. Transactional email (delivery receipts and bounce handling)
+3. WhatsApp notifications for onboarding and membership operations where configured
 
 ## Triggers
 - Event status changes: published → postponed/rescheduled/cancelled
@@ -41,7 +43,14 @@
 - Waitlist promotion (waitlisted → confirmed)
 - New event document published (optional): agenda/minutes/materials become available
 - Member onboarding invite sent (admin-triggered; transactional)
+- Member onboarding WhatsApp prompt sent (admin-triggered; operational/transactional)
 - Credential reset initiated (admin-triggered; transactional)
+- Membership dues reminder sent
+- Member blocked/deactivated due to fee standing
+- Member access restored
+- Member profile confirmed
+- Member profile image/bio/contact/professional details updated
+- Member flagged as outstanding after 31 March
 - Invite/credential email bounce detected (operational; admin-facing)
 - Birthday posts pending approval (daily, when automation enabled)
 - Birthday post approval reminder (optional; before cutoff)
@@ -52,6 +61,9 @@
 - Store an immutable send log (provider message id, status).
 
 Note: admin approval emails for birthday posts are operational messages to admins; member-facing birthday social posts are marketing and must be consent-gated.
+
+Membership and onboarding note:
+- Dues reminders, onboarding prompts, access-status messages, and profile-completion requests are operational/transactional service messages, not marketing.
 
 ## Optional Future Channels
 - Web push (opt-in)
@@ -83,6 +95,8 @@ Your IWFSA Member Portal account has been created.
 
 The Member Portal is the official place to view upcoming IWFSA events, manage registrations, receive event updates/notifications, and access member-only information.
 
+Access to the member platform is controlled by IWFSA administration. Annual membership fees are due by 31 March each year, and only members who are active and in good standing may continue to use the member area.
+
 Website: {{portalUrl}}
 Username: {{username}}
 Temporary password: {{temporaryPassword}}
@@ -91,9 +105,35 @@ Access requirement: To access the portal, you must change the temporary password
 
 Please sign in as soon as possible and complete the activation step. Once updated, keep your password private and do not share your login details with anyone.
 
+You will also be able to update your profile image, contact details, biography, professional links, IWFSA position, and areas of expertise after signing in.
+
 POPIA notice: The IWFSA Member Portal is managed in accordance with the Protection of Personal Information Act (POPIA). Your login credentials are treated as confidential and will not be disclosed to third parties. Only you will have access to your username and password, and you are encouraged to change your temporary password on first login.
 
 If you did not expect this email, or if you believe your account has been compromised, please contact us at {{supportEmail}}.
+
+Kind regards,
+Akeida Bradley
+IWF Administrator
+
+### WhatsApp template: Onboarding prompt
+
+Hello {{firstName}}, your IWFSA Member Portal profile is ready. Please use your onboarding link to confirm your profile, set your username/password, and complete your member details: {{activationUrl}}
+
+### Email template: Dues standing / access warning
+
+**Subject:** IWFSA Member Portal - Membership standing review
+
+**Body (plain text):**
+
+Hello {{firstName}},
+
+This is a reminder that IWFSA annual membership fees are due by 31 March.
+
+Our records currently show your membership as: {{standingStatus}}.
+
+If your dues are not brought up to date, your access to the Member Portal may be blocked or deactivated by the IWFSA administrator.
+
+If you believe this status is incorrect, please contact {{supportEmail}}.
 
 Kind regards,
 Akeida Bradley

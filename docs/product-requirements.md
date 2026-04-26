@@ -67,7 +67,7 @@ The IWFSA web app is delivered as a standalone web platform and supports:
 - Chief admin (governance authority: Akeida Bradley)
 
 ## 3) Core Member Value
-- See internal events (week/month/year)
+- See internal events (week/month/year) only when active and in good standing
 - View capacity remaining and key event details
 - Register quickly; be waitlisted when full
 - Receive notifications on postponements/cancellations
@@ -75,6 +75,7 @@ The IWFSA web app is delivered as a standalone web platform and supports:
 
 ## 4) Core Admin Value
 - Manage members and membership status
+- Manage annual membership fees, good-standing decisions, and immediate access control
 - Create and manage events and recurring series
 - Delegate event editing rights per event
 - Support direct publish from draft by authorized collaborators (no moderation gate)
@@ -90,22 +91,29 @@ The IWFSA web app is delivered as a standalone web platform and supports:
 ### Auth & Membership
 - Members log in with username + password
 - Admin-managed membership (no public signup unless explicitly added later)
+- Membership fees are annual and due by **31 March** each membership year.
+- Only members marked by Admin as active and in good standing may appear in the Members section or use the member portal.
+- Admin may block or deactivate a member immediately when dues are not up to date.
 
 #### Member provisioning (Admin)
 - Initially, administrators will provision the member database by uploading an Excel spreadsheet.
 - The import creates and/or updates member records (and associated login accounts), producing an initial set of members that can be invited to activate their accounts.
+- The annual active-member spreadsheet is the operational source for yearly membership administration and onboarding.
 - Import must support:
 	- Column mapping (if headers differ)
 	- Validation (required fields, email format, duplicates)
 	- Dedupe rules (by email as primary key; optionally membership number if later added)
 	- Update vs create behavior (admin chooses: update existing profiles, create missing)
+	- Membership-year and standing defaults for the uploaded active list
 	- A clear import results report: created/updated/skipped/failed with error reasons
 
 #### Initial invite + first-time sign-in
 - After import, admins can send an invitation email to a member or a selected set of members.
 - The initial invitation provides preset login details (username and a temporary password) plus a secure link to complete onboarding.
+- Active imported members should receive both email and WhatsApp onboarding notifications where contact details are available.
 - On first successful sign-in, the member must be prompted to change their password (and optionally their username) from the preset values.
 - Temporary passwords must be short-lived (expiry) and single-use where possible; they must never be retrievable by admins once generated.
+- Onboarding must require the member to confirm their profile and complete required profile fields before the profile is considered complete.
 
 #### Admin-initiated credential reset (private)
 - Administrators can trigger a credential reset for an individual member or a batch selection.
@@ -123,6 +131,7 @@ The IWFSA web app is delivered as a standalone web platform and supports:
 - Admin console is modular (not one long page) with clear module-level navigation:
 	- Overview
 	- Members
+	- Membership & Fees
 	- Imports (Excel membership-set workspace)
 	- Events (Event Hub)
 	- Notifications (Delivery Report + Queue Status)
@@ -169,6 +178,7 @@ The IWFSA web app is delivered as a standalone web platform and supports:
 ### Notifications
 - Automatic notifications to registrants when an event is postponed, rescheduled, or cancelled
 - Channels: in-app + transactional email (MVP)
+- Membership operations also require onboarding, dues, and admin activity alerts; see `docs/membership-fees-plan.md`.
 - Admin monitoring must be member-centric:
 	- Delivery Report default columns: Member name, Email, Phone, Organisation, Status
 	- Queue Status default view: health label + aggregate counts (pending/processing/sent/failed)
@@ -176,11 +186,38 @@ The IWFSA web app is delivered as a standalone web platform and supports:
 
 ### Admin Worksurface
 - **Modular Navigation**: The Admin Console is divided into distinct functional modules (Member Directory, Import, Event Hub, Notifications Audit) to prevent scrolling fatigue.
+- **Membership & Fees**: A dedicated admin workspace manages annual fee cycles, payment standing, profile completion, onboarding progress, and immediate access control.
 - **Event Hub**: A dedicated dashboard for admins to manage the event lifecycle, including published events, upcoming drafts, and meeting planning.
 - **Persistent Help**:
 	- Complex admin screens (Import, Event Hub, Queue) include explanatory help banners.
 	- Admins can dismiss these banners once read.
 	- Dismissal state is saved locally per-device so experienced admins do not see repetitive help text.
+
+### Member Directory and Profile Governance
+- The visible Members section must function as a controlled and up-to-date directory of active members in good standing only.
+- Admin must be able to edit and add to member information at any time.
+- Members must be able to:
+	- confirm their profile
+	- upload/update their image
+	- add or amend a short biography
+	- add LinkedIn and approved professional links
+	- add or update contact details
+	- add current IWFSA position, company, business role, and business details
+	- add sector or area of expertise
+- The biography field should be limited to approximately 300 characters for consistency and readability.
+- Members should be informed that their image, contact details, and bio can be updated at any time by signing in.
+
+### Member Categories and Structures
+- Default category: `Active Member`
+- Additional categories / structures:
+	- `Honourary Member`
+	- `Board of Directors`
+	- `Advocacy and Voice Committee Member`
+	- `Catalytic Strategy Member`
+	- `Leadership Development Committee Member`
+	- `Member Affairs Committee Member`
+	- `Brand and Reputation Committee Member`
+- These classifications must remain separate from fee standing and access status.
 
 ### Documents & Notifications (nice-to-have)
 - Optional: notify signed-up members when a new document is added (e.g., agenda published, minutes available).
@@ -296,6 +333,7 @@ To reduce daily admin workload, the system supports approving posts well in adva
 - Performance: fast event listing and filters
 - Security: least privilege, strong password policies, rate limiting
 - Privacy/compliance: POPIA-aligned handling of personal data (birthday and photo), including consent for public social posting
+- Consistency: membership-fee standing and access rules must be enforced centrally across UI, API, imports, reporting, and admin operations
 
 ## 7) Open Questions
 - Event size expectations (influences whether Outlook attendee meetings are viable at scale)

@@ -25,6 +25,7 @@ export function ensureBootstrapAdmin(database) {
             email = ?,
             password_hash = ?,
             role = ?,
+            account_status = 'active',
             status = 'active',
             must_change_password = 0,
             must_change_username = 0,
@@ -49,8 +50,8 @@ export function ensureBootstrapAdmin(database) {
   database
     .prepare(
       `
-      INSERT INTO users (username, email, password_hash, role, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 'active', ?, ?)
+      INSERT INTO users (username, email, password_hash, role, account_status, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'active', 'active', ?, ?)
     `
     )
     .run(

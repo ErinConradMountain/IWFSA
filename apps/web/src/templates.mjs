@@ -6,25 +6,27 @@ function htmlLayout({ title, body, appBaseUrl, currentPath, pageClass = "" }) {
   if (currentPath === "/member") {
     navItems = [
       { href: `${appBaseUrl}/`, label: "Public", path: "/" },
-      { href: `${appBaseUrl}/member`, label: "Member Portal", path: "/member" }
+      { href: `${appBaseUrl}/member`, label: "Member Sign In", path: "/member" },
+      { href: `${appBaseUrl}/admin`, label: "Admin Sign In", path: "/admin" }
     ];
   } else if (currentPath === "/admin") {
     navItems = [
       { href: `${appBaseUrl}/`, label: "Public", path: "/" },
-      { href: `${appBaseUrl}/admin`, label: "Admin Console", path: "/admin" }
+      { href: `${appBaseUrl}/member`, label: "Member Sign In", path: "/member" },
+      { href: `${appBaseUrl}/admin`, label: "Admin Sign In", path: "/admin" }
     ];
   } else {
-    // On the public site, we just show a generic login pathway to the portal 
-    // without exposing operations consoles directly in the top nav
     navItems = [
       { href: `${appBaseUrl}/`, label: "Public", path: "/" },
-      { href: `${appBaseUrl}/member`, label: "Sign In", path: "/member" }
+      { href: `${appBaseUrl}/member`, label: "Member Sign In", path: "/member" },
+      { href: `${appBaseUrl}/admin`, label: "Admin Sign In", path: "/admin" }
     ];
   }
   const navLinks = navItems
     .map((item) => {
       const isActive = normalizedPath === item.path;
-      return `<a class="nav-link${isActive ? " nav-link-active" : ""}" href="${item.href}"${
+      const routeClass = item.path === "/member" ? " nav-link-member" : item.path === "/admin" ? " nav-link-admin" : " nav-link-public";
+      return `<a class="nav-link${routeClass}${isActive ? " nav-link-active" : ""}" href="${item.href}"${
         isActive ? ' aria-current="page"' : ""
       }>${item.label}</a>`;
     })
@@ -78,15 +80,20 @@ export function renderPublicPage(config) {
     body: `
       <section class="panel panel-hero public-hero">
         <div class="hero-copy">
-          <p class="eyebrow eyebrow-contrast">International Women's Forum of South Africa</p>
+          <p class="eyebrow eyebrow-contrast">Public Surface | International Women's Forum of South Africa</p>
           <h1 class="page-title" style="text-align: center; width: 100%; max-width: none;">Leading with Purpose.</h1>
           <h2 style="text-align: center; margin-top: 0; font-weight: normal; font-size: 1.75rem;">ignite. inspire. impact.</h2>
           <p class="lead" style="margin-top: 1.5rem; text-align: center;">
             IWFSA is the SA chapter of the International Women’s Forum (“IWF”), our core objective is to nurture and develop a pipeline of the next generation of women leaders through targeted Leadership Development programmes, mentoring and coaching.
           </p>
-          <div style="text-align: center; margin-top: 1.5rem;">
-            <a class="button-link" href="https://www.iwfsa.co.za/our-impact/" target="_blank" rel="noopener noreferrer">View Our Impact</a>
+          <div class="public-entry-actions" aria-label="Application sign-in choices">
+            <a class="button-link" href="${config.appBaseUrl}/member">Member Sign In</a>
+            <a class="button-link button-link-subtle" href="${config.appBaseUrl}/admin">Admin Sign In</a>
+            <a class="button-link button-link-soft" href="https://www.iwfsa.co.za/our-impact/" target="_blank" rel="noopener noreferrer">View Our Impact</a>
           </div>
+          <p class="muted login-route-note">
+            Choose Member Sign In for the member workspace or Admin Sign In for the governance console.
+          </p>
         </div>
         <figure class="featured-signal-figure" style="margin-top: 3rem;">
           <div class="featured-photo-frame">
@@ -263,15 +270,53 @@ export function renderMemberPage(config) {
                </p>
              </div>
              <div class="auth-controls">
+                 <div class="role-switcher" aria-label="Choose sign-in area">
+                   <a class="role-switcher-link role-switcher-active" href="${config.appBaseUrl}/member" aria-current="page">Member Sign In</a>
+                   <a class="role-switcher-link" href="${config.appBaseUrl}/admin">Admin Sign In</a>
+                 </div>
                  <p id="member-login-status" class="muted">Not signed in.</p>
                  <form id="member-login-form" class="inline-login-form member-login-form">
                     <div id="member-login-credentials" class="member-login-credentials">
-                      <input id="member-username" name="username" placeholder="Username" autocomplete="username" />
-                      <input id="member-password" type="password" name="password" placeholder="Password" autocomplete="current-password" />
+                      <input
+                        id="member-username"
+                        name="username"
+                        placeholder="Member username"
+                        autocomplete="section-member username"
+                        list="member-test-usernames"
+                      />
+                      <datalist id="member-test-usernames">
+                        <option value="nomsa">Nomsa Dlamini</option>
+                        <option value="thandi">Thandi van Dyk</option>
+                        <option value="zara">Zara Patel</option>
+                        <option value="lerato">Lerato Maseko</option>
+                        <option value="naledi">Naledi Khumalo</option>
+                        <option value="ava">Ava Naidoo</option>
+                      </datalist>
+                      <input
+                        id="member-password"
+                        type="password"
+                        name="password"
+                        placeholder="Member password"
+                        autocomplete="section-member current-password"
+                      />
                     </div>
+                    <label id="member-impersonation-toggle-label" class="inline-checkbox">
+                      <input id="member-login-impersonate" name="impersonateAsMember" type="checkbox" />
+                      Use admin password to impersonate this member
+                    </label>
+                    <div id="member-admin-login-credentials" class="member-login-credentials" hidden>
+                      <input
+                        id="member-admin-username"
+                        name="adminUsername"
+                        placeholder="Admin username (akeida)"
+                        autocomplete="section-admin username"
+                      />
+                    </div>
+                    <p id="member-impersonation-help" class="muted member-impersonation-help" hidden>
+                      Test members: nomsa, thandi, zara, lerato, naledi, or ava. Use admin username akeida and the admin password.
+                    </p>
                     <div class="member-login-actions">
                       <button id="member-login-submit" type="submit">Sign in</button>
-                      <button id="member-logout" type="button" class="ghost member-logout-button" hidden>Sign out</button>
                     </div>
                  </form>
              </div>
@@ -288,53 +333,250 @@ export function renderMemberPage(config) {
             <a class="button-link member-birthday-link" href="#birthdays">Open Birthday Circle</a>
           </section>
            
-          <nav class="module-nav" id="member-nav" aria-label="Member modules">
+          <nav class="module-nav" id="member-nav" aria-label="Member modules" hidden>
             <a href="#dashboard" class="module-nav-link" data-module="dashboard" data-member-module-link="dashboard">Dashboard</a>
             <a href="#events" class="module-nav-link" data-module="events" data-member-module-link="events">Events</a>
+            <a href="#profile" class="module-nav-link" data-module="profile" data-member-module-link="profile">Member Profile</a>
             <a href="#birthdays" class="module-nav-link" data-module="birthdays" data-member-module-link="birthdays">Birthdays</a>
             <a href="#notifications" class="module-nav-link" data-module="notifications" data-member-module-link="notifications">Notifications</a>
             <a href="#sms" class="module-nav-link" data-module="sms" data-member-module-link="sms">SMS Settings</a>
             <a href="#celebrations" class="module-nav-link" data-module="celebrations" data-member-module-link="celebrations">Celebration Thread</a>
           </nav>
+          <div id="member-session-bar" class="session-bar" hidden>
+            <div>
+              <p class="eyebrow">Signed in area</p>
+              <p id="member-session-summary" class="session-summary">Member portal session active.</p>
+            </div>
+            <div class="session-actions session-actions-single">
+              <button type="button" class="button-link session-logout-button member-session-logout">Sign out</button>
+            </div>
+          </div>
         </section>
 
-        <section id="module-dashboard" class="panel module-section">
+                <section id="module-dashboard" class="panel module-section">
           <div class="section-heading">
             <div>
-              <p class="eyebrow">Overview</p>
-              <h2>Start where you need to act next</h2>
+              <p class="eyebrow">Member Home</p>
+              <h2>Invites, news, and birthdays at a glance</h2>
             </div>
-            <p class="muted">Deep links make each part of the portal easy to revisit on any device.</p>
+            <p class="muted">A focused member view of invitations and organisation updates.</p>
           </div>
           <div class="dashboard-cards">
             <button type="button" class="dashboard-card" onclick="window.location.hash='#events'">
               <h4>Upcoming Events</h4>
-              <p>Browse the event directory, confirm attendance, and download calendar files.</p>
+              <p>Browse events, confirm attendance, and download calendar files.</p>
+            </button>
+            <button type="button" class="dashboard-card" onclick="window.location.hash='#profile'">
+              <h4>My Personal Details</h4>
+              <p>Update your profile details and upload your member photo.</p>
             </button>
             <button type="button" class="dashboard-card" onclick="window.location.hash='#birthdays'">
               <h4>Birthday Circle</h4>
-              <p>See upcoming member birthdays based on your selected window and visibility rules.</p>
+              <p>Celebrate members and strengthen the organisation community.</p>
             </button>
             <button type="button" class="dashboard-card" onclick="window.location.hash='#notifications'">
-              <h4>Notification Center</h4>
-              <p>Review updates, mark items as read, and keep important changes in view.</p>
+              <h4>Notifications</h4>
+              <p>Stay current on reminders, updates, and important changes.</p>
             </button>
-            <button type="button" class="dashboard-card" onclick="window.location.hash='#sms'">
-              <h4>SMS Settings</h4>
-              <p>Choose how urgent text reminders should behave for your account.</p>
-            </button>
+          </div>
+          <div class="member-actions">
+            <button id="member-refresh-home" type="button" disabled>Refresh member home</button>
+            <span id="member-home-status" class="muted">Sign in to load invitations and news.</span>
+          </div>
+          <div class="member-layout">
+            <div class="main-column">
+              <h3 class="subsection-title">Invites Received</h3>
+              <div id="member-invite-list" class="event-grid">
+                <p class="muted">Sign in to view your event invitations.</p>
+              </div>
+
+              <h3 class="subsection-title">IWFSA News</h3>
+              <div id="member-news-list" class="thread-list">
+                <p class="muted">Sign in to view relevant IWFSA news.</p>
+              </div>
+            </div>
+            <aside class="sidebar-card sidebar-card-accent">
+              <h3>Birthday Highlights</h3>
+              <div id="member-dashboard-birthdays" class="birthday-list">
+                <p class="muted">Sign in to load birthday highlights.</p>
+              </div>
+            </aside>
           </div>
         </section>
 
-        <section id="module-events" class="panel module-section">
+        <section id="module-profile" class="panel module-section">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Profile</p>
+              <h2>Edit Your Personal Details</h2>
+            </div>
+            <p class="muted">Only your own member account can update these details.</p>
+          </div>
+          <div class="member-layout">
+            <div class="main-column">
+              <form id="member-profile-form" class="login-form">
+                <div class="sms-grid">
+                  <div>
+                    <label for="member-profile-username">Username</label>
+                    <input id="member-profile-username" type="text" readonly disabled />
+                  </div>
+                  <div>
+                    <label for="member-profile-email">Email</label>
+                    <input id="member-profile-email" type="email" readonly disabled />
+                  </div>
+                  <div>
+                    <label for="member-profile-full-name">Full name</label>
+                    <input id="member-profile-full-name" type="text" maxlength="160" required disabled />
+                  </div>
+                  <div>
+                    <label for="member-profile-company">Organisation</label>
+                    <input id="member-profile-company" type="text" maxlength="180" disabled />
+                  </div>
+                  <div>
+                    <label for="member-profile-phone">Phone</label>
+                    <input id="member-profile-phone" type="text" maxlength="48" disabled />
+                  </div>
+                  <div>
+                    <label for="member-profile-birthday-visibility">Birthday visibility</label>
+                    <select id="member-profile-birthday-visibility" disabled>
+                      <option value="hidden">Hidden</option>
+                      <option value="members_only">Members only</option>
+                      <option value="members_and_social">Members and social</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="member-profile-birthday-month">Birthday month</label>
+                    <input id="member-profile-birthday-month" type="number" min="1" max="12" placeholder="MM" disabled />
+                  </div>
+                  <div>
+                    <label for="member-profile-birthday-day">Birthday day</label>
+                    <input id="member-profile-birthday-day" type="number" min="1" max="31" placeholder="DD" disabled />
+                  </div>
+                </div>
+                <div class="member-actions">
+                  <button id="member-profile-save" type="submit" disabled>Save Personal Details</button>
+                  <button id="member-profile-clear-birthday" type="button" class="ghost" disabled>Clear birthday</button>
+                </div>
+                <p id="member-profile-status" class="muted">Sign in to edit your personal details.</p>
+              </form>
+            </div>
+            <aside class="sidebar-card">
+              <h3>Profile Photo</h3>
+              <img id="member-photo-preview" class="member-photo-preview" alt="Member profile photo" hidden />
+              <p id="member-photo-empty" class="muted">No profile photo uploaded yet.</p>
+              <label for="member-photo-file">Choose image</label>
+              <input id="member-photo-file" type="file" accept="image/*" disabled />
+              <label for="member-photo-camera">Use camera</label>
+              <input id="member-photo-camera" type="file" accept="image/*" capture="user" disabled />
+              <div class="member-actions">
+                <button id="member-photo-upload" type="button" disabled>Upload photo</button>
+                <button id="member-photo-remove" type="button" class="ghost" disabled>Remove photo</button>
+              </div>
+              <p id="member-photo-status" class="muted">Sign in to upload your photo.</p>
+            </aside>
+          </div>
+        </section>
+<section id="module-events" class="panel module-section">
             <div class="section-heading">
               <div>
                 <p class="eyebrow">Events</p>
-                <h2>Member Event Directory</h2>
+                <h2>Create events and invite members</h2>
               </div>
-              <p class="muted">Browse published meetings, join online sessions, and keep your calendar aligned.</p>
+              <p class="muted">Set up a meeting, choose the audience, and publish it so invited members receive the event notification.</p>
             </div>
-            <div class="member-actions">
+            <div class="event-create-panel">
+              <div class="event-create-intro">
+                <p class="eyebrow">Member event setup</p>
+                <h3>New member event</h3>
+                <p class="muted">Use All Members for an organisation-wide invitation, or choose a smaller audience group for a targeted invitation.</p>
+              </div>
+              <form id="member-event-create-form" class="login-form member-event-create-form">
+                <div class="sms-grid event-create-grid">
+                  <div class="wide-field">
+                    <label for="member-event-title">Event title</label>
+                    <input id="member-event-title" name="title" required placeholder="e.g. Leadership roundtable" />
+                  </div>
+                  <div class="wide-field">
+                    <label for="member-event-description">Description</label>
+                    <textarea id="member-event-description" name="description" rows="3" placeholder="What should invited members know?"></textarea>
+                  </div>
+                  <div>
+                    <label for="member-event-start">Start date and time</label>
+                    <input id="member-event-start" name="startAt" type="datetime-local" required />
+                  </div>
+                  <div>
+                    <label for="member-event-end">End date and time</label>
+                    <input id="member-event-end" name="endAt" type="datetime-local" required />
+                  </div>
+                  <div>
+                    <label for="member-event-venue-type">Venue type</label>
+                    <select id="member-event-venue-type" name="venueType" required>
+                      <option value="physical">Physical</option>
+                      <option value="online">Online</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="member-event-venue-name">Venue or platform</label>
+                    <input id="member-event-venue-name" name="venueName" placeholder="Boardroom, Teams, Zoom..." />
+                  </div>
+                  <div>
+                    <label for="member-event-online-url">Online join link</label>
+                    <input id="member-event-online-url" name="onlineJoinUrl" type="url" placeholder="https://..." />
+                  </div>
+                  <div>
+                    <label for="member-event-host">Host or chairperson</label>
+                    <input id="member-event-host" name="hostName" placeholder="Name of host" required />
+                  </div>
+                  <div>
+                    <label for="member-event-capacity">Capacity</label>
+                    <input id="member-event-capacity" name="capacity" type="number" min="0" value="0" required />
+                  </div>
+                  <div>
+                    <label for="member-event-registration-close">Registration closes</label>
+                    <input id="member-event-registration-close" name="registrationClosesAt" type="datetime-local" />
+                  </div>
+                  <div class="wide-field">
+                    <label for="member-event-audience">Invite audience</label>
+                    <select id="member-event-audience" name="audienceCode" required>
+                      <option value="all_members">All Members</option>
+                      <option value="board_of_directors">Board of Directors</option>
+                      <option value="member_affairs">Member Affairs</option>
+                      <option value="brand_and_reputation">Brand and Reputation</option>
+                      <option value="strategic_alliances_and_advocacy">Strategic Alliances and Advocacy</option>
+                      <option value="catalytic_strategy_and_voice">Catalytic Strategy and Voice</option>
+                      <option value="leadership_development">Leadership Development</option>
+                    </select>
+                    <p class="muted form-hint">Choose a group above, then add individual members below. If no group is selected, the selected members become the event audience.</p>
+                  </div>
+                  <div class="wide-field invitee-search-panel">
+                    <label for="member-event-invitee-search">Invite individual members</label>
+                    <div class="invitee-search-row">
+                      <input id="member-event-invitee-search" type="search" placeholder="Type a member name or email" autocomplete="off" />
+                      <button id="member-event-invitee-clear" type="button" class="ghost">Clear selected</button>
+                    </div>
+                    <div id="member-event-invitee-results" class="invitee-results" aria-live="polite">
+                      <p class="muted">Sign in to search the member directory.</p>
+                    </div>
+                    <div id="member-event-selected-invitees" class="invitee-selected-list" aria-live="polite"></div>
+                  </div>
+                  <div class="wide-field event-attachment-field">
+                    <label for="member-event-attachment">Optional event file</label>
+                    <input id="member-event-attachment" name="eventAttachment" type="file" accept=".pdf,.txt,application/pdf,text/plain" />
+                    <p class="muted form-hint">Attach a PDF or text file to this event. Invitees can open it from the event details.</p>
+                  </div>
+                </div>
+                <label class="inline-checkbox" for="member-event-publish-now">
+                  <input id="member-event-publish-now" name="publishNow" type="checkbox" checked />
+                  Publish immediately and send invitations to the selected audience
+                </label>
+                <div class="member-actions">
+                  <button id="member-event-create-submit" type="submit" disabled>Create event and invite members</button>
+                  <button id="member-event-create-reset" type="reset" class="ghost" disabled>Clear form</button>
+                </div>
+                <p id="member-event-create-status" class="muted">Sign in to create events.</p>
+              </form>
+            </div>
+            <div class="member-actions event-list-toolbar">
               <label for="member-event-view" class="muted">Event window</label>
               <select id="member-event-view" disabled>
                 <option value="">All</option>
@@ -348,7 +590,6 @@ export function renderMemberPage(config) {
                <p class="muted">Sign in to load events.</p>
             </div>
         </section>
-
         <section id="module-birthdays" class="panel module-section">
           <div class="section-heading">
             <div>
@@ -444,14 +685,16 @@ export function renderMemberPage(config) {
               <form id="celebration-form" class="login-form celebration-form">
                 <label for="celebration-body">New celebration post</label>
                 <textarea id="celebration-body" rows="5" class="registration-draft-input" placeholder="Write a short, relevant celebration message..."></textarea>
-                <label class="inline-checkbox" for="celebration-acknowledge">
-                  <input id="celebration-acknowledge" type="checkbox" />
-                  I acknowledge the community posting rules
-                </label>
-                <label class="inline-checkbox" for="celebration-relevant">
-                  <input id="celebration-relevant" type="checkbox" />
-                  This post is directly relevant to IWFSA activity
-                </label>
+                <div class="celebration-confirmations" aria-label="Celebration posting confirmations">
+                  <label class="inline-checkbox" for="celebration-acknowledge">
+                    <input id="celebration-acknowledge" type="checkbox" />
+                    <span>I acknowledge the community posting rules</span>
+                  </label>
+                  <label class="inline-checkbox" for="celebration-relevant">
+                    <input id="celebration-relevant" type="checkbox" />
+                    <span>This post is directly relevant to IWFSA activity</span>
+                  </label>
+                </div>
                 <button id="celebration-submit" type="submit" disabled>Post to Celebration Thread</button>
                 <p id="celebration-status" class="muted">Sign in to load the shared thread.</p>
               </form>
@@ -472,17 +715,45 @@ export function renderMemberPage(config) {
         const container = document.getElementById("event-list");
         const birthdayList = document.getElementById("birthday-list");
         const notificationList = document.getElementById("notification-list");
+        const memberInviteList = document.getElementById("member-invite-list");
+        const memberNewsList = document.getElementById("member-news-list");
+        const memberDashboardBirthdays = document.getElementById("member-dashboard-birthdays");
+        const memberHomeStatus = document.getElementById("member-home-status");
+        const refreshHomeButton = document.getElementById("member-refresh-home");
+        const memberNav = document.getElementById("member-nav");
         const loginForm = document.getElementById("member-login-form");
         const loginCredentials = document.getElementById("member-login-credentials");
         const loginSubmitButton = document.getElementById("member-login-submit");
         const memberUsernameInput = document.getElementById("member-username");
         const memberPasswordInput = document.getElementById("member-password");
-        /* Removed demo fill button ref */
+        const memberImpersonationToggle = document.getElementById("member-login-impersonate");
+        const memberImpersonationToggleLabel = document.getElementById("member-impersonation-toggle-label");
+        const memberAdminCredentials = document.getElementById("member-admin-login-credentials");
+        const memberAdminUsernameInput = document.getElementById("member-admin-username");
+        const memberImpersonationHelp = document.getElementById("member-impersonation-help");
         const loginStatus = document.getElementById("member-login-status");
         const logoutButton = document.getElementById("member-logout");
         const birthdayPanel = document.getElementById("member-birthday-panel");
         const viewSelect = document.getElementById("member-event-view");
         const refreshEventsButton = document.getElementById("member-refresh-events");
+        const memberEventCreateForm = document.getElementById("member-event-create-form");
+        const memberEventCreateSubmitButton = document.getElementById("member-event-create-submit");
+        const memberEventCreateResetButton = document.getElementById("member-event-create-reset");
+        const memberEventCreateStatus = document.getElementById("member-event-create-status");
+        const memberEventTitleInput = document.getElementById("member-event-title");
+        const memberEventStartInput = document.getElementById("member-event-start");
+        const memberEventEndInput = document.getElementById("member-event-end");
+        const memberEventVenueTypeInput = document.getElementById("member-event-venue-type");
+        const memberEventHostInput = document.getElementById("member-event-host");
+        const memberEventCapacityInput = document.getElementById("member-event-capacity");
+        const memberEventOnlineUrlInput = document.getElementById("member-event-online-url");
+        const memberEventAudienceInput = document.getElementById("member-event-audience");
+        const memberEventPublishNowInput = document.getElementById("member-event-publish-now");
+        const memberEventInviteeSearchInput = document.getElementById("member-event-invitee-search");
+        const memberEventInviteeResults = document.getElementById("member-event-invitee-results");
+        const memberEventSelectedInvitees = document.getElementById("member-event-selected-invitees");
+        const memberEventInviteeClearButton = document.getElementById("member-event-invitee-clear");
+        const memberEventAttachmentInput = document.getElementById("member-event-attachment");
         const birthdayWindowSelect = document.getElementById("birthday-window");
         const refreshBirthdaysButton = document.getElementById("refresh-birthdays");
         const refreshNotificationsButton = document.getElementById("member-refresh-notifications");
@@ -498,6 +769,25 @@ export function renderMemberPage(config) {
         const smsLimits = document.getElementById("member-sms-limits");
         const smsStatus = document.getElementById("member-sms-status");
         const smsSaveButton = document.getElementById("member-sms-save");
+        const profileForm = document.getElementById("member-profile-form");
+        const profileUsernameInput = document.getElementById("member-profile-username");
+        const profileEmailInput = document.getElementById("member-profile-email");
+        const profileFullNameInput = document.getElementById("member-profile-full-name");
+        const profileCompanyInput = document.getElementById("member-profile-company");
+        const profilePhoneInput = document.getElementById("member-profile-phone");
+        const profileBirthdayVisibilityInput = document.getElementById("member-profile-birthday-visibility");
+        const profileBirthdayMonthInput = document.getElementById("member-profile-birthday-month");
+        const profileBirthdayDayInput = document.getElementById("member-profile-birthday-day");
+        const profileSaveButton = document.getElementById("member-profile-save");
+        const profileClearBirthdayButton = document.getElementById("member-profile-clear-birthday");
+        const profileStatus = document.getElementById("member-profile-status");
+        const memberPhotoPreview = document.getElementById("member-photo-preview");
+        const memberPhotoEmpty = document.getElementById("member-photo-empty");
+        const memberPhotoFileInput = document.getElementById("member-photo-file");
+        const memberPhotoCameraInput = document.getElementById("member-photo-camera");
+        const memberPhotoUploadButton = document.getElementById("member-photo-upload");
+        const memberPhotoRemoveButton = document.getElementById("member-photo-remove");
+        const memberPhotoStatus = document.getElementById("member-photo-status");
         const celebrationForm = document.getElementById("celebration-form");
         const celebrationBodyInput = document.getElementById("celebration-body");
         const celebrationAcknowledgeInput = document.getElementById("celebration-acknowledge");
@@ -505,24 +795,49 @@ export function renderMemberPage(config) {
         const celebrationList = document.getElementById("celebration-list");
         const celebrationRules = document.getElementById("celebration-rules");
         const celebrationStatus = document.getElementById("celebration-status");
+        const memberSessionBar = document.getElementById("member-session-bar");
+        const memberSessionSummary = document.getElementById("member-session-summary");
         const draftAutosaveTimers = new Map();
         const localDraftOverrides = new Map();
         let serverSkewMs = 0;
         let currentEvents = [];
+        let memberInviteDirectory = [];
+        const selectedMemberEventInvitees = new Map();
+
+        function showMemberModule(moduleName, { scroll = false } = {}) {
+          const nextModule = ["dashboard", "events", "profile", "birthdays", "notifications", "sms", "celebrations"].includes(moduleName)
+            ? moduleName
+            : "dashboard";
+          if (window.location.hash.substring(1) !== nextModule) {
+            window.location.hash = "#" + nextModule;
+          }
+          handleHashChange();
+          if (scroll) {
+            const target = document.getElementById("module-" + nextModule) || memberSessionBar;
+            target?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        }
 
         function handleHashChange() {
+           if (!getToken()) {
+              document.querySelectorAll('.module-nav-link').forEach(link => {
+                 link.classList.remove('active');
+              });
+              document.querySelectorAll('.module-section').forEach(section => {
+                 section.classList.remove('active');
+              });
+              return;
+           }
            const hash = window.location.hash.substring(1) || "dashboard";
            let activeModule = hash;
-           if (!["dashboard", "events", "birthdays", "notifications", "sms", "celebrations"].includes(activeModule)) {
+           if (!["dashboard", "events", "profile", "birthdays", "notifications", "sms", "celebrations"].includes(activeModule)) {
               activeModule = 'dashboard';
            }
 
-           // Update nav
            document.querySelectorAll('.module-nav-link').forEach(link => {
               link.classList.toggle('active', link.getAttribute('data-module') === activeModule);
            });
 
-           // Update sections
            document.querySelectorAll('.module-section').forEach(section => {
               section.classList.toggle('active', section.id === 'module-' + activeModule);
            });
@@ -535,21 +850,111 @@ export function renderMemberPage(config) {
           return sessionStorage.getItem("iwfsa_token");
         }
 
-        let memberUsername = sessionStorage.getItem("iwfsa_member_username") || "";
+        function formatRoleLabel(role) {
+          const normalized = String(role || "").trim().toLowerCase();
+          const labels = {
+            member: "Member",
+            event_editor: "Event Editor",
+            admin: "Admin",
+            chief_admin: "Chief Admin"
+          };
+          return labels[normalized] || "Member";
+        }
 
-        function setToken(token, username = "") {
+        let memberUsername = sessionStorage.getItem("iwfsa_member_username") || "";
+        let memberRole = sessionStorage.getItem("iwfsa_member_role") || "member";
+        let memberImpersonation = null;
+
+        try {
+          const storedImpersonation = sessionStorage.getItem("iwfsa_member_impersonation");
+          if (storedImpersonation) {
+            const parsed = JSON.parse(storedImpersonation);
+            if (parsed && parsed.active === true && parsed.adminUser && parsed.adminUser.username) {
+              memberImpersonation = parsed;
+            }
+          }
+        } catch {
+          memberImpersonation = null;
+        }
+
+        function formatMemberSessionSummary() {
+          const base = "Signed in as " + (memberUsername || "member") + " (" + formatRoleLabel(memberRole) + ").";
+          if (!memberImpersonation || memberImpersonation.active !== true) {
+            return base;
+          }
+
+          const adminName = String(memberImpersonation.adminUser?.username || "").trim();
+          if (!adminName) {
+            return base;
+          }
+
+          return base + " Impersonating via admin " + adminName + ".";
+        }
+
+        function setToken(token, username = "", role = "member", impersonation = null) {
           if (token) {
             sessionStorage.setItem("iwfsa_token", token);
             memberUsername = String(username || memberUsername || "").trim();
+            memberRole = String(role || memberRole || "member").trim() || "member";
             if (memberUsername) {
               sessionStorage.setItem("iwfsa_member_username", memberUsername);
             } else {
               sessionStorage.removeItem("iwfsa_member_username");
             }
+            sessionStorage.setItem("iwfsa_member_role", memberRole);
+
+            if (impersonation && impersonation.active === true && impersonation.adminUser && impersonation.adminUser.username) {
+              memberImpersonation = {
+                active: true,
+                adminUser: {
+                  id: Number(impersonation.adminUser.id || 0),
+                  username: String(impersonation.adminUser.username || "").trim(),
+                  role: String(impersonation.adminUser.role || "admin").trim() || "admin"
+                }
+              };
+              sessionStorage.setItem("iwfsa_member_impersonation", JSON.stringify(memberImpersonation));
+            } else {
+              memberImpersonation = null;
+              sessionStorage.removeItem("iwfsa_member_impersonation");
+            }
           } else {
             sessionStorage.removeItem("iwfsa_token");
             sessionStorage.removeItem("iwfsa_member_username");
+            sessionStorage.removeItem("iwfsa_member_role");
+            sessionStorage.removeItem("iwfsa_member_impersonation");
             memberUsername = "";
+            memberRole = "member";
+            memberImpersonation = null;
+          }
+        }
+
+        function updateImpersonationInputs() {
+          const showAdminCredentials = Boolean(memberImpersonationToggle && memberImpersonationToggle.checked);
+          if (memberAdminCredentials) {
+            memberAdminCredentials.hidden = !showAdminCredentials;
+          }
+          if (memberImpersonationHelp) {
+            memberImpersonationHelp.hidden = !showAdminCredentials;
+          }
+          if (memberUsernameInput) {
+            memberUsernameInput.placeholder = showAdminCredentials ? "Member username to impersonate" : "Member username";
+            memberUsernameInput.setAttribute("autocomplete", showAdminCredentials ? "section-member username" : "section-member username");
+          }
+          if (memberPasswordInput) {
+            memberPasswordInput.placeholder = showAdminCredentials ? "Admin password" : "Member password";
+            memberPasswordInput.setAttribute(
+              "autocomplete",
+              showAdminCredentials ? "section-admin current-password" : "section-member current-password"
+            );
+          }
+          if (memberAdminUsernameInput) {
+            memberAdminUsernameInput.toggleAttribute("required", showAdminCredentials);
+            if (showAdminCredentials && !String(memberAdminUsernameInput.value || "").trim()) {
+              memberAdminUsernameInput.value = "akeida";
+            }
+            if (!showAdminCredentials) {
+              memberAdminUsernameInput.value = "";
+            }
           }
         }
 
@@ -561,20 +966,71 @@ export function renderMemberPage(config) {
           if (loginSubmitButton) {
             loginSubmitButton.hidden = isSignedIn;
           }
-          logoutButton.disabled = !isSignedIn;
-          logoutButton.hidden = !isSignedIn;
+          if (memberImpersonationToggleLabel) {
+            memberImpersonationToggleLabel.hidden = isSignedIn;
+          }
+          if (memberImpersonationHelp) {
+            memberImpersonationHelp.hidden = isSignedIn || !Boolean(memberImpersonationToggle && memberImpersonationToggle.checked);
+          }
+          if (memberImpersonationToggle) {
+            memberImpersonationToggle.toggleAttribute("disabled", isSignedIn);
+          }
+          if (memberAdminCredentials) {
+            memberAdminCredentials.hidden = isSignedIn || !Boolean(memberImpersonationToggle && memberImpersonationToggle.checked);
+          }
+          if (logoutButton) {
+            logoutButton.disabled = !isSignedIn;
+            logoutButton.hidden = !isSignedIn;
+          }
           if (birthdayPanel) {
             birthdayPanel.hidden = !isSignedIn;
           }
+          if (memberNav) {
+            memberNav.hidden = !isSignedIn;
+          }
+          if (memberSessionBar) {
+            memberSessionBar.hidden = !isSignedIn;
+          }
+          if (memberSessionSummary) {
+            memberSessionSummary.textContent = isSignedIn ? formatMemberSessionSummary() : "Not signed in.";
+          }
+
           viewSelect.disabled = !isSignedIn;
           refreshEventsButton.disabled = !isSignedIn;
+          refreshHomeButton.disabled = !isSignedIn;
+          if (memberEventCreateForm) {
+            Array.from(memberEventCreateForm.elements || []).forEach((element) => {
+              if (element instanceof HTMLElement) {
+                element.toggleAttribute("disabled", !isSignedIn);
+              }
+            });
+          }
+          if (memberEventCreateStatus && !isSignedIn) {
+            memberEventCreateStatus.textContent = "Sign in to create events.";
+          }
           birthdayWindowSelect.disabled = !isSignedIn;
           refreshBirthdaysButton.disabled = !isSignedIn;
           refreshNotificationsButton.disabled = !isSignedIn;
           markNotificationsReadButton.disabled = !isSignedIn;
           smsSaveButton.disabled = !isSignedIn;
+          profileSaveButton.disabled = !isSignedIn;
+          profileClearBirthdayButton.disabled = !isSignedIn;
+          memberPhotoUploadButton.disabled = !isSignedIn;
+          memberPhotoRemoveButton.disabled = !isSignedIn;
+
           Array.from(smsForm?.elements || []).forEach((element) => {
             if (element !== smsSaveButton && element instanceof HTMLElement) {
+              element.toggleAttribute("disabled", !isSignedIn);
+            }
+          });
+          Array.from(profileForm?.elements || []).forEach((element) => {
+            if (
+              element !== profileUsernameInput &&
+              element !== profileEmailInput &&
+              element !== profileSaveButton &&
+              element !== profileClearBirthdayButton &&
+              element instanceof HTMLElement
+            ) {
               element.toggleAttribute("disabled", !isSignedIn);
             }
           });
@@ -583,8 +1039,27 @@ export function renderMemberPage(config) {
               element.toggleAttribute("disabled", !isSignedIn);
             }
           });
-        }
 
+          if (memberPhotoFileInput) {
+            memberPhotoFileInput.toggleAttribute("disabled", !isSignedIn);
+          }
+          if (memberPhotoCameraInput) {
+            memberPhotoCameraInput.toggleAttribute("disabled", !isSignedIn);
+          }
+
+          if (!isSignedIn) {
+            document.querySelectorAll('.module-section').forEach(section => {
+              section.classList.remove('active');
+            });
+            document.querySelectorAll('.module-nav-link').forEach(link => {
+              link.classList.remove('active');
+            });
+            memberHomeStatus.textContent = "Sign in to load invitations and news.";
+            profileStatus.textContent = "Sign in to edit your personal details.";
+            memberPhotoStatus.textContent = "Sign in to upload your photo.";
+            updateImpersonationInputs();
+          }
+        }
         function nowWithServerSkew() {
           return Date.now() + serverSkewMs;
         }
@@ -597,6 +1072,139 @@ export function renderMemberPage(config) {
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#39;");
         }
+        function memberInviteeId(member) {
+          const id = Number(member?.userId || member?.id || 0);
+          return Number.isInteger(id) && id > 0 ? id : 0;
+        }
+
+        function memberInviteeLabel(member) {
+          return String(member?.fullName || member?.username || member?.email || "Member").trim();
+        }
+
+        function selectedMemberInviteeIds() {
+          return Array.from(selectedMemberEventInvitees.keys()).filter((id) => Number.isInteger(id) && id > 0);
+        }
+
+        function renderMemberEventInviteeSelections() {
+          if (!memberEventSelectedInvitees) return;
+          const selected = Array.from(selectedMemberEventInvitees.values());
+          if (selected.length === 0) {
+            memberEventSelectedInvitees.innerHTML = "<p class='muted'>No individual members selected yet.</p>";
+            return;
+          }
+          memberEventSelectedInvitees.innerHTML = selected
+            .map((member) => {
+              const id = memberInviteeId(member);
+              const label = memberInviteeLabel(member);
+              const detail = member.email ? "<span>" + escapeClientHtml(member.email) + "</span>" : "";
+              return (
+                "<span class='invitee-chip'>" +
+                "<span><strong>" + escapeClientHtml(label) + "</strong>" + detail + "</span>" +
+                "<button type='button' data-remove-member-invitee='" + id + "' aria-label='Remove " + escapeClientHtml(label) + "'>Remove</button>" +
+                "</span>"
+              );
+            })
+            .join("");
+        }
+
+        function renderMemberEventInviteeResults(term = "") {
+          if (!memberEventInviteeResults) return;
+          const query = String(term || memberEventInviteeSearchInput?.value || "").trim().toLowerCase();
+          const source = Array.isArray(memberInviteDirectory) ? memberInviteDirectory : [];
+          if (source.length === 0) {
+            memberEventInviteeResults.innerHTML = getToken()
+              ? "<p class='muted'>No active members are available to invite yet.</p>"
+              : "<p class='muted'>Sign in to search the member directory.</p>";
+            return;
+          }
+          if (!query) {
+            memberEventInviteeResults.innerHTML = "<p class='muted'>Start typing a member name or email to add individual invitees.</p>";
+            return;
+          }
+          const matches = source
+            .filter((member) => {
+              const id = memberInviteeId(member);
+              if (!id || selectedMemberEventInvitees.has(id)) return false;
+              const haystack = [member.fullName, member.username, member.email, member.organisation, ...(Array.isArray(member.groups) ? member.groups : [])]
+                .map((value) => String(value || "").toLowerCase())
+                .join(" ");
+              return haystack.includes(query);
+            })
+            .slice(0, 8);
+          if (matches.length === 0) {
+            memberEventInviteeResults.innerHTML = "<p class='muted'>No matching active members found.</p>";
+            return;
+          }
+          memberEventInviteeResults.innerHTML = matches
+            .map((member) => {
+              const id = memberInviteeId(member);
+              const label = memberInviteeLabel(member);
+              const detailParts = [member.email, member.organisation].filter(Boolean).join(" | ");
+              return (
+                "<button type='button' class='invitee-result' data-add-member-invitee='" + id + "'>" +
+                "<strong>" + escapeClientHtml(label) + "</strong>" +
+                (detailParts ? "<span>" + escapeClientHtml(detailParts) + "</span>" : "") +
+                "</button>"
+              );
+            })
+            .join("");
+        }
+
+        async function loadMemberInviteDirectory() {
+          const token = getToken();
+          if (!token) {
+            memberInviteDirectory = [];
+            renderMemberEventInviteeResults();
+            return;
+          }
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/member/directory?limit=150", {
+              headers: { Authorization: "Bearer " + token }
+            });
+            const json = await response.json();
+            if (!response.ok) {
+              memberInviteDirectory = [];
+              renderMemberEventInviteeResults();
+              return;
+            }
+            memberInviteDirectory = Array.isArray(json.items) ? json.items : [];
+            renderMemberEventInviteeResults();
+            renderMemberEventInviteeSelections();
+          } catch {
+            memberInviteDirectory = [];
+            renderMemberEventInviteeResults();
+          }
+        }
+
+        function resetMemberEventInviteePicker() {
+          selectedMemberEventInvitees.clear();
+          if (memberEventInviteeSearchInput) {
+            memberEventInviteeSearchInput.value = "";
+          }
+          renderMemberEventInviteeResults();
+          renderMemberEventInviteeSelections();
+        }
+
+        async function uploadMemberEventAttachment(eventId, file, token) {
+          if (!file) return null;
+          const formData = new FormData();
+          formData.set("documentType", "attachment");
+          formData.set("availabilityMode", "immediate");
+          formData.set("memberAccessScope", "all_visible");
+          formData.set("publishNow", "true");
+          formData.set("file", file, file.name || "event-attachment.txt");
+          const response = await fetch("${config.apiBaseUrl}/api/events/" + String(eventId) + "/documents", {
+            method: "POST",
+            headers: { Authorization: "Bearer " + token },
+            body: formData
+          });
+          const json = await response.json();
+          if (!response.ok) {
+            throw new Error(json.message || "The event was created, but the attachment could not be uploaded.");
+          }
+          return json.item || null;
+        }
+
 
         function ordinalSuffix(day) {
           const j = day % 10;
@@ -652,6 +1260,111 @@ export function renderMemberPage(config) {
           );
         }
 
+        function toIsoStringFromMemberLocalInput(value) {
+          const raw = String(value || "").trim();
+          if (!raw) return "";
+          const date = new Date(raw);
+          if (!Number.isFinite(date.getTime())) return "";
+          return date.toISOString();
+        }
+
+        function clearMemberEventCreateErrors() {
+          [
+            memberEventTitleInput,
+            memberEventStartInput,
+            memberEventEndInput,
+            memberEventVenueTypeInput,
+            memberEventHostInput,
+            memberEventCapacityInput,
+            memberEventOnlineUrlInput,
+            memberEventAudienceInput
+          ].forEach((input) => {
+            if (!input) return;
+            input.classList.remove("field-error");
+            input.removeAttribute("aria-invalid");
+          });
+        }
+
+        function markMemberEventCreateError(input) {
+          if (!input) return;
+          input.classList.add("field-error");
+          input.setAttribute("aria-invalid", "true");
+        }
+
+        function buildMemberEventCreatePayload(formData) {
+          clearMemberEventCreateErrors();
+          const title = String(formData.get("title") || "").trim();
+          const description = String(formData.get("description") || "").trim();
+          const startAt = toIsoStringFromMemberLocalInput(formData.get("startAt"));
+          const endAt = toIsoStringFromMemberLocalInput(formData.get("endAt"));
+          const venueType = String(formData.get("venueType") || "physical").trim() || "physical";
+          const venueName = String(formData.get("venueName") || "").trim();
+          const onlineJoinUrl = String(formData.get("onlineJoinUrl") || "").trim();
+          const hostName = String(formData.get("hostName") || "").trim();
+          const capacity = Number(formData.get("capacity") || 0);
+          const registrationClosesAt = toIsoStringFromMemberLocalInput(formData.get("registrationClosesAt"));
+          const audienceCode = String(formData.get("audienceCode") || "all_members").trim() || "all_members";
+          const inviteeUserIds = selectedMemberInviteeIds();
+          const targetAudienceCode = inviteeUserIds.length > 0 && audienceCode === "all_members" ? "groups" : audienceCode;
+          const targetAudienceType = inviteeUserIds.length > 0 && audienceCode === "all_members" ? "groups" : "";
+          const errors = [];
+
+          if (!title) {
+            markMemberEventCreateError(memberEventTitleInput);
+            errors.push("Event title is required.");
+          }
+          if (!startAt) {
+            markMemberEventCreateError(memberEventStartInput);
+            errors.push("Start date and time is required.");
+          }
+          if (!endAt) {
+            markMemberEventCreateError(memberEventEndInput);
+            errors.push("End date and time is required.");
+          }
+          if (startAt && endAt && new Date(endAt).getTime() <= new Date(startAt).getTime()) {
+            markMemberEventCreateError(memberEventStartInput);
+            markMemberEventCreateError(memberEventEndInput);
+            errors.push("End date and time must be later than the start date and time.");
+          }
+          if (!venueType) {
+            markMemberEventCreateError(memberEventVenueTypeInput);
+            errors.push("Venue type is required.");
+          }
+          if (!hostName) {
+            markMemberEventCreateError(memberEventHostInput);
+            errors.push("Host or chairperson is required.");
+          }
+          if (!Number.isFinite(capacity) || capacity < 0) {
+            markMemberEventCreateError(memberEventCapacityInput);
+            errors.push("Capacity must be 0 or greater.");
+          }
+          if (onlineJoinUrl && !onlineJoinUrl.toLowerCase().startsWith("http://") && !onlineJoinUrl.toLowerCase().startsWith("https://")) {
+            markMemberEventCreateError(memberEventOnlineUrlInput);
+            errors.push("Online join link must start with http:// or https://.");
+          }
+          if (errors.length > 0) {
+            return { error: errors[0] };
+          }
+
+          return {
+            payload: {
+              title,
+              description,
+              startAt,
+              endAt,
+              venueType,
+              venueName,
+              onlineProvider: venueType === "online" && venueName ? venueName : "",
+              onlineJoinUrl,
+              hostName,
+              capacity,
+              registrationClosesAt,
+              audienceCode: targetAudienceCode,
+              inviteeUserIds,
+              ...(targetAudienceType ? { audienceType: targetAudienceType } : {})
+            }
+          };
+        }
         function initialsFromName(fullName) {
           const parts = String(fullName || "")
             .trim()
@@ -670,6 +1383,356 @@ export function renderMemberPage(config) {
           return date.toLocaleDateString(undefined, { weekday: "short", day: "2-digit", month: "short" });
         }
 
+        function formatRelativeTime(value) {
+          const timestampMs = Date.parse(String(value || ""));
+          if (!Number.isFinite(timestampMs)) {
+            return "just now";
+          }
+          const deltaMs = Date.now() - timestampMs;
+          const deltaMinutes = Math.round(Math.abs(deltaMs) / (60 * 1000));
+          if (deltaMinutes < 60) {
+            return deltaMs >= 0 ? deltaMinutes + "m ago" : "in " + deltaMinutes + "m";
+          }
+          const deltaHours = Math.round(deltaMinutes / 60);
+          if (deltaHours < 48) {
+            return deltaMs >= 0 ? deltaHours + "h ago" : "in " + deltaHours + "h";
+          }
+          const deltaDays = Math.round(deltaHours / 24);
+          return deltaMs >= 0 ? deltaDays + "d ago" : "in " + deltaDays + "d";
+        }
+
+        function formatInvitationStatusLabel(status) {
+          const normalized = String(status || "").trim().toLowerCase();
+          if (normalized === "confirmed") return "Confirmed";
+          if (normalized === "waitlisted") return "Waitlisted";
+          if (normalized === "declined") return "Declined";
+          return "Awaiting response";
+        }
+
+        function renderMemberHomeBirthdays(items) {
+          const rows = Array.isArray(items) ? items : [];
+          if (rows.length === 0) {
+            memberDashboardBirthdays.innerHTML = "<p class='muted'>No birthdays in the next 30 days.</p>";
+            return;
+          }
+          memberDashboardBirthdays.innerHTML = rows
+            .map((item) => {
+              const label = escapeClientHtml(formatBirthdayLabel(item.occursOn));
+              const name = escapeClientHtml(item.fullName || "Member");
+              return (
+                "<div class='birthday-item'>" +
+                "<div class='iwfsa-watermark'>IWFSA</div>" +
+                "<div class='avatar avatar-fallback' aria-hidden='true'>" +
+                escapeClientHtml(initialsFromName(item.fullName)) +
+                "</div>" +
+                "<div class='birthday-meta'>" +
+                "<div class='birthday-name'>" +
+                name +
+                "</div>" +
+                "<div class='birthday-date'>" +
+                label +
+                "</div>" +
+                "</div>" +
+                "</div>"
+              );
+            })
+            .join("");
+        }
+
+        function renderMemberInvites(items) {
+          const rows = Array.isArray(items) ? items : [];
+          if (rows.length === 0) {
+            memberInviteList.innerHTML = "<p class='muted'>No current invitations.</p>";
+            return;
+          }
+
+          memberInviteList.innerHTML = rows
+            .map((item) => {
+              const status = formatInvitationStatusLabel(item.invitationStatus);
+              const startLabel = escapeClientHtml(formatEventDateTime(item.startAt));
+              const venueLabel = [item.venueType === "online" ? "Online" : "Physical", item.venueName, item.venueAddress]
+                .filter(Boolean)
+                .join(" - ");
+              const joinLink = item.onlineJoinUrl
+                ? "<p><strong>Join:</strong> <a target='_blank' rel='noreferrer' href='" +
+                  escapeClientHtml(item.onlineJoinUrl) +
+                  "'>Open meeting link</a></p>"
+                : "";
+              return (
+                "<article class='event-card'>" +
+                "<h3>" +
+                escapeClientHtml(item.title || "Event") +
+                "</h3>" +
+                "<p><strong>Status:</strong> " +
+                escapeClientHtml(status) +
+                "</p>" +
+                "<p><strong>Starts:</strong> " +
+                startLabel +
+                "</p>" +
+                "<p><strong>Audience:</strong> " +
+                escapeClientHtml(item.audienceLabel || "All Members") +
+                "</p>" +
+                "<p><strong>Venue:</strong> " +
+                escapeClientHtml(venueLabel || "TBA") +
+                "</p>" +
+                joinLink +
+                "<div class='member-actions'>" +
+                "<a class='button-link button-link-ghost' href='#events'>Open in Events</a>" +
+                "</div>" +
+                "</article>"
+              );
+            })
+            .join("");
+        }
+
+        function renderMemberNews(items) {
+          const rows = Array.isArray(items) ? items : [];
+          if (rows.length === 0) {
+            memberNewsList.innerHTML = "<p class='muted'>No organisation updates yet.</p>";
+            return;
+          }
+
+          memberNewsList.innerHTML = rows
+            .map((item) => {
+              const isPinned = Boolean(item && item.isPinned);
+              const pinnedBadge = isPinned
+                ? "<span class='member-news-pin' aria-label='Pinned update'>Pinned</span>"
+                : "";
+              return (
+                "<article class='thread-item'>" +
+                "<div class='thread-item-head'>" +
+                "<div>" +
+                "<strong>" +
+                escapeClientHtml(item.title || "IWFSA Update") +
+                "</strong>" +
+                "<p class='muted'>" +
+                escapeClientHtml(formatRelativeTime(item.createdAt)) +
+                "</p>" +
+                "</div>" +
+                pinnedBadge +
+                "</div>" +
+                "<p>" +
+                escapeClientHtml(item.body || "") +
+                "</p>" +
+                "</article>"
+              );
+            })
+            .join("");
+        }
+
+        async function loadMemberHome() {
+          const token = getToken();
+          if (!token) {
+            memberInviteList.innerHTML = "<p class='muted'>Sign in to view your event invitations.</p>";
+            memberNewsList.innerHTML = "<p class='muted'>Sign in to view relevant IWFSA news.</p>";
+            memberDashboardBirthdays.innerHTML = "<p class='muted'>Sign in to load birthday highlights.</p>";
+            memberHomeStatus.textContent = "Sign in to load invitations and news.";
+            return;
+          }
+
+          memberHomeStatus.textContent = "Loading member home...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/member/home", {
+              headers: { Authorization: "Bearer " + token }
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+              memberHomeStatus.textContent = payload.message || "Unable to load member home.";
+              return;
+            }
+            renderMemberInvites(payload.invites?.items || []);
+            renderMemberNews(payload.news?.items || []);
+            renderMemberHomeBirthdays(payload.birthdays?.items || []);
+            memberHomeStatus.textContent =
+              "Invites: " +
+              String(payload.invites?.total || 0) +
+              " | Awaiting response: " +
+              String(payload.invites?.awaitingResponse || 0);
+          } catch {
+            memberHomeStatus.textContent = "Unable to reach API for member home.";
+          }
+        }
+
+        function setMemberPhotoPreview(photoUrl) {
+          const hasPhoto = Boolean(photoUrl);
+          memberPhotoPreview.hidden = !hasPhoto;
+          memberPhotoEmpty.hidden = hasPhoto;
+          if (hasPhoto) {
+            memberPhotoPreview.src = String(photoUrl);
+          } else {
+            memberPhotoPreview.removeAttribute("src");
+          }
+        }
+
+        function populateMemberProfile(item) {
+          const profile = item || {};
+          profileUsernameInput.value = String(profile.username || memberUsername || "");
+          profileEmailInput.value = String(profile.email || "");
+          profileFullNameInput.value = String(profile.fullName || "");
+          profileCompanyInput.value = String(profile.company || "");
+          profilePhoneInput.value = String(profile.phone || "");
+          profileBirthdayMonthInput.value = profile.birthdayMonth ? String(profile.birthdayMonth) : "";
+          profileBirthdayDayInput.value = profile.birthdayDay ? String(profile.birthdayDay) : "";
+          profileBirthdayVisibilityInput.value = String(profile.birthdayVisibility || "hidden");
+          setMemberPhotoPreview(profile.photoUrl || null);
+        }
+
+        async function loadMemberProfile() {
+          const token = getToken();
+          if (!token) {
+            profileStatus.textContent = "Sign in to edit your personal details.";
+            memberPhotoStatus.textContent = "Sign in to upload your photo.";
+            profileUsernameInput.value = "";
+            profileEmailInput.value = "";
+            profileFullNameInput.value = "";
+            profileCompanyInput.value = "";
+            profilePhoneInput.value = "";
+            profileBirthdayMonthInput.value = "";
+            profileBirthdayDayInput.value = "";
+            profileBirthdayVisibilityInput.value = "hidden";
+            setMemberPhotoPreview(null);
+            return;
+          }
+
+          profileStatus.textContent = "Loading profile...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/member/profile", {
+              headers: { Authorization: "Bearer " + token }
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+              profileStatus.textContent = payload.message || "Unable to load member profile.";
+              return;
+            }
+            populateMemberProfile(payload.item || {});
+            profileStatus.textContent = "Profile ready.";
+            memberPhotoStatus.textContent = payload.item?.photoUrl
+              ? "Profile photo loaded."
+              : "Upload a profile photo from camera or image file.";
+          } catch {
+            profileStatus.textContent = "Unable to reach API for profile.";
+          }
+        }
+
+        function getSelectedPhotoFile() {
+          const directFile = memberPhotoFileInput?.files && memberPhotoFileInput.files[0] ? memberPhotoFileInput.files[0] : null;
+          const cameraFile = memberPhotoCameraInput?.files && memberPhotoCameraInput.files[0] ? memberPhotoCameraInput.files[0] : null;
+          return cameraFile || directFile;
+        }
+
+        async function uploadMemberPhoto() {
+          const token = getToken();
+          if (!token) {
+            memberPhotoStatus.textContent = "Sign in to upload your photo.";
+            return;
+          }
+
+          const file = getSelectedPhotoFile();
+          if (!file) {
+            memberPhotoStatus.textContent = "Choose a photo file or capture with camera first.";
+            return;
+          }
+
+          memberPhotoStatus.textContent = "Uploading photo...";
+          try {
+            const formData = new FormData();
+            formData.append("photo", file, file.name || "member-photo");
+            const response = await fetch("${config.apiBaseUrl}/api/member/profile/photo", {
+              method: "POST",
+              headers: { Authorization: "Bearer " + token },
+              body: formData
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+              memberPhotoStatus.textContent = payload.message || "Unable to upload profile photo.";
+              return;
+            }
+            setMemberPhotoPreview(payload.photoUrl || null);
+            memberPhotoStatus.textContent = "Profile photo uploaded.";
+            if (memberPhotoFileInput) {
+              memberPhotoFileInput.value = "";
+            }
+            if (memberPhotoCameraInput) {
+              memberPhotoCameraInput.value = "";
+            }
+            await loadBirthdays();
+          } catch {
+            memberPhotoStatus.textContent = "Unable to reach API for profile photo upload.";
+          }
+        }
+
+        async function removeMemberPhoto() {
+          const token = getToken();
+          if (!token) {
+            memberPhotoStatus.textContent = "Sign in to remove your photo.";
+            return;
+          }
+
+          memberPhotoStatus.textContent = "Removing photo...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/member/profile/photo", {
+              method: "DELETE",
+              headers: { Authorization: "Bearer " + token }
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+              memberPhotoStatus.textContent = payload.message || "Unable to remove profile photo.";
+              return;
+            }
+            setMemberPhotoPreview(null);
+            memberPhotoStatus.textContent = "Profile photo removed.";
+            await loadBirthdays();
+          } catch {
+            memberPhotoStatus.textContent = "Unable to reach API for profile photo removal.";
+          }
+        }
+
+        async function saveMemberProfile({ clearBirthday = false } = {}) {
+          const token = getToken();
+          if (!token) {
+            profileStatus.textContent = "Sign in to edit your personal details.";
+            return;
+          }
+
+          const monthValue = String(profileBirthdayMonthInput.value || "").trim();
+          const dayValue = String(profileBirthdayDayInput.value || "").trim();
+          const payload = {
+            fullName: String(profileFullNameInput.value || "").trim(),
+            company: String(profileCompanyInput.value || "").trim(),
+            phone: String(profilePhoneInput.value || "").trim(),
+            birthdayVisibility: String(profileBirthdayVisibilityInput.value || "hidden").trim()
+          };
+
+          if (clearBirthday) {
+            payload.clearBirthday = true;
+          } else if (monthValue || dayValue) {
+            payload.birthdayMonth = Number(monthValue || 0);
+            payload.birthdayDay = Number(dayValue || 0);
+          }
+
+          profileStatus.textContent = "Saving personal details...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/member/profile", {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer " + token
+              },
+              body: JSON.stringify(payload)
+            });
+            const responsePayload = await response.json();
+            if (!response.ok) {
+              profileStatus.textContent = responsePayload.message || "Unable to save personal details.";
+              return;
+            }
+            populateMemberProfile(responsePayload.item || {});
+            profileStatus.textContent = "Personal details saved.";
+            await loadBirthdays();
+            await loadMemberHome();
+          } catch {
+            profileStatus.textContent = "Unable to reach API for profile updates.";
+          }
+        }
         function renderBirthdays(items, windowDays) {
           if (!items || items.length === 0) {
             const window = Number(windowDays);
@@ -708,7 +1771,7 @@ export function renderMemberPage(config) {
                 roleBadges +
                 "</div>" +
                 "<div class='social-actions'>" +
-                "<button class='btn-social' onclick=\"alert('Social automation is feature-flagged for Phase 4. Use manual post for now.')\">Auto-Post to Social</button>" +
+                "<button class='btn-social' type='button' disabled title='Feature-flagged for Phase 4. Use manual post for now.'>Auto-Post to Social</button>" +
                 "</div>" +
                 "</div>"
               );
@@ -893,7 +1956,7 @@ export function renderMemberPage(config) {
           if (eventItem.description) detailsParts.push(String(eventItem.description));
           if (eventItem.onlineJoinUrl) detailsParts.push("Join link: " + String(eventItem.onlineJoinUrl));
           detailsParts.push("Open the IWFSA Member Portal for updates.");
-          const details = detailsParts.filter(Boolean).join("\n\n");
+          const details = detailsParts.filter(Boolean).join("\\n\\n");
           const location =
             eventItem.venueName || eventItem.venueAddress
               ? [eventItem.venueName, eventItem.venueAddress].filter(Boolean).join(" - ")
@@ -922,7 +1985,7 @@ export function renderMemberPage(config) {
           if (eventItem.description) bodyParts.push(String(eventItem.description));
           if (eventItem.onlineJoinUrl) bodyParts.push("Join link: " + String(eventItem.onlineJoinUrl));
           bodyParts.push("Open the IWFSA Member Portal for updates.");
-          const body = bodyParts.filter(Boolean).join("\n\n");
+          const body = bodyParts.filter(Boolean).join("\\n\\n");
           const location =
             eventItem.venueName || eventItem.venueAddress
               ? [eventItem.venueName, eventItem.venueAddress].filter(Boolean).join(" - ")
@@ -1475,6 +2538,14 @@ export function renderMemberPage(config) {
           const token = getToken();
           if (!token) {
             container.innerHTML = "<p class='muted'>Sign in to load events.</p>";
+            if (memberEventCreateForm) {
+              memberEventCreateForm.reset();
+              clearMemberEventCreateErrors();
+            }
+            resetMemberEventInviteePicker();
+            if (memberEventCreateStatus) {
+              memberEventCreateStatus.textContent = "Sign in to create events.";
+            }
             setSignedInState(false);
             return;
           }
@@ -1508,18 +2579,174 @@ export function renderMemberPage(config) {
           }
         }
 
+        if (memberEventCreateResetButton) {
+          memberEventCreateResetButton.addEventListener("click", () => {
+            clearMemberEventCreateErrors();
+            resetMemberEventInviteePicker();
+            if (memberEventCreateStatus) {
+              memberEventCreateStatus.textContent = getToken()
+                ? "Form cleared. Create a new event when ready."
+                : "Sign in to create events.";
+            }
+          });
+        }
+
+        if (memberEventInviteeSearchInput) {
+          memberEventInviteeSearchInput.addEventListener("input", () => {
+            renderMemberEventInviteeResults(memberEventInviteeSearchInput.value);
+          });
+        }
+
+        if (memberEventInviteeResults) {
+          memberEventInviteeResults.addEventListener("click", (event) => {
+            const button = event.target.closest("button[data-add-member-invitee]");
+            if (!button) return;
+            const id = Number(button.getAttribute("data-add-member-invitee"));
+            const member = memberInviteDirectory.find((item) => memberInviteeId(item) === id);
+            if (!member) return;
+            selectedMemberEventInvitees.set(id, member);
+            if (memberEventInviteeSearchInput) {
+              memberEventInviteeSearchInput.value = "";
+              memberEventInviteeSearchInput.focus();
+            }
+            renderMemberEventInviteeSelections();
+            renderMemberEventInviteeResults();
+          });
+        }
+
+        if (memberEventSelectedInvitees) {
+          memberEventSelectedInvitees.addEventListener("click", (event) => {
+            const button = event.target.closest("button[data-remove-member-invitee]");
+            if (!button) return;
+            const id = Number(button.getAttribute("data-remove-member-invitee"));
+            selectedMemberEventInvitees.delete(id);
+            renderMemberEventInviteeSelections();
+            renderMemberEventInviteeResults(memberEventInviteeSearchInput?.value || "");
+          });
+        }
+
+        if (memberEventInviteeClearButton) {
+          memberEventInviteeClearButton.addEventListener("click", () => {
+            resetMemberEventInviteePicker();
+          });
+        }
+
+        if (memberEventCreateForm) {
+          memberEventCreateForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const token = getToken();
+            if (!token) {
+              memberEventCreateStatus.textContent = "Sign in to create events.";
+              setSignedInState(false);
+              return;
+            }
+
+            const validation = buildMemberEventCreatePayload(new FormData(memberEventCreateForm));
+            if (!validation.payload) {
+              memberEventCreateStatus.textContent = validation.error || "Complete the required event fields.";
+              return;
+            }
+
+            const publishNow = !memberEventPublishNowInput || memberEventPublishNowInput.checked;
+            const attachmentFile = memberEventAttachmentInput?.files?.[0] || null;
+            if (memberEventCreateSubmitButton) {
+              memberEventCreateSubmitButton.disabled = true;
+            }
+            memberEventCreateStatus.textContent = publishNow
+              ? "Creating event, uploading any file, and queueing invitations..."
+              : "Creating event draft...";
+
+            try {
+              const createResponse = await fetch("${config.apiBaseUrl}/api/events", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: "Bearer " + token
+                },
+                body: JSON.stringify(validation.payload)
+              });
+              const createJson = await createResponse.json();
+              if (!createResponse.ok) {
+                memberEventCreateStatus.textContent = createJson.message || "Unable to create the event.";
+                return;
+              }
+
+              let statusMessage = "Event draft created.";
+              let attachmentMessage = "";
+              if (attachmentFile) {
+                await uploadMemberEventAttachment(createJson.id, attachmentFile, token);
+                attachmentMessage = " File attached.";
+                statusMessage += attachmentMessage;
+              }
+              if (publishNow) {
+                const publishResponse = await fetch("${config.apiBaseUrl}/api/events/" + String(createJson.id) + "/submit", {
+                  method: "POST",
+                  headers: { Authorization: "Bearer " + token }
+                });
+                const publishJson = await publishResponse.json();
+                if (!publishResponse.ok) {
+                  memberEventCreateStatus.textContent =
+                    (publishJson.message || "The event was created, but invitations could not be sent.") +
+                    " Event id: " +
+                    String(createJson.id) +
+                    "." +
+                    attachmentMessage;
+                  await loadEvents();
+                  return;
+                }
+                statusMessage = "Event created" + (attachmentFile ? " with attached file" : "") + " and invitations queued for the selected audience.";
+              }
+
+              if (createJson.clashWarning && createJson.clashWarning.hasClash) {
+                statusMessage += " Time overlap warning: " + String(createJson.clashWarning.conflictCount || 0) + " existing event(s).";
+              }
+
+              memberEventCreateForm.reset();
+              resetMemberEventInviteePicker();
+              clearMemberEventCreateErrors();
+              if (memberEventPublishNowInput) {
+                memberEventPublishNowInput.checked = true;
+              }
+              memberEventCreateStatus.textContent = statusMessage;
+              await loadEvents();
+              await loadMemberHome();
+            } catch (error) {
+              memberEventCreateStatus.textContent = error?.message || "Unable to reach API to create the event.";
+            } finally {
+              if (memberEventCreateSubmitButton) {
+                memberEventCreateSubmitButton.disabled = !Boolean(getToken());
+              }
+            }
+          });
+        }
 /* Demo button removed */
+
+        if (memberImpersonationToggle) {
+          memberImpersonationToggle.addEventListener("change", updateImpersonationInputs);
+        }
 
         loginForm.addEventListener("submit", async (event) => {
           event.preventDefault();
           loginStatus.textContent = "Signing in...";
 
           const formData = new FormData(loginForm);
+          const useAdminImpersonation = Boolean(memberImpersonationToggle && memberImpersonationToggle.checked);
           const payload = {
             username: String(formData.get("username") || "").trim(),
             password: String(formData.get("password") || "")
           };
 
+          if (useAdminImpersonation) {
+            const adminUsername = String(formData.get("adminUsername") || "").trim();
+            if (!adminUsername) {
+              loginStatus.textContent = "Sign in failed: admin username is required for impersonation.";
+              return;
+            }
+            payload.impersonateAsMember = true;
+            payload.adminUsername = adminUsername;
+          }
+
+          let loginSucceeded = false;
           try {
             const response = await fetch("${config.apiBaseUrl}/api/auth/login", {
               method: "POST",
@@ -1528,25 +2755,40 @@ export function renderMemberPage(config) {
             });
             const json = await response.json();
             if (!response.ok) {
-              loginStatus.textContent = "Sign in failed: " + (json.message || "Invalid credentials.");
+              const fallbackMessage = useAdminImpersonation
+                ? "Impersonation failed. Use the member username, admin username, and admin password."
+                : "Invalid credentials.";
+              const failureMessage =
+                useAdminImpersonation && json.error === "invalid_credentials"
+                  ? fallbackMessage
+                  : json.message || fallbackMessage;
+              loginStatus.textContent = "Sign in failed: " + failureMessage;
               return;
             }
 
-            setToken(json.token, json.user.username);
+            setToken(json.token, json.user.username, json.user.role, json.impersonation || null);
+            loginSucceeded = true;
             setSignedInState(true);
-            loginStatus.textContent = "Signed in as " + json.user.username + ".";
+            loginStatus.textContent = formatMemberSessionSummary();
             loginForm.reset();
+            updateImpersonationInputs();
+            showMemberModule("profile", { scroll: true });
+            await loadMemberHome();
+            await loadMemberProfile();
+            await loadMemberInviteDirectory();
             await loadEvents();
             await loadBirthdays();
             await loadNotifications();
             await loadSmsSettings();
             await loadCelebrations();
           } catch {
-            loginStatus.textContent = "Sign in failed: unable to reach API.";
+            loginStatus.textContent = loginSucceeded
+              ? formatMemberSessionSummary() + " Some member content could not load. Use the portal navigation to continue."
+              : "Sign in failed: unable to reach API.";
           }
         });
 
-        logoutButton.addEventListener("click", async () => {
+        async function handleMemberLogout() {
           const token = getToken();
           if (token) {
             try {
@@ -1560,20 +2802,66 @@ export function renderMemberPage(config) {
           }
           setToken(null);
           setSignedInState(false);
+          if (window.location.hash) {
+            history.replaceState(null, "", window.location.pathname + window.location.search);
+          }
           loginStatus.textContent = "Signed out.";
           loginForm.reset();
+          updateImpersonationInputs();
           container.innerHTML = "<p class='muted'>Sign in to load events.</p>";
+          if (memberEventCreateForm) {
+            memberEventCreateForm.reset();
+            clearMemberEventCreateErrors();
+          }
+          if (memberEventCreateStatus) {
+            memberEventCreateStatus.textContent = "Sign in to create events.";
+          }
+          resetMemberEventInviteePicker();
+          memberInviteList.innerHTML = "<p class='muted'>Sign in to view your event invitations.</p>";
+          memberNewsList.innerHTML = "<p class='muted'>Sign in to view relevant IWFSA news.</p>";
+          memberDashboardBirthdays.innerHTML = "<p class='muted'>Sign in to load birthday highlights.</p>";
+          memberHomeStatus.textContent = "Sign in to load invitations and news.";
           birthdayList.innerHTML = "<p class='muted'>Sign in to load birthdays.</p>";
           notificationList.innerHTML = "<p class='muted'>Sign in to load notifications.</p>";
+          profileStatus.textContent = "Sign in to edit your personal details.";
+          memberPhotoStatus.textContent = "Sign in to upload your photo.";
           smsStatus.textContent = "Sign in to manage SMS preferences.";
           smsLimits.textContent = "Sign in to load SMS policy guidance.";
           celebrationStatus.textContent = "Sign in to load the shared thread.";
           celebrationList.innerHTML = "<p class='muted'>Sign in to load celebration posts.</p>";
           celebrationRules.innerHTML = "<li>Sign in to load moderation rules.</li>";
+          populateMemberProfile({});
+        }
+
+        document.querySelectorAll("#member-logout, .member-session-logout").forEach((button) => {
+          button.addEventListener("click", handleMemberLogout);
         });
 
         refreshEventsButton.addEventListener("click", () => {
           loadEvents();
+        });
+
+        refreshHomeButton.addEventListener("click", () => {
+          loadMemberHome();
+        });
+
+        profileForm.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          await saveMemberProfile({ clearBirthday: false });
+        });
+
+        profileClearBirthdayButton.addEventListener("click", async () => {
+          profileBirthdayMonthInput.value = "";
+          profileBirthdayDayInput.value = "";
+          await saveMemberProfile({ clearBirthday: true });
+        });
+
+        memberPhotoUploadButton.addEventListener("click", async () => {
+          await uploadMemberPhoto();
+        });
+
+        memberPhotoRemoveButton.addEventListener("click", async () => {
+          await removeMemberPhoto();
         });
 
         refreshBirthdaysButton.addEventListener("click", () => {
@@ -1723,8 +3011,12 @@ export function renderMemberPage(config) {
         syncServerTime();
         setSignedInState(Boolean(getToken()));
         if (getToken()) {
-          loginStatus.textContent = "Signed in as " + (memberUsername || "member") + ".";
+          loginStatus.textContent = formatMemberSessionSummary();
+          showMemberModule(window.location.hash.substring(1) || "dashboard");
         }
+        loadMemberHome();
+        loadMemberProfile();
+        loadMemberInviteDirectory();
         loadEvents();
         loadBirthdays();
         loadNotifications();
@@ -1762,11 +3054,22 @@ export function renderAdminPage(config) {
              <a href="#access" class="module-nav-link" data-module="access" data-admin-module-link="access">Access</a>
              <a href="#overview" class="module-nav-link" data-module="overview" data-admin-module-link="overview">Overview</a>
              <a href="#members" class="module-nav-link" data-module="members" data-admin-module-link="members">Members</a>
+             <a href="#fees" class="module-nav-link" data-module="fees" data-admin-module-link="fees">Membership &amp; Fees</a>
              <a href="#imports" class="module-nav-link" data-module="imports" data-admin-module-link="imports">Imports</a>
              <a href="#events" class="module-nav-link" data-module="events" data-admin-module-link="events">Event Hub</a>
              <a href="#notifications" class="module-nav-link" data-module="notifications" data-admin-module-link="notifications">Notifications</a>
+             <a href="#news" class="module-nav-link" data-module="news" data-admin-module-link="news">News</a>
              <a href="#reports" class="module-nav-link" data-module="reports" data-admin-module-link="reports">Reports</a>
           </nav>
+          <div id="admin-session-bar" class="session-bar admin-session-bar" hidden>
+            <div>
+              <p class="eyebrow">Admin area</p>
+              <p id="admin-session-summary" class="session-summary">Admin console session active.</p>
+            </div>
+            <div class="session-actions session-actions-single">
+              <button type="button" class="button-link session-logout-button admin-session-logout">Sign out</button>
+            </div>
+          </div>
         </section>
 
           <section id="module-access" class="panel module-section">
@@ -1778,15 +3081,16 @@ export function renderAdminPage(config) {
                 <p class="muted">The Event Hub is kept separate from login so meeting work stays focused.</p>
              </div>
              <div class="admin-access-panel">
+               <div class="role-switcher" aria-label="Choose sign-in area">
+                 <a class="role-switcher-link" href="${config.appBaseUrl}/member">Member Sign In</a>
+                 <a class="role-switcher-link role-switcher-active" href="${config.appBaseUrl}/admin" aria-current="page">Admin Sign In</a>
+               </div>
                <p id="login-status" class="muted">Not signed in.</p>
                <form id="admin-login-form" class="inline-login-form admin-login-form">
                   <input id="admin-username" name="username" placeholder="Username" autocomplete="username" />
                   <input id="admin-password" type="password" name="password" placeholder="Password" autocomplete="current-password" />
                   <button type="submit">Sign in</button>
                </form>
-               <div class="member-actions">
-                 <button id="admin-logout" type="button" disabled>Sign out</button>
-               </div>
              </div>
           </section>
 
@@ -1801,6 +3105,10 @@ export function renderAdminPage(config) {
                    <h4>Member Directory</h4>
                    <p>Onboard members and manage groups.</p>
                 </div>
+                <div class="dashboard-card" onclick="window.location.hash='#fees'">
+                   <h4>Membership &amp; Fees</h4>
+                   <p>Run annual cycle checks and standing/access controls.</p>
+                </div>
                 <div class="dashboard-card" onclick="window.location.hash='#imports'">
                    <h4>Bulk Import</h4>
                    <p>Upload member spreadsheets.</p>
@@ -1808,6 +3116,10 @@ export function renderAdminPage(config) {
                 <div class="dashboard-card" onclick="window.location.hash='#notifications'">
                    <h4>Notifications</h4>
                    <p>Monitor delivery health and queues.</p>
+                </div>
+                <div class="dashboard-card" onclick="window.location.hash='#news'">
+                   <h4>Member News</h4>
+                   <p>Publish curated IWFSA updates for the member dashboard.</p>
                 </div>
                 <div class="dashboard-card" onclick="window.location.hash='#reports'">
                    <h4>Reporting</h4>
@@ -1866,6 +3178,143 @@ export function renderAdminPage(config) {
             </tbody>
           </table>
         </div>
+     </div>
+     </div>
+
+     <div id="module-fees" class="module-section">
+      <div class="admin-card" data-admin-panel="membership_fees">
+        <h3>Membership &amp; Fees</h3>
+        <p class="muted">Manage annual cycle setup, standing reviews, and immediate access changes from one workspace.</p>
+        <div class="member-actions">
+          <label for="fee-cycle-year" class="muted">Cycle</label>
+          <select id="fee-cycle-year" disabled>
+            <option value="">Current cycle</option>
+          </select>
+          <button id="fee-refresh" type="button" disabled>Refresh workspace</button>
+          <span id="fee-member-count" class="muted"></span>
+        </div>
+        <div class="member-actions">
+          <input id="fee-cycle-create-year" type="number" min="2000" max="2100" placeholder="Cycle year (e.g. 2026)" />
+          <input id="fee-cycle-due-date" type="date" />
+          <select id="fee-cycle-status">
+            <option value="open" selected>Open</option>
+            <option value="draft">Draft</option>
+            <option value="closed">Closed</option>
+            <option value="archived">Archived</option>
+          </select>
+          <button id="fee-cycle-save" type="button" disabled>Save cycle</button>
+        </div>
+        <p id="fee-cycle-status-text" class="muted">Sign in to manage membership cycles.</p>
+        <div class="import-kpi-grid report-kpi-grid membership-fee-kpis">
+          <div class="import-kpi">
+            <p class="import-kpi-label">Total members</p>
+            <p id="fee-kpi-total-members" class="import-kpi-value">0</p>
+          </div>
+          <div class="import-kpi">
+            <p class="import-kpi-label">Active members</p>
+            <p id="fee-kpi-active-members" class="import-kpi-value">0</p>
+          </div>
+          <div class="import-kpi">
+            <p class="import-kpi-label">Good standing</p>
+            <p id="fee-kpi-good-standing" class="import-kpi-value">0</p>
+          </div>
+          <div class="import-kpi">
+            <p class="import-kpi-label">Outstanding</p>
+            <p id="fee-kpi-outstanding-members" class="import-kpi-value">0</p>
+          </div>
+          <div class="import-kpi">
+            <p class="import-kpi-label">Blocked</p>
+            <p id="fee-kpi-blocked-members" class="import-kpi-value">0</p>
+          </div>
+          <div class="import-kpi">
+            <p class="import-kpi-label">Deactivated</p>
+            <p id="fee-kpi-deactivated-members" class="import-kpi-value">0</p>
+          </div>
+          <div class="import-kpi">
+            <p class="import-kpi-label">Onboarding</p>
+            <p id="fee-kpi-onboarding-members" class="import-kpi-value">0</p>
+          </div>
+          <div class="import-kpi">
+            <p class="import-kpi-label">Fees collected</p>
+            <p id="fee-kpi-fees-collected" class="import-kpi-value">R 0.00</p>
+          </div>
+          <div class="import-kpi">
+            <p class="import-kpi-label">Outstanding balance</p>
+            <p id="fee-kpi-outstanding-balance" class="import-kpi-value">R 0.00</p>
+          </div>
+        </div>
+        <div class="member-actions">
+          <input id="fee-search" type="search" placeholder="Search name, email, company, committee" />
+          <select id="fee-standing-filter">
+            <option value="all">All standing states</option>
+            <option value="good_standing">Good standing</option>
+            <option value="outstanding">Outstanding</option>
+            <option value="partial">Partial</option>
+            <option value="waived">Waived</option>
+            <option value="pending_review">Pending review</option>
+            <option value="blocked">Blocked</option>
+            <option value="deactivated">Deactivated</option>
+          </select>
+          <select id="fee-account-filter">
+            <option value="all">All account states</option>
+            <option value="active">Active</option>
+            <option value="blocked">Blocked</option>
+            <option value="deactivated">Deactivated</option>
+            <option value="invited">Invited</option>
+            <option value="not_invited">Not invited</option>
+          </select>
+          <select id="fee-category-filter">
+            <option value="">All categories</option>
+          </select>
+          <select id="fee-profile-filter">
+            <option value="all">All profiles</option>
+            <option value="complete">Profile complete</option>
+            <option value="incomplete">Profile incomplete</option>
+          </select>
+          <button id="fee-filters-apply" type="button" disabled>Apply filters</button>
+          <button id="fee-filters-reset" type="button" disabled>Reset</button>
+        </div>
+        <div id="fee-bulk-bar" class="event-bulk-bar fee-bulk-bar" hidden>
+          <span id="fee-bulk-count" class="muted">0 selected</span>
+          <select id="fee-bulk-standing" disabled>
+            <option value="">Standing unchanged</option>
+            <option value="good_standing">Good standing</option>
+            <option value="outstanding">Outstanding</option>
+            <option value="partial">Partial</option>
+            <option value="waived">Waived</option>
+            <option value="pending_review">Pending review</option>
+            <option value="blocked">Blocked</option>
+            <option value="deactivated">Deactivated</option>
+          </select>
+          <select id="fee-bulk-access" disabled>
+            <option value="">Access unchanged</option>
+            <option value="enabled">Enabled</option>
+            <option value="blocked">Blocked</option>
+            <option value="deactivated">Deactivated</option>
+          </select>
+          <input id="fee-bulk-reason" type="text" placeholder="Bulk audit reason" disabled />
+          <button id="fee-bulk-apply" type="button" disabled>Apply bulk update</button>
+          <button id="fee-bulk-remind" type="button" disabled>Send dues reminder</button>
+        </div>
+        <p id="fee-members-status" class="muted">Sign in to load membership fee records.</p>
+        <div class="table-shell">
+          <table class="member-table">
+            <thead>
+              <tr>
+                <th><input id="fee-select-all-members" type="checkbox" aria-label="Select all fee rows" disabled /></th>
+                <th>Member</th>
+                <th>Membership</th>
+                <th>Status</th>
+                <th>Fees</th>
+                <th>Profile</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="fee-members-table-body">
+              <tr><td colspan="7" class="muted">Sign in to load membership fee records.</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
      </div>
 
@@ -1915,6 +3364,18 @@ export function renderAdminPage(config) {
               <select id="import-invite-policy" name="invite_policy">
                 <option value="queue_on_apply">Queue on apply</option>
                 <option value="none">Do not queue</option>
+              </select>
+              <label for="import-membership-cycle-year">Membership year</label>
+              <input id="import-membership-cycle-year" name="membership_cycle_year" type="number" min="2000" max="2100" placeholder="e.g. 2026" />
+              <label for="import-membership-category-default">Default category</label>
+              <input id="import-membership-category-default" name="membership_category_default" type="text" value="Active Member" />
+              <label for="import-standing-default">Default standing</label>
+              <select id="import-standing-default" name="standing_default">
+                <option value="pending_review" selected>Pending review</option>
+                <option value="good_standing">Good standing</option>
+                <option value="outstanding">Outstanding</option>
+                <option value="partial">Partial</option>
+                <option value="waived">Waived</option>
               </select>
               <button type="submit" id="import-submit">Run dry-run</button>
             </form>
@@ -1987,6 +3448,18 @@ export function renderAdminPage(config) {
               <div>
                 <dt>Invite policy</dt>
                 <dd id="import-detail-invite-policy">n/a</dd>
+              </div>
+              <div>
+                <dt>Membership year</dt>
+                <dd id="import-detail-membership-year">n/a</dd>
+              </div>
+              <div>
+                <dt>Default category</dt>
+                <dd id="import-detail-membership-category">n/a</dd>
+              </div>
+              <div>
+                <dt>Default standing</dt>
+                <dd id="import-detail-standing-default">n/a</dd>
               </div>
               <div>
                 <dt>Blocking issues</dt>
@@ -2103,6 +3576,27 @@ export function renderAdminPage(config) {
             </p>
             <div id="event-audience-groups" class="group-picker"></div>
           </fieldset>
+          <fieldset class="invitee-picker-fieldset">
+            <legend>Invite individual members (optional)</legend>
+            <p class="muted group-picker-help">Type a member name or email, then add them to the event audience alongside any selected groups.</p>
+            <div class="invitee-search-row">
+              <input id="event-invitee-search" type="search" placeholder="Search active members by name or email" autocomplete="off" />
+              <button id="event-invitee-clear" type="button" class="ghost">Clear selected</button>
+            </div>
+            <div id="event-invitee-results" class="invitee-results" aria-live="polite">
+              <p class="muted">Sign in and load members to search the directory.</p>
+            </div>
+            <div id="event-selected-invitees" class="invitee-selected-list" aria-live="polite"></div>
+          </fieldset>
+          <div class="event-attachment-field">
+            <label for="event-attachment">Optional event file</label>
+            <input id="event-attachment" name="eventAttachment" type="file" accept=".pdf,.txt,application/pdf,text/plain" />
+            <p class="muted form-hint">Attach a PDF or text file to this event. It will be linked to the event details.</p>
+          </div>
+          <label class="inline-checkbox" for="event-publish-now">
+            <input id="event-publish-now" name="publishNow" type="checkbox" />
+            Publish now and email invitations to the selected audience
+          </label>
           <button type="submit" id="event-submit">Create meeting</button>
           <button type="button" id="event-cancel" hidden>Cancel edit</button>
         </form>
@@ -2212,6 +3706,63 @@ export function renderAdminPage(config) {
       </div>
      </div>
 
+     <div id="module-news" class="module-section">
+      <div class="admin-card" data-admin-panel="member_news">
+        <h3>Member News Publishing</h3>
+        <p class="muted">Create and curate official IWFSA updates shown on the member dashboard home feed.</p>
+        <form id="news-form" class="login-form">
+          <label for="news-title">Title</label>
+          <input id="news-title" name="title" maxlength="180" placeholder="Headline for members" required />
+          <label for="news-body">Update body</label>
+          <textarea id="news-body" name="body" rows="5" maxlength="5000" placeholder="Share relevant IWFSA news, milestones, and member-focused updates." required></textarea>
+          <label for="news-status">Status</label>
+          <select id="news-status" name="status">
+            <option value="draft">Draft</option>
+            <option value="published">Publish immediately</option>
+            <option value="archived">Archive</option>
+          </select>
+          <label class="inline-checkbox" for="news-is-pinned">
+            <input id="news-is-pinned" type="checkbox" />
+            Pin this update to the top of the member news feed
+          </label>
+          <div class="member-actions">
+            <button id="news-submit" type="submit" disabled>Create news post</button>
+            <button id="news-cancel" type="button" class="ghost" hidden>Cancel edit</button>
+          </div>
+        </form>
+        <p id="news-status-text" class="muted">Sign in as admin to manage curated member news.</p>
+      </div>
+      <div class="admin-card">
+        <div class="member-actions">
+          <label for="news-filter-status" class="muted">Filter</label>
+          <select id="news-filter-status" disabled>
+            <option value="all">All statuses</option>
+            <option value="published">Published</option>
+            <option value="draft">Draft</option>
+            <option value="archived">Archived</option>
+          </select>
+          <button id="refresh-news" type="button" disabled>Refresh news</button>
+        </div>
+        <div class="table-shell">
+          <table class="member-table">
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>Status</th>
+                <th>Pinned</th>
+                <th>Published</th>
+                <th>Updated</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="news-table-body">
+              <tr><td colspan="6" class="muted">Sign in as admin to load member news posts.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+     </div>
+
      <div id="module-reports" class="module-section">
       <div class="admin-card" data-admin-panel="reporting_dashboard">
         <h3>Reporting and Exports Dashboard</h3>
@@ -2309,17 +3860,57 @@ export function renderAdminPage(config) {
       <script>
         const DEFAULT_IMPORT_ACTIVATION_POLICY = "password_change_required";
         
-        function handleHashChange() {
-           const hash = window.location.hash || '#access';
-           document.querySelectorAll('.module-nav-link').forEach(l => l.classList.toggle('active', l.getAttribute('href') === hash));
-           document.querySelectorAll('.module-section').forEach(s => s.classList.remove('active'));
-           const target = document.getElementById('module-' + hash.substring(1));
-           if (target) {
-             target.classList.add('active');
-           } else {
-             document.getElementById('module-access').classList.add('active');
-           }
+        const ADMIN_MODULES = ["access", "overview", "members", "fees", "imports", "events", "notifications", "news", "reports"];
+
+        function getToken() {
+          return sessionStorage.getItem("iwfsa_admin_token");
         }
+
+        function clearStoredAdminSession() {
+          sessionStorage.removeItem("iwfsa_admin_token");
+          sessionStorage.removeItem("iwfsa_admin_role");
+          sessionStorage.removeItem("iwfsa_admin_username");
+          sessionStorage.removeItem("iwfsa_admin_expires_at");
+        }
+
+        function isStoredAdminSessionExpired() {
+          const expiresAt = sessionStorage.getItem("iwfsa_admin_expires_at") || "";
+          const expiresAtMs = Date.parse(expiresAt);
+          return !expiresAt || !Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now();
+        }
+
+        function showAdminModule(moduleName, { scroll = false } = {}) {
+          const isSignedIn = Boolean(getToken());
+          const nextModule = ADMIN_MODULES.includes(moduleName)
+            ? moduleName
+            : isSignedIn ? "overview" : "access";
+          if (window.location.hash.substring(1) !== nextModule) {
+            window.location.hash = "#" + nextModule;
+          }
+          handleHashChange();
+          if (scroll) {
+            const target = document.getElementById("module-" + nextModule) || document.getElementById("admin-session-bar");
+            target?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        }
+
+        function handleHashChange() {
+           const isSignedIn = Boolean(getToken());
+           const requestedModule = window.location.hash.substring(1) || (isSignedIn ? "overview" : "access");
+           let activeModule = ADMIN_MODULES.includes(requestedModule) ? requestedModule : isSignedIn ? "overview" : "access";
+           if (!isSignedIn && activeModule !== "access") {
+              activeModule = "access";
+           }
+
+           document.querySelectorAll('.module-nav-link').forEach(link => {
+              link.classList.toggle('active', link.getAttribute('data-module') === activeModule);
+           });
+
+           document.querySelectorAll('.module-section').forEach(section => {
+              section.classList.toggle('active', section.id === 'module-' + activeModule);
+           });
+        }
+
         window.addEventListener('hashchange', handleHashChange);
         handleHashChange();
 
@@ -2327,6 +3918,8 @@ export function renderAdminPage(config) {
         const adminPanelGrid = document.getElementById("admin-panel-grid");
         const status = document.getElementById("login-status");
         const logoutButton = document.getElementById("admin-logout");
+        const adminSessionBar = document.getElementById("admin-session-bar");
+        const adminSessionSummary = document.getElementById("admin-session-summary");
         const usernameInput = document.getElementById("admin-username");
         const passwordInput = document.getElementById("admin-password");
         const memberStatus = document.getElementById("member-status");
@@ -2364,6 +3957,12 @@ export function renderAdminPage(config) {
         const eventInternalCommentStatus = document.getElementById("event-internal-comment-status");
         const eventAudienceInput = document.getElementById("event-audience");
         const eventAudienceGroups = document.getElementById("event-audience-groups");
+        const eventInviteeSearchInput = document.getElementById("event-invitee-search");
+        const eventInviteeResults = document.getElementById("event-invitee-results");
+        const eventSelectedInvitees = document.getElementById("event-selected-invitees");
+        const eventInviteeClearButton = document.getElementById("event-invitee-clear");
+        const eventAttachmentInput = document.getElementById("event-attachment");
+        const eventPublishNowInput = document.getElementById("event-publish-now");
         const eventSubmitButton = document.getElementById("event-submit");
         const eventCancelButton = document.getElementById("event-cancel");
         const eventStatus = document.getElementById("event-status");
@@ -2383,6 +3982,17 @@ export function renderAdminPage(config) {
         const queueTableBody = document.getElementById("queue-table-body");
         const queueSummary = document.getElementById("queue-summary");
         const refreshQueueButton = document.getElementById("refresh-queue");
+        const newsForm = document.getElementById("news-form");
+        const newsTitleInput = document.getElementById("news-title");
+        const newsBodyInput = document.getElementById("news-body");
+        const newsStatusInput = document.getElementById("news-status");
+        const newsPinnedInput = document.getElementById("news-is-pinned");
+        const newsSubmitButton = document.getElementById("news-submit");
+        const newsCancelButton = document.getElementById("news-cancel");
+        const newsStatusText = document.getElementById("news-status-text");
+        const newsFilterStatusInput = document.getElementById("news-filter-status");
+        const refreshNewsButton = document.getElementById("refresh-news");
+        const newsTableBody = document.getElementById("news-table-body");
         const importSubmitButton = document.getElementById("import-submit");
         const importForm = document.getElementById("import-form");
         const importFileInput = document.getElementById("import-file");
@@ -2391,6 +4001,9 @@ export function renderAdminPage(config) {
         const importUsernamePolicyInput = document.getElementById("import-username-policy");
         const importActivationPolicyInput = document.getElementById("import-activation-policy");
         const importInvitePolicyInput = document.getElementById("import-invite-policy");
+        const importMembershipCycleYearInput = document.getElementById("import-membership-cycle-year");
+        const importMembershipCategoryDefaultInput = document.getElementById("import-membership-category-default");
+        const importStandingDefaultInput = document.getElementById("import-standing-default");
         const importSendInvitesInput = document.getElementById("import-send-invites");
         const importBatchIdInput = document.getElementById("import-batch-id");
         const refreshImportBatchButton = document.getElementById("refresh-import-batch");
@@ -2410,6 +4023,9 @@ export function renderAdminPage(config) {
         const importDetailUsernamePolicy = document.getElementById("import-detail-username-policy");
         const importDetailActivationPolicy = document.getElementById("import-detail-activation-policy");
         const importDetailInvitePolicy = document.getElementById("import-detail-invite-policy");
+        const importDetailMembershipYear = document.getElementById("import-detail-membership-year");
+        const importDetailMembershipCategory = document.getElementById("import-detail-membership-category");
+        const importDetailStandingDefault = document.getElementById("import-detail-standing-default");
         const importDetailBlockingIssues = document.getElementById("import-detail-blocking-issues");
         const importDetailInvites = document.getElementById("import-detail-invites");
         const importRowsBody = document.getElementById("import-rows-body");
@@ -2440,9 +4056,46 @@ export function renderAdminPage(config) {
         const addModeratorButton = document.getElementById("add-moderator");
         const moderatorTableBody = document.getElementById("moderator-table-body");
         const moderatorStatus = document.getElementById("moderator-status");
+        const feeCycleYearInput = document.getElementById("fee-cycle-year");
+        const feeRefreshButton = document.getElementById("fee-refresh");
+        const feeCycleCreateYearInput = document.getElementById("fee-cycle-create-year");
+        const feeCycleDueDateInput = document.getElementById("fee-cycle-due-date");
+        const feeCycleStatusInput = document.getElementById("fee-cycle-status");
+        const feeCycleSaveButton = document.getElementById("fee-cycle-save");
+        const feeCycleStatusText = document.getElementById("fee-cycle-status-text");
+        const feeMemberCount = document.getElementById("fee-member-count");
+        const feeSearchInput = document.getElementById("fee-search");
+        const feeStandingFilterInput = document.getElementById("fee-standing-filter");
+        const feeAccountFilterInput = document.getElementById("fee-account-filter");
+        const feeCategoryFilterInput = document.getElementById("fee-category-filter");
+        const feeProfileFilterInput = document.getElementById("fee-profile-filter");
+        const feeFiltersApplyButton = document.getElementById("fee-filters-apply");
+        const feeFiltersResetButton = document.getElementById("fee-filters-reset");
+        const feeBulkBar = document.getElementById("fee-bulk-bar");
+        const feeBulkCount = document.getElementById("fee-bulk-count");
+        const feeBulkStandingInput = document.getElementById("fee-bulk-standing");
+        const feeBulkAccessInput = document.getElementById("fee-bulk-access");
+        const feeBulkReasonInput = document.getElementById("fee-bulk-reason");
+        const feeBulkApplyButton = document.getElementById("fee-bulk-apply");
+        const feeBulkReminderButton = document.getElementById("fee-bulk-remind");
+        const feeSelectAllMembersInput = document.getElementById("fee-select-all-members");
+        const feeMembersStatus = document.getElementById("fee-members-status");
+        const feeMembersTableBody = document.getElementById("fee-members-table-body");
+        const feeKpiTotalMembers = document.getElementById("fee-kpi-total-members");
+        const feeKpiActiveMembers = document.getElementById("fee-kpi-active-members");
+        const feeKpiGoodStanding = document.getElementById("fee-kpi-good-standing");
+        const feeKpiOutstandingMembers = document.getElementById("fee-kpi-outstanding-members");
+        const feeKpiBlockedMembers = document.getElementById("fee-kpi-blocked-members");
+        const feeKpiDeactivatedMembers = document.getElementById("fee-kpi-deactivated-members");
+        const feeKpiOnboardingMembers = document.getElementById("fee-kpi-onboarding-members");
+        const feeKpiFeesCollected = document.getElementById("fee-kpi-fees-collected");
+        const feeKpiOutstandingBalance = document.getElementById("fee-kpi-outstanding-balance");
 
         if (importActivationPolicyInput && !importActivationPolicyInput.value) {
           importActivationPolicyInput.value = DEFAULT_IMPORT_ACTIVATION_POLICY;
+        }
+        if (importMembershipCycleYearInput && !importMembershipCycleYearInput.value) {
+          importMembershipCycleYearInput.value = String(new Date().getFullYear());
         }
 
         function toIsoStringFromLocalInput(value) {
@@ -2493,20 +4146,27 @@ export function renderAdminPage(config) {
         let activeEventSnapshot = null;
         let selectedEventIds = new Set();
         let currentEvents = [];
+        const selectedEventInvitees = new Map();
 
         function resolveEventAudienceSelection(formData) {
           const selectedGroups = selectedEventGroups();
-          if (selectedGroups.length > 0) {
-            return { audienceType: "groups", groupNames: selectedGroups, audienceCode: "groups" };
+          const inviteeUserIds = selectedEventInviteeIds();
+          if (selectedGroups.length > 0 || inviteeUserIds.length > 0) {
+            return {
+              audienceType: "groups",
+              groupNames: selectedGroups,
+              inviteeUserIds,
+              audienceCode: "groups"
+            };
           }
           const audienceCode = String(formData.get("audienceCode") || "all_members").trim() || "all_members";
           if (audienceCode !== "all_members") {
             const label = eventAudienceInput?.selectedOptions?.[0]?.textContent || "";
             if (label && label.toLowerCase() !== "legacy audience") {
-              return { audienceType: "groups", groupNames: [label], audienceCode: "groups" };
+              return { audienceType: "groups", groupNames: [label], inviteeUserIds, audienceCode: "groups" };
             }
           }
-          return { audienceCode };
+          return { audienceCode, inviteeUserIds };
         }
 
         function buildEventPayload(formData) {
@@ -2556,9 +4216,9 @@ export function renderAdminPage(config) {
             return { error: errors[0] };
           }
 
-          if (audienceSelection.groupNames && audienceSelection.groupNames.length === 0) {
+          if (audienceSelection.audienceType === "groups" && !(audienceSelection.groupNames || []).length && !(audienceSelection.inviteeUserIds || []).length) {
             markEventFieldError(eventAudienceInput);
-            return { error: "Select at least one group for group-only events." };
+            return { error: "Select at least one group or individual member for targeted events." };
           }
 
           return {
@@ -2629,9 +4289,9 @@ export function renderAdminPage(config) {
             originalEvent.audienceCode ||
             originalEvent.audienceType ||
             "all_members";
-          if (resolvedAudienceCode === "groups" && !(audienceSelection.groupNames || []).length) {
+          if (resolvedAudienceCode === "groups" && !(audienceSelection.groupNames || []).length && !(audienceSelection.inviteeUserIds || []).length) {
             markEventFieldError(eventAudienceInput);
-            errors.push("Select at least one group for group-only events.");
+            errors.push("Select at least one group or individual member for targeted events.");
           }
           if (errors.length > 0) {
             return { error: errors[0] };
@@ -2716,11 +4376,26 @@ export function renderAdminPage(config) {
         let authToken = sessionStorage.getItem("iwfsa_admin_token");
         let authRole = sessionStorage.getItem("iwfsa_admin_role") || "";
         let authUsername = sessionStorage.getItem("iwfsa_admin_username") || "";
+        let authExpiresAt = sessionStorage.getItem("iwfsa_admin_expires_at") || "";
+        if (authToken && isStoredAdminSessionExpired()) {
+          clearStoredAdminSession();
+          authToken = null;
+          authRole = "";
+          authUsername = "";
+          authExpiresAt = "";
+        }
         let activeImportBatch = null;
         let activeImportBatchId = "";
         let importRowsCache = [];
         let activeImportRowId = 0;
         let importRestoreRequested = false;
+        let activeNewsPostId = null;
+        let newsItemsCache = [];
+        let membershipFeeCycles = [];
+        let membershipFeeOverview = null;
+        let membershipFeeMembers = [];
+        let membershipFeeCategories = [];
+        let selectedMembershipFeeUserIds = new Set();
         const IMPORT_BATCH_STORAGE_KEY = "iwfsa_admin_last_import_batch_v1";
 
         function hideHostSuggestions() {
@@ -2872,6 +4547,123 @@ export function renderAdminPage(config) {
           });
         }
 
+        function eventInviteeId(member) {
+          const id = Number(member?.userId || member?.id || 0);
+          return Number.isInteger(id) && id > 0 ? id : 0;
+        }
+
+        function eventInviteeLabel(member) {
+          return String(member?.fullName || member?.username || member?.email || "Member").trim();
+        }
+
+        function selectedEventInviteeIds() {
+          return Array.from(selectedEventInvitees.keys()).filter((id) => Number.isInteger(id) && id > 0);
+        }
+
+        function renderEventInviteeSelections() {
+          if (!eventSelectedInvitees) return;
+          const selected = Array.from(selectedEventInvitees.values());
+          if (selected.length === 0) {
+            eventSelectedInvitees.innerHTML = "<p class='muted'>No individual members selected yet.</p>";
+            return;
+          }
+          eventSelectedInvitees.innerHTML = selected
+            .map((member) => {
+              const id = eventInviteeId(member);
+              const label = eventInviteeLabel(member);
+              const detail = member.email ? "<span>" + escapeClientHtml(member.email) + "</span>" : "";
+              return (
+                "<span class='invitee-chip'>" +
+                "<span><strong>" + escapeClientHtml(label) + "</strong>" + detail + "</span>" +
+                "<button type='button' data-remove-event-invitee='" + id + "' aria-label='Remove " + escapeClientHtml(label) + "'>Remove</button>" +
+                "</span>"
+              );
+            })
+            .join("");
+        }
+
+        function renderEventInviteeResults(term = "") {
+          if (!eventInviteeResults) return;
+          const query = String(term || eventInviteeSearchInput?.value || "").trim().toLowerCase();
+          const source = Array.isArray(memberDirectorySource)
+            ? memberDirectorySource.filter((member) => !member.status || member.status === "active")
+            : [];
+          if (source.length === 0) {
+            eventInviteeResults.innerHTML = authToken
+              ? "<p class='muted'>No active members are available to invite yet.</p>"
+              : "<p class='muted'>Sign in and load members to search the directory.</p>";
+            return;
+          }
+          if (!query) {
+            eventInviteeResults.innerHTML = "<p class='muted'>Start typing a member name or email to add individual invitees.</p>";
+            return;
+          }
+          const matches = source
+            .filter((member) => {
+              const id = eventInviteeId(member);
+              if (!id || selectedEventInvitees.has(id)) return false;
+              const haystack = [member.fullName, member.username, member.email, member.organisation || member.company, ...(Array.isArray(member.groups) ? member.groups : [])]
+                .map((value) => String(value || "").toLowerCase())
+                .join(" ");
+              return haystack.includes(query);
+            })
+            .slice(0, 8);
+          if (matches.length === 0) {
+            eventInviteeResults.innerHTML = "<p class='muted'>No matching active members found.</p>";
+            return;
+          }
+          eventInviteeResults.innerHTML = matches
+            .map((member) => {
+              const id = eventInviteeId(member);
+              const label = eventInviteeLabel(member);
+              const detailParts = [member.email, member.organisation || member.company].filter(Boolean).join(" | ");
+              return (
+                "<button type='button' class='invitee-result' data-add-event-invitee='" + id + "'>" +
+                "<strong>" + escapeClientHtml(label) + "</strong>" +
+                (detailParts ? "<span>" + escapeClientHtml(detailParts) + "</span>" : "") +
+                "</button>"
+              );
+            })
+            .join("");
+        }
+
+        function setEventInviteeSelections(items = []) {
+          selectedEventInvitees.clear();
+          const list = Array.isArray(items) ? items : [];
+          for (const item of list) {
+            const candidate = typeof item === "number" ? { id: item } : item;
+            const id = eventInviteeId(candidate);
+            if (!id) continue;
+            const member = memberDirectorySource.find((entry) => eventInviteeId(entry) === id) || candidate;
+            selectedEventInvitees.set(id, member);
+          }
+          if (eventInviteeSearchInput) {
+            eventInviteeSearchInput.value = "";
+          }
+          renderEventInviteeSelections();
+          renderEventInviteeResults();
+        }
+
+        async function uploadAdminEventAttachment(eventId, file, token) {
+          if (!file) return null;
+          const formData = new FormData();
+          formData.set("documentType", "attachment");
+          formData.set("availabilityMode", "immediate");
+          formData.set("memberAccessScope", "all_visible");
+          formData.set("publishNow", "true");
+          formData.set("file", file, file.name || "event-attachment.txt");
+          const response = await fetch("${config.apiBaseUrl}/api/events/" + String(eventId) + "/documents", {
+            method: "POST",
+            headers: { Authorization: "Bearer " + token },
+            body: formData
+          });
+          const json = await response.json();
+          if (!response.ok) {
+            throw new Error(json.message || "The meeting was saved, but the attachment could not be uploaded.");
+          }
+          return json.item || null;
+        }
+
         function selectedMemberGroups() {
           if (!memberAddGroups) {
             return [];
@@ -2988,6 +4780,13 @@ export function renderAdminPage(config) {
           activeEventSnapshot = null;
           eventForm.reset();
           setEventGroupSelections([]);
+          setEventInviteeSelections([]);
+          if (eventAttachmentInput) {
+            eventAttachmentInput.value = "";
+          }
+          if (eventPublishNowInput) {
+            eventPublishNowInput.checked = false;
+          }
           resetEventFormValidation();
           if (eventSubmitButton) {
             eventSubmitButton.textContent = "Create meeting";
@@ -3131,6 +4930,13 @@ export function renderAdminPage(config) {
           } else {
             setEventGroupSelections([]);
           }
+          setEventInviteeSelections(eventItem.audienceInvitees || []);
+          if (eventAttachmentInput) {
+            eventAttachmentInput.value = "";
+          }
+          if (eventPublishNowInput) {
+            eventPublishNowInput.checked = false;
+          }
           resetEventFormValidation();
           if (eventSubmitButton) {
             eventSubmitButton.textContent = "Update meeting";
@@ -3227,10 +5033,12 @@ export function renderAdminPage(config) {
           });
         }
 
-        function setAuthToken(token, role, username) {
+        function setAuthToken(token, role, username, expiresAt) {
           authToken = token || null;
           authRole = role || authRole || "";
           authUsername = username || authUsername || "";
+          authExpiresAt = expiresAt || authExpiresAt || "";
+          document.body.classList.toggle("admin-signed-in", Boolean(authToken));
           if (authToken) {
             sessionStorage.setItem("iwfsa_admin_token", authToken);
             if (authRole) {
@@ -3239,12 +5047,16 @@ export function renderAdminPage(config) {
             if (authUsername) {
               sessionStorage.setItem("iwfsa_admin_username", authUsername);
             }
+            if (authExpiresAt) {
+              sessionStorage.setItem("iwfsa_admin_expires_at", authExpiresAt);
+            } else {
+              sessionStorage.removeItem("iwfsa_admin_expires_at");
+            }
           } else {
-            sessionStorage.removeItem("iwfsa_admin_token");
-            sessionStorage.removeItem("iwfsa_admin_role");
-            sessionStorage.removeItem("iwfsa_admin_username");
+            clearStoredAdminSession();
             authRole = "";
             authUsername = "";
+            authExpiresAt = "";
           }
           if (status) {
             status.textContent = authToken
@@ -3257,8 +5069,20 @@ export function renderAdminPage(config) {
           if (form) {
             form.hidden = Boolean(authToken);
           }
+          if (adminSessionBar) {
+            adminSessionBar.hidden = !authToken;
+          }
+          if (adminSessionSummary) {
+            adminSessionSummary.textContent = authToken
+              ? "Signed in as " +
+                (authUsername || "admin") +
+                (authRole ? " (" + authRole + ")" : "") +
+                ". Full admin editing is enabled for member and event operations."
+              : "Not signed in.";
+          }
           if (logoutButton) {
             logoutButton.disabled = !authToken;
+            logoutButton.hidden = !authToken;
           }
           refreshEventsButton.disabled = !authToken;
           dispatchRemindersButton.disabled = !authToken || !canUseAdminActions();
@@ -3280,6 +5104,38 @@ export function renderAdminPage(config) {
           reportWindowDaysInput.disabled = !authToken;
           addModeratorButton.disabled = !authToken;
           moderatorUserIdInput.disabled = !authToken;
+          const canManageFees = Boolean(authToken) && canUseAdminActions();
+          feeCycleYearInput.disabled = !canManageFees;
+          feeRefreshButton.disabled = !canManageFees;
+          feeCycleCreateYearInput.disabled = !canManageFees;
+          feeCycleDueDateInput.disabled = !canManageFees;
+          feeCycleStatusInput.disabled = !canManageFees;
+          feeCycleSaveButton.disabled = !canManageFees;
+          feeSearchInput.disabled = !canManageFees;
+          feeStandingFilterInput.disabled = !canManageFees;
+          feeAccountFilterInput.disabled = !canManageFees;
+          feeCategoryFilterInput.disabled = !canManageFees;
+          feeProfileFilterInput.disabled = !canManageFees;
+          feeFiltersApplyButton.disabled = !canManageFees;
+          feeFiltersResetButton.disabled = !canManageFees;
+          feeBulkStandingInput.disabled = !canManageFees;
+          feeBulkAccessInput.disabled = !canManageFees;
+          feeBulkReasonInput.disabled = !canManageFees;
+          feeSelectAllMembersInput.disabled = !canManageFees;
+          updateMembershipFeeBulkBar();
+          const canManageNews = Boolean(authToken) && canUseAdminActions();
+          refreshNewsButton.disabled = !authToken || !canManageNews;
+          newsFilterStatusInput.disabled = !authToken || !canManageNews;
+          if (newsForm) {
+            Array.from(newsForm.elements || []).forEach((element) => {
+              if (element instanceof HTMLElement) {
+                element.toggleAttribute("disabled", !canManageNews);
+              }
+            });
+          }
+          if (newsSubmitButton) {
+            newsSubmitButton.disabled = !canManageNews;
+          }
           if (!authToken) {
             importRestoreRequested = false;
             resetImportView("Sign in to run imports.");
@@ -3291,11 +5147,59 @@ export function renderAdminPage(config) {
             moderatorStatus.textContent = "Sign in to manage moderators.";
             moderatorTableBody.innerHTML = "<tr><td colspan='4' class='muted'>Sign in to load moderators.</td></tr>";
             moderatorUserIdInput.innerHTML = "<option value=''>Select member</option>";
+            newsStatusText.textContent = "Sign in as admin to manage curated member news.";
+            newsTableBody.innerHTML = "<tr><td colspan='6' class='muted'>Sign in as admin to load member news posts.</td></tr>";
+            activeNewsPostId = null;
+            newsItemsCache = [];
+            resetMembershipFeesView("Sign in as admin to manage membership fee records.");
           } else {
             importStatus.textContent = "Run dry-run to create a new batch, or load an existing batch id.";
             updateImportButtons();
-            void restoreImportBatchContext();
+            newsStatusText.textContent = canUseAdminActions()
+              ? "Create or edit curated IWFSA news for members."
+              : "Only admin and chief admin roles can manage member news.";
+            if (canUseAdminActions()) {
+              feeCycleStatusText.textContent = "Membership cycle and standing workspace ready.";
+              feeMembersStatus.textContent = "Use refresh to load membership fee records.";
+            } else {
+              resetMembershipFeesView("Only admin and chief admin roles can manage membership fee records.");
+            }
           }
+        }
+
+        function clearAdminAuthOnUnauthorized(response) {
+          if (!response || response.status !== 401) {
+            return false;
+          }
+          setAuthToken(null, "", "");
+          window.location.hash = "#access";
+          if (status) {
+            status.textContent = "Admin session expired. Please sign in again.";
+          }
+          return true;
+        }
+
+        async function loadAdminWorkspace() {
+          if (!authToken) {
+            return;
+          }
+          await loadMembers();
+          if (!authToken) return;
+          await loadMembershipFeesWorkspace({ reloadCycles: true });
+          if (!authToken) return;
+          await loadEvents();
+          if (!authToken) return;
+          await restoreImportBatchContext();
+          if (!authToken) return;
+          await loadDeliveries();
+          if (!authToken) return;
+          await loadQueueStatus();
+          if (!authToken) return;
+          await loadAdminNews();
+          if (!authToken) return;
+          await loadReports();
+          if (!authToken) return;
+          await loadModerators();
         }
 
         const ADMIN_HELP_STORAGE_KEY = "iwfsa_admin_help_v1";
@@ -3320,7 +5224,15 @@ export function renderAdminPage(config) {
           "refresh-events": "Refresh Event Hub cards from the API.",
           "dispatch-reminders": "Send due registration reminders now.",
           "refresh-deliveries": "Reload recent notification delivery outcomes.",
-          "refresh-queue": "Reload notification queue status rows."
+          "refresh-queue": "Reload notification queue status rows.",
+          "fee-cycle-year": "Select the membership cycle year to review or edit.",
+          "fee-cycle-save": "Create or update a membership cycle and control open/closed status.",
+          "fee-search": "Find members by name, email, company, category, or committee labels.",
+          "fee-filters-apply": "Apply standing/account/profile filters to the membership fee grid.",
+          "fee-refresh": "Reload cycle summary and membership fee records from the API.",
+          "refresh-news": "Reload the curated member news feed.",
+          "news-submit": "Create or update a curated member news post.",
+          "news-is-pinned": "Pin this update to keep it at the top of member news.",
         };
 
         function safeParseJson(text) {
@@ -3757,6 +5669,283 @@ export function renderAdminPage(config) {
           }
         }
 
+        function formatNewsStatus(value) {
+          if (value === "draft") return "Draft";
+          if (value === "published") return "Published";
+          if (value === "archived") return "Archived";
+          return value || "Unknown";
+        }
+
+        function newsStatusTone(value) {
+          if (value === "draft") return "status-draft";
+          if (value === "published") return "status-published";
+          return "status-neutral";
+        }
+
+        function resetNewsComposer(message) {
+          activeNewsPostId = null;
+          if (newsForm) {
+            newsForm.reset();
+          }
+          if (newsStatusInput) {
+            newsStatusInput.value = "draft";
+          }
+          if (newsPinnedInput) {
+            newsPinnedInput.checked = false;
+          }
+          if (newsSubmitButton) {
+            newsSubmitButton.textContent = "Create news post";
+          }
+          if (newsCancelButton) {
+            newsCancelButton.hidden = true;
+          }
+          if (message && newsStatusText) {
+            newsStatusText.textContent = message;
+          }
+        }
+
+        function beginNewsEdit(newsItem) {
+          if (!newsItem) {
+            return;
+          }
+          activeNewsPostId = Number(newsItem.id || 0) || null;
+          newsTitleInput.value = String(newsItem.title || "");
+          newsBodyInput.value = String(newsItem.body || "");
+          newsStatusInput.value = String(newsItem.status || "draft");
+          if (newsPinnedInput) {
+            newsPinnedInput.checked = Boolean(newsItem.isPinned);
+          }
+          if (newsSubmitButton) {
+            newsSubmitButton.textContent = "Save changes";
+          }
+          if (newsCancelButton) {
+            newsCancelButton.hidden = false;
+          }
+          newsStatusText.textContent = "Editing news post #" + String(newsItem.id || "") + ".";
+          newsForm.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+
+        function renderAdminNews(items) {
+          const rows = Array.isArray(items) ? items : [];
+          if (rows.length === 0) {
+            newsTableBody.innerHTML = "<tr><td colspan='6' class='muted'>No member news posts match this filter.</td></tr>";
+            return;
+          }
+
+          newsTableBody.innerHTML = rows
+            .map((item) => {
+              const status = String(item.status || "draft");
+              const isPinned = Boolean(item.isPinned);
+              const bodyText = String(item.body || "");
+              const bodyPreview = bodyText.slice(0, 140) + (bodyText.length > 140 ? "..." : "");
+              const publishedAt = item.publishedAt ? new Date(item.publishedAt).toLocaleString() : "Not published";
+              const updatedAt = item.updatedAt ? new Date(item.updatedAt).toLocaleString() : "n/a";
+              const pinCell = isPinned
+                ? "<span class='status-pill status-active'>Pinned</span>"
+                : "<span class='muted'>No</span>";
+              const actions = canUseAdminActions()
+                ? [
+                    "<button type='button' class='ghost' data-news-edit-id='" + escapeClientHtml(item.id) + "'>Edit</button>",
+                    status !== "published"
+                      ? "<button type='button' data-news-publish-id='" + escapeClientHtml(item.id) + "'>Publish</button>"
+                      : "",
+                    status !== "archived"
+                      ? "<button type='button' class='ghost' data-news-pin-id='" + escapeClientHtml(item.id) + "' data-news-pin-value='" + (isPinned ? "0" : "1") + "'>" + (isPinned ? "Unpin" : "Pin to top") + "</button>"
+                      : "",
+                    status !== "archived"
+                      ? "<button type='button' class='ghost' data-news-archive-id='" + escapeClientHtml(item.id) + "'>Archive</button>"
+                      : ""
+                  ]
+                    .filter(Boolean)
+                    .join(" ")
+                : "<span class='muted'>Admin only</span>";
+
+              return (
+                "<tr>" +
+                "<td><strong>" +
+                escapeClientHtml(item.title || "IWFSA Update") +
+                "</strong><br /><span class='muted'>" +
+                escapeClientHtml(bodyPreview) +
+                "</span></td>" +
+                "<td><span class='status-pill " +
+                newsStatusTone(status) +
+                "'>" +
+                escapeClientHtml(formatNewsStatus(status)) +
+                "</span></td>" +
+                "<td>" +
+                pinCell +
+                "</td>" +
+                "<td>" +
+                escapeClientHtml(publishedAt) +
+                "</td>" +
+                "<td>" +
+                escapeClientHtml(updatedAt) +
+                "</td>" +
+                "<td>" +
+                actions +
+                "</td>" +
+                "</tr>"
+              );
+            })
+            .join("");
+        }
+
+        async function loadAdminNews() {
+          if (!authToken) {
+            newsStatusText.textContent = "Sign in as admin to manage curated member news.";
+            newsTableBody.innerHTML = "<tr><td colspan='6' class='muted'>Sign in as admin to load member news posts.</td></tr>";
+            return;
+          }
+          if (!canUseAdminActions()) {
+            newsStatusText.textContent = "Only admin and chief admin roles can manage member news.";
+            newsTableBody.innerHTML = "<tr><td colspan='6' class='muted'>Your role does not have member news publishing access.</td></tr>";
+            return;
+          }
+
+          newsStatusText.textContent = "Loading member news posts...";
+          newsTableBody.innerHTML = "<tr><td colspan='6' class='muted'>Loading member news posts...</td></tr>";
+          try {
+            const statusFilter = String(newsFilterStatusInput.value || "all");
+            const response = await fetch(
+              "${config.apiBaseUrl}/api/admin/news?status=" + encodeURIComponent(statusFilter) + "&limit=100",
+              {
+                headers: { Authorization: "Bearer " + authToken }
+              }
+            );
+            const json = await response.json();
+            if (!response.ok) {
+              newsStatusText.textContent = json.message || "Unable to load member news posts.";
+              newsTableBody.innerHTML = "<tr><td colspan='6' class='muted'>Unable to load member news posts.</td></tr>";
+              return;
+            }
+
+            newsItemsCache = Array.isArray(json.items) ? json.items : [];
+            renderAdminNews(newsItemsCache);
+            newsStatusText.textContent = "Loaded " + String(newsItemsCache.length) + " news post(s).";
+          } catch {
+            newsStatusText.textContent = "Unable to reach API for member news.";
+            newsTableBody.innerHTML = "<tr><td colspan='6' class='muted'>Unable to reach API for member news.</td></tr>";
+          }
+        }
+
+        async function saveAdminNews(event) {
+          event.preventDefault();
+          if (!authToken || !canUseAdminActions()) {
+            newsStatusText.textContent = "Only admin and chief admin roles can manage member news.";
+            return;
+          }
+
+          const title = String(newsTitleInput.value || "").trim();
+          const body = String(newsBodyInput.value || "").trim();
+          const statusValue = String(newsStatusInput.value || "draft").trim();
+          const isPinned = Boolean(newsPinnedInput && newsPinnedInput.checked);
+          if (!title || !body) {
+            newsStatusText.textContent = "Title and body are required.";
+            return;
+          }
+
+          const isEdit = Number.isInteger(activeNewsPostId) && activeNewsPostId > 0;
+          newsStatusText.textContent = isEdit ? "Saving news changes..." : "Creating news post...";
+          try {
+            const response = await fetch(
+              isEdit
+                ? "${config.apiBaseUrl}/api/admin/news/" + String(activeNewsPostId)
+                : "${config.apiBaseUrl}/api/admin/news",
+              {
+                method: isEdit ? "PATCH" : "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: "Bearer " + authToken
+                },
+                body: JSON.stringify({ title, body, status: statusValue, isPinned })
+              }
+            );
+            const json = await response.json();
+            if (!response.ok) {
+              newsStatusText.textContent = json.message || (isEdit ? "Unable to update news post." : "Unable to create news post.");
+              return;
+            }
+
+            resetNewsComposer(isEdit ? "News post updated." : "News post created.");
+            await loadAdminNews();
+          } catch {
+            newsStatusText.textContent = "Unable to reach API for member news.";
+          }
+        }
+
+        async function updateNewsPinnedState(newsId, shouldPin) {
+          if (!authToken || !canUseAdminActions()) {
+            newsStatusText.textContent = "Only admin and chief admin roles can manage member news.";
+            return;
+          }
+          newsStatusText.textContent = shouldPin ? "Pinning news post..." : "Removing pin...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/admin/news/" + String(newsId), {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer " + authToken
+              },
+              body: JSON.stringify({ isPinned: Boolean(shouldPin) })
+            });
+            const json = await response.json();
+            if (!response.ok) {
+              newsStatusText.textContent = json.message || "Unable to update pin state.";
+              return;
+            }
+            newsStatusText.textContent = shouldPin ? "News post pinned to top." : "News post unpinned.";
+            await loadAdminNews();
+          } catch {
+            newsStatusText.textContent = "Unable to reach API for member news.";
+          }
+        }
+
+        async function publishAdminNews(newsId) {
+          if (!authToken || !canUseAdminActions()) {
+            newsStatusText.textContent = "Only admin and chief admin roles can manage member news.";
+            return;
+          }
+          newsStatusText.textContent = "Publishing news post...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/admin/news/" + String(newsId) + "/publish", {
+              method: "POST",
+              headers: { Authorization: "Bearer " + authToken }
+            });
+            const json = await response.json();
+            if (!response.ok) {
+              newsStatusText.textContent = json.message || "Unable to publish news post.";
+              return;
+            }
+            newsStatusText.textContent = "News post published.";
+            await loadAdminNews();
+          } catch {
+            newsStatusText.textContent = "Unable to reach API for member news.";
+          }
+        }
+
+        async function archiveAdminNews(newsId) {
+          if (!authToken || !canUseAdminActions()) {
+            newsStatusText.textContent = "Only admin and chief admin roles can manage member news.";
+            return;
+          }
+          newsStatusText.textContent = "Archiving news post...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/admin/news/" + String(newsId) + "/archive", {
+              method: "POST",
+              headers: { Authorization: "Bearer " + authToken }
+            });
+            const json = await response.json();
+            if (!response.ok) {
+              newsStatusText.textContent = json.message || "Unable to archive news post.";
+              return;
+            }
+            newsStatusText.textContent = "News post archived.";
+            await loadAdminNews();
+          } catch {
+            newsStatusText.textContent = "Unable to reach API for member news.";
+          }
+        }
+
         async function loadMembers() {
           if (!authToken) {
             memberStatus.textContent = "Sign in to load members.";
@@ -3773,6 +5962,7 @@ export function renderAdminPage(config) {
             });
             const json = await response.json();
             if (!response.ok) {
+              if (clearAdminAuthOnUnauthorized(response)) return;
               memberStatus.textContent = json.message || "Unable to load members.";
               memberDirectorySource = [];
               memberTableBody.innerHTML = "<tr><td colspan='7' class='muted'>Unable to load members.</td></tr>";
@@ -3785,6 +5975,8 @@ export function renderAdminPage(config) {
             updateModeratorOptions();
             renderMemberGroupOptions();
             renderEventGroupOptions(selectedEventGroups());
+            renderEventInviteeResults(eventInviteeSearchInput?.value || "");
+            renderEventInviteeSelections();
             if (activeImportBatch) {
               renderImportRows(importRowsCache);
             }
@@ -3798,8 +5990,7 @@ export function renderAdminPage(config) {
           }
         }
 
-        if (logoutButton) {
-          logoutButton.addEventListener("click", async () => {
+        async function handleAdminLogout() {
             if (!authToken) {
               window.location.hash = "#access";
               return;
@@ -3816,8 +6007,11 @@ export function renderAdminPage(config) {
               setAuthToken(null, "");
               window.location.hash = "#access";
             }
-          });
         }
+
+        document.querySelectorAll("#admin-logout, .admin-session-logout").forEach((button) => {
+          button.addEventListener("click", handleAdminLogout);
+        });
 
         function updateModeratorOptions() {
           const items = Array.isArray(memberDirectorySource) ? memberDirectorySource : [];
@@ -3991,9 +6185,1066 @@ export function renderAdminPage(config) {
           }
         }
 
-          function sanitizeEmail(value) {
-            return String(value || "").trim();
+        const MEMBERSHIP_PAYMENT_STATUSES = ["paid", "outstanding", "partial", "waived", "pending_review"];
+        const MEMBERSHIP_STANDING_STATUSES = [
+          "good_standing",
+          "outstanding",
+          "partial",
+          "waived",
+          "pending_review",
+          "blocked",
+          "deactivated"
+        ];
+        const MEMBERSHIP_ACCESS_STATUSES = ["enabled", "blocked", "deactivated"];
+        const MEMBERSHIP_QUICK_ACTIONS = [
+          { value: "mark_paid", label: "Mark paid + good standing" },
+          { value: "mark_partial", label: "Mark partial" },
+          { value: "mark_waived", label: "Mark waived" },
+          { value: "mark_outstanding", label: "Mark outstanding" },
+          { value: "block", label: "Block member" },
+          { value: "deactivate", label: "Deactivate member" },
+          { value: "restore", label: "Restore access" }
+        ];
+
+        function sanitizeEmail(value) {
+          return String(value || "").trim();
+        }
+
+        function selectedMembershipFeeYear() {
+          const raw = String(feeCycleYearInput?.value || "").trim();
+          const parsed = Number(raw);
+          if (!Number.isInteger(parsed) || parsed < 2000 || parsed > 2100) {
+            return null;
           }
+          return parsed;
+        }
+
+        function normalizeMembershipStatusLabel(value) {
+          const normalized = String(value || "").trim().toLowerCase();
+          if (!normalized) return "Unknown";
+          if (normalized === "good_standing") return "Good standing";
+          if (normalized === "pending_review") return "Pending review";
+          if (normalized === "not_invited") return "Not invited";
+          return normalized
+            .split("_")
+            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(" ");
+        }
+
+        function membershipStatusTone(value, type = "generic") {
+          const normalized = String(value || "").trim().toLowerCase();
+          if (!normalized) return "status-neutral";
+          if (type === "account") {
+            if (normalized === "active") return "status-active";
+            if (normalized === "invited") return "status-invited";
+            if (normalized === "not_invited") return "status-not_invited";
+            if (normalized === "blocked" || normalized === "deactivated") return "status-suspended";
+            return "status-neutral";
+          }
+          if (type === "access") {
+            if (normalized === "enabled") return "status-active";
+            if (normalized === "blocked" || normalized === "deactivated") return "status-suspended";
+            return "status-neutral";
+          }
+          if (normalized === "paid" || normalized === "waived" || normalized === "good_standing") {
+            return "status-active";
+          }
+          if (normalized === "outstanding" || normalized === "partial" || normalized === "pending_review") {
+            return "status-pending";
+          }
+          if (normalized === "blocked" || normalized === "deactivated") {
+            return "status-suspended";
+          }
+          return "status-neutral";
+        }
+
+        function formatMembershipCurrency(value) {
+          const amount = Number(value || 0);
+          if (!Number.isFinite(amount)) {
+            return "R 0.00";
+          }
+          return "R " + amount.toFixed(2);
+        }
+
+        function formatMembershipDate(value) {
+          const raw = String(value || "").trim();
+          if (!raw) return "n/a";
+          const parsed = new Date(raw);
+          if (Number.isNaN(parsed.getTime())) {
+            return raw;
+          }
+          return parsed.toLocaleDateString();
+        }
+
+        function formatMembershipDateTime(value) {
+          const raw = String(value || "").trim();
+          if (!raw) return "n/a";
+          const parsed = new Date(raw);
+          if (Number.isNaN(parsed.getTime())) {
+            return raw;
+          }
+          return parsed.toLocaleString();
+        }
+
+        function toDateInputValue(value, fallbackYear) {
+          const raw = String(value || "").trim();
+          if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+            return raw;
+          }
+          const parsed = new Date(raw);
+          if (!Number.isNaN(parsed.getTime())) {
+            return parsed.toISOString().slice(0, 10);
+          }
+          const year = Number.isInteger(Number(fallbackYear)) ? Number(fallbackYear) : new Date().getFullYear();
+          return String(year) + "-03-31";
+        }
+
+        function selectedMembershipFeeFilters() {
+          return {
+            search: String(feeSearchInput?.value || "").trim(),
+            standingStatus: String(feeStandingFilterInput?.value || "all").trim() || "all",
+            accountStatus: String(feeAccountFilterInput?.value || "all").trim() || "all",
+            category: String(feeCategoryFilterInput?.value || "").trim(),
+            profileCompletion: String(feeProfileFilterInput?.value || "all").trim() || "all"
+          };
+        }
+
+        function membershipFeeMembersQueryString() {
+          const params = new URLSearchParams();
+          const membershipYear = selectedMembershipFeeYear();
+          if (membershipYear) {
+            params.set("membershipYear", String(membershipYear));
+          }
+          const filters = selectedMembershipFeeFilters();
+          if (filters.search) {
+            params.set("search", filters.search);
+          }
+          if (filters.standingStatus && filters.standingStatus !== "all") {
+            params.set("standingStatus", filters.standingStatus);
+          }
+          if (filters.accountStatus && filters.accountStatus !== "all") {
+            params.set("accountStatus", filters.accountStatus);
+          }
+          if (filters.category) {
+            params.set("category", filters.category);
+          }
+          if (filters.profileCompletion && filters.profileCompletion !== "all") {
+            params.set("profileCompletion", filters.profileCompletion);
+          }
+          params.set("limit", "1000");
+          return params.toString();
+        }
+
+        function feeRowStatusNode(userId) {
+          return document.getElementById("fee-row-status-" + String(userId || ""));
+        }
+
+        function setFeeRowStatus(userId, message) {
+          const node = feeRowStatusNode(userId);
+          if (!node) return;
+          node.textContent = message || "";
+        }
+
+        function resetMembershipFeeKpis() {
+          feeKpiTotalMembers.textContent = "0";
+          feeKpiActiveMembers.textContent = "0";
+          feeKpiGoodStanding.textContent = "0";
+          feeKpiOutstandingMembers.textContent = "0";
+          feeKpiBlockedMembers.textContent = "0";
+          feeKpiDeactivatedMembers.textContent = "0";
+          feeKpiOnboardingMembers.textContent = "0";
+          feeKpiFeesCollected.textContent = "R 0.00";
+          feeKpiOutstandingBalance.textContent = "R 0.00";
+        }
+
+        function renderMembershipFeeKpis(summary) {
+          const values = summary || {};
+          feeKpiTotalMembers.textContent = String(Number(values.totalMembers || 0));
+          feeKpiActiveMembers.textContent = String(Number(values.activeMembers || 0));
+          feeKpiGoodStanding.textContent = String(Number(values.goodStandingMembers || 0));
+          feeKpiOutstandingMembers.textContent = String(Number(values.outstandingMembers || 0));
+          feeKpiBlockedMembers.textContent = String(Number(values.blockedMembers || 0));
+          feeKpiDeactivatedMembers.textContent = String(Number(values.deactivatedMembers || 0));
+          feeKpiOnboardingMembers.textContent = String(Number(values.onboardingMembers || 0));
+          feeKpiFeesCollected.textContent = formatMembershipCurrency(values.feesCollected || 0);
+          feeKpiOutstandingBalance.textContent = formatMembershipCurrency(values.outstandingBalance || 0);
+        }
+
+        function updateMembershipFeeMemberCount(total) {
+          const count = Number(total || 0);
+          const cycleYear = selectedMembershipFeeYear();
+          feeMemberCount.textContent = cycleYear ? String(count) + " records for " + String(cycleYear) : String(count) + " records";
+        }
+
+        function renderMembershipFeeCategoryFilter() {
+          const current = String(feeCategoryFilterInput?.value || "").trim();
+          const options = ["<option value=''>All categories</option>"]
+            .concat(
+              membershipFeeCategories.map((category) => {
+                const selected = current && current.toLowerCase() === category.toLowerCase() ? " selected" : "";
+                return (
+                  "<option value='" +
+                  escapeClientHtml(category) +
+                  "'" +
+                  selected +
+                  ">" +
+                  escapeClientHtml(category) +
+                  "</option>"
+                );
+              })
+            )
+            .join("");
+          feeCategoryFilterInput.innerHTML = options;
+        }
+
+        function selectedMembershipCycleItem() {
+          const year = selectedMembershipFeeYear();
+          if (!year) return null;
+          return membershipFeeCycles.find((item) => Number(item.membershipYear) === year) || null;
+        }
+
+        function selectedMembershipFeeUserIdList() {
+          return Array.from(selectedMembershipFeeUserIds.values()).filter((id) => Number.isInteger(id) && id > 0);
+        }
+
+        function normalizeClientIdList(value) {
+          if (!Array.isArray(value)) {
+            return [];
+          }
+          return Array.from(
+            new Set(
+              value
+                .map((item) => Number(item))
+                .filter((item) => Number.isInteger(item) && item > 0)
+            )
+          );
+        }
+
+        function reconcileSelectedMembershipFeeRows(rows) {
+          const availableIds = new Set(
+            (Array.isArray(rows) ? rows : [])
+              .map((item) => Number(item.userId || 0))
+              .filter((id) => Number.isInteger(id) && id > 0)
+          );
+          selectedMembershipFeeUserIds = new Set(
+            selectedMembershipFeeUserIdList().filter((id) => availableIds.has(id))
+          );
+        }
+
+        function updateMembershipFeeBulkBar() {
+          if (!feeBulkBar || !feeBulkCount) {
+            return;
+          }
+          const count = selectedMembershipFeeUserIds.size;
+          const canBulk = Boolean(authToken) && canUseAdminActions();
+          feeBulkCount.textContent = String(count) + " selected";
+          feeBulkBar.hidden = count === 0 || !canBulk;
+          if (feeBulkApplyButton) {
+            feeBulkApplyButton.disabled = !canBulk || count === 0;
+          }
+          if (feeBulkReminderButton) {
+            feeBulkReminderButton.disabled = !canBulk || count === 0;
+          }
+          if (feeSelectAllMembersInput) {
+            const visibleIds = (membershipFeeMembers || [])
+              .map((item) => Number(item.userId || 0))
+              .filter((id) => Number.isInteger(id) && id > 0);
+            const selectedVisibleCount = visibleIds.filter((id) => selectedMembershipFeeUserIds.has(id)).length;
+            feeSelectAllMembersInput.checked = visibleIds.length > 0 && selectedVisibleCount === visibleIds.length;
+            feeSelectAllMembersInput.indeterminate = selectedVisibleCount > 0 && selectedVisibleCount < visibleIds.length;
+            feeSelectAllMembersInput.disabled = !canBulk || visibleIds.length === 0;
+          }
+        }
+
+        function renderMembershipFeeCycleOptions({ preserveSelection = true } = {}) {
+          const existingSelection = preserveSelection ? String(feeCycleYearInput?.value || "").trim() : "";
+          const activeYear = Number(membershipFeeOverview?.cycle?.membershipYear || 0) || Number(membershipFeeCycles[0]?.membershipYear || 0) || null;
+          const fallbackYear = activeYear || new Date().getFullYear();
+          const cycleRows = membershipFeeCycles
+            .map((cycle) => {
+              const yearValue = String(cycle.membershipYear || "");
+              const selected =
+                (existingSelection && existingSelection === yearValue) ||
+                (!existingSelection && activeYear && Number(yearValue) === Number(activeYear))
+                  ? " selected"
+                  : "";
+              const label = yearValue + " (" + normalizeMembershipStatusLabel(cycle.status || "draft").toLowerCase() + ")";
+              return (
+                "<option value='" +
+                escapeClientHtml(yearValue) +
+                "'" +
+                selected +
+                ">" +
+                escapeClientHtml(label) +
+                "</option>"
+              );
+            })
+            .join("");
+
+          if (!cycleRows) {
+            feeCycleYearInput.innerHTML = "<option value=''>No cycle yet</option>";
+            feeCycleYearInput.value = "";
+          } else {
+            feeCycleYearInput.innerHTML = cycleRows;
+          }
+
+          const selectedCycle = selectedMembershipCycleItem();
+          const defaultYear = selectedCycle?.membershipYear || fallbackYear;
+          feeCycleCreateYearInput.value = String(defaultYear);
+          feeCycleDueDateInput.value = toDateInputValue(selectedCycle?.dueDate, defaultYear);
+          feeCycleStatusInput.value = String(selectedCycle?.status || "open");
+        }
+
+        function membershipRoleBadges(item) {
+          const labels = Array.isArray(item?.committeeLabels) ? item.committeeLabels : [];
+          if (!labels.length) {
+            return "<span class='muted'>No committee labels</span>";
+          }
+          return (
+            "<div class='badge-row'>" +
+            labels.map((value) => "<span class='badge'>" + escapeClientHtml(String(value || "")) + "</span>").join("") +
+            "</div>"
+          );
+        }
+
+        function membershipActionOptions(values, selectedValue) {
+          const selected = String(selectedValue || "").trim().toLowerCase();
+          return values
+            .map((value) => {
+              const normalized = String(value || "").trim().toLowerCase();
+              return (
+                "<option value='" +
+                escapeClientHtml(normalized) +
+                "'" +
+                (normalized === selected ? " selected" : "") +
+                ">" +
+                escapeClientHtml(normalizeMembershipStatusLabel(normalized)) +
+                "</option>"
+              );
+            })
+            .join("");
+        }
+
+        function quickActionOptions() {
+          return MEMBERSHIP_QUICK_ACTIONS.map(
+            (item) =>
+              "<option value='" +
+              escapeClientHtml(item.value) +
+              "'>" +
+              escapeClientHtml(item.label) +
+              "</option>"
+          ).join("");
+        }
+
+        function renderMembershipFeeMembers(items) {
+          const rows = Array.isArray(items) ? items : [];
+          const canEdit = Boolean(authToken) && canUseAdminActions();
+          if (!rows.length) {
+            feeMembersTableBody.innerHTML = "<tr><td colspan='7' class='muted'>No records match your current filters.</td></tr>";
+            selectedMembershipFeeUserIds = new Set();
+            updateMembershipFeeBulkBar();
+            return;
+          }
+
+          reconcileSelectedMembershipFeeRows(rows);
+          feeMembersTableBody.innerHTML = rows
+            .map((item) => {
+              const userId = Number(item.userId || 0);
+              const name = String(item.fullName || item.username || "Member").trim();
+              const email = String(item.email || "").trim();
+              const phone = String(item.phone || "").trim();
+              const company = String(item.company || "").trim();
+              const membershipYear = item.membershipYear ? String(item.membershipYear) : "n/a";
+              const category = String(item.membershipCategory || "Active Member").trim();
+              const profileLabel = item.profileComplete ? "Complete" : "Incomplete";
+              const profileTone = item.profileComplete ? "status-active" : "status-pending";
+              const disabledAttr = canEdit ? "" : " disabled";
+              const amountDue = Number(item.amountDue || 0);
+              const amountPaid = Number(item.amountPaid || 0);
+              const balance = Number(item.balance || 0);
+              return (
+                "<tr>" +
+                "<td><input type='checkbox' data-fee-select-id='" +
+                userId +
+                "' aria-label='Select " +
+                escapeClientHtml(name) +
+                "' " +
+                (selectedMembershipFeeUserIds.has(userId) ? "checked " : "") +
+                disabledAttr +
+                " /></td>" +
+                "<td>" +
+                "<strong>" +
+                escapeClientHtml(name) +
+                "</strong>" +
+                "<div class='muted'>" +
+                (email ? escapeClientHtml(email) : "n/a") +
+                "</div>" +
+                "<div class='muted'>" +
+                (phone ? escapeClientHtml(phone) : "n/a") +
+                "</div>" +
+                "<div class='muted'>" +
+                (company ? escapeClientHtml(company) : "n/a") +
+                "</div>" +
+                "</td>" +
+                "<td>" +
+                "<div><strong>" +
+                escapeClientHtml(membershipYear) +
+                "</strong> | " +
+                escapeClientHtml(category) +
+                "</div>" +
+                membershipRoleBadges(item) +
+                "</td>" +
+                "<td>" +
+                "<div class='fee-status-stack'><span class='muted'>Account</span><span class='status-pill " +
+                membershipStatusTone(item.accountStatus, "account") +
+                "'>" +
+                escapeClientHtml(normalizeMembershipStatusLabel(item.accountStatus)) +
+                "</span></div>" +
+                "<div class='fee-status-stack'><span class='muted'>Payment</span><span class='status-pill " +
+                membershipStatusTone(item.paymentStatus) +
+                "'>" +
+                escapeClientHtml(normalizeMembershipStatusLabel(item.paymentStatus)) +
+                "</span></div>" +
+                "<div class='fee-status-stack'><span class='muted'>Standing</span><span class='status-pill " +
+                membershipStatusTone(item.standingStatus) +
+                "'>" +
+                escapeClientHtml(normalizeMembershipStatusLabel(item.standingStatus)) +
+                "</span></div>" +
+                "<div class='fee-status-stack'><span class='muted'>Access</span><span class='status-pill " +
+                membershipStatusTone(item.accessStatus, "access") +
+                "'>" +
+                escapeClientHtml(normalizeMembershipStatusLabel(item.accessStatus)) +
+                "</span></div>" +
+                "</td>" +
+                "<td>" +
+                "<div>Due: <strong>" + escapeClientHtml(formatMembershipCurrency(amountDue)) + "</strong></div>" +
+                "<div>Paid: <strong>" + escapeClientHtml(formatMembershipCurrency(amountPaid)) + "</strong></div>" +
+                "<div>Balance: <strong>" + escapeClientHtml(formatMembershipCurrency(balance)) + "</strong></div>" +
+                "<div class='muted'>Last payment: " + escapeClientHtml(formatMembershipDate(item.lastPaymentAt)) + "</div>" +
+                "<div class='muted'>Last reminder: " +
+                escapeClientHtml(formatMembershipDateTime(item.lastDuesReminderAt)) +
+                (item.lastDuesReminderStatus ? " (" + escapeClientHtml(normalizeMembershipStatusLabel(item.lastDuesReminderStatus)) + ")" : "") +
+                "</div>" +
+                "<div class='muted'>Reviewed: " + escapeClientHtml(formatMembershipDateTime(item.reviewedAt)) + "</div>" +
+                "</td>" +
+                "<td>" +
+                "<span class='status-pill " +
+                profileTone +
+                "'>" +
+                escapeClientHtml(profileLabel) +
+                "</span>" +
+                "<div class='muted'>Confirmed: " +
+                escapeClientHtml(formatMembershipDate(item.profileConfirmedAt)) +
+                "</div>" +
+                "</td>" +
+                "<td>" +
+                "<div class='fee-action-grid'>" +
+                "<select data-fee-payment='" +
+                userId +
+                "'" +
+                disabledAttr +
+                ">" +
+                membershipActionOptions(MEMBERSHIP_PAYMENT_STATUSES, item.paymentStatus) +
+                "</select>" +
+                "<select data-fee-standing='" +
+                userId +
+                "'" +
+                disabledAttr +
+                ">" +
+                membershipActionOptions(MEMBERSHIP_STANDING_STATUSES, item.standingStatus) +
+                "</select>" +
+                "<select data-fee-access='" +
+                userId +
+                "'" +
+                disabledAttr +
+                ">" +
+                membershipActionOptions(MEMBERSHIP_ACCESS_STATUSES, item.accessStatus) +
+                "</select>" +
+                "<input data-fee-due='" +
+                userId +
+                "' type='number' min='0' step='0.01' value='" +
+                escapeClientHtml(amountDue.toFixed(2)) +
+                "'" +
+                disabledAttr +
+                " />" +
+                "<input data-fee-paid='" +
+                userId +
+                "' type='number' min='0' step='0.01' value='" +
+                escapeClientHtml(amountPaid.toFixed(2)) +
+                "'" +
+                disabledAttr +
+                " />" +
+                "<input data-fee-note='" +
+                userId +
+                "' type='text' placeholder='Admin note' value='" +
+                escapeClientHtml(item.adminNote || "") +
+                "'" +
+                disabledAttr +
+                " />" +
+                "<input data-fee-reason='" +
+                userId +
+                "' type='text' placeholder='Reason for audit log'" +
+                disabledAttr +
+                " />" +
+                "<select data-fee-quick-action='" +
+                userId +
+                "'" +
+                disabledAttr +
+                ">" +
+                "<option value=''>Quick action</option>" +
+                quickActionOptions() +
+                "</select>" +
+                "<button type='button' data-fee-save-id='" +
+                userId +
+                "'" +
+                disabledAttr +
+                ">Save</button>" +
+                "<button type='button' data-fee-quick-apply-id='" +
+                userId +
+                "'" +
+                disabledAttr +
+                ">Apply quick action</button>" +
+                "<button type='button' data-fee-reminder-id='" +
+                userId +
+                "'" +
+                disabledAttr +
+                ">Send dues reminder</button>" +
+                "<button type='button' data-fee-audit-id='" +
+                userId +
+                "'" +
+                disabledAttr +
+                ">View audit</button>" +
+                "</div>" +
+                "<p id='fee-row-status-" +
+                userId +
+                "' class='muted fee-row-status'></p>" +
+                "</td>" +
+                "</tr>"
+              );
+            })
+            .join("");
+          updateMembershipFeeBulkBar();
+        }
+
+        function readMembershipFeeRowPayload(userId) {
+          const paymentInput = feeMembersTableBody.querySelector("[data-fee-payment='" + userId + "']");
+          const standingInput = feeMembersTableBody.querySelector("[data-fee-standing='" + userId + "']");
+          const accessInput = feeMembersTableBody.querySelector("[data-fee-access='" + userId + "']");
+          const dueInput = feeMembersTableBody.querySelector("[data-fee-due='" + userId + "']");
+          const paidInput = feeMembersTableBody.querySelector("[data-fee-paid='" + userId + "']");
+          const noteInput = feeMembersTableBody.querySelector("[data-fee-note='" + userId + "']");
+          const reasonInput = feeMembersTableBody.querySelector("[data-fee-reason='" + userId + "']");
+          if (!paymentInput || !standingInput || !accessInput || !dueInput || !paidInput || !noteInput || !reasonInput) {
+            return { error: "Unable to read editable fields for this member." };
+          }
+
+          const amountDue = Number(String(dueInput.value || "").trim());
+          const amountPaid = Number(String(paidInput.value || "").trim());
+          if (!Number.isFinite(amountDue) || amountDue < 0) {
+            return { error: "Amount due must be a number greater than or equal to 0." };
+          }
+          if (!Number.isFinite(amountPaid) || amountPaid < 0) {
+            return { error: "Amount paid must be a number greater than or equal to 0." };
+          }
+
+          const payload = {
+            paymentStatus: String(paymentInput.value || "pending_review").trim().toLowerCase(),
+            standingStatus: String(standingInput.value || "pending_review").trim().toLowerCase(),
+            accessStatus: String(accessInput.value || "enabled").trim().toLowerCase(),
+            amountDue,
+            amountPaid,
+            adminNote: String(noteInput.value || "").trim(),
+            reason: String(reasonInput.value || "").trim() || "admin_update"
+          };
+          const membershipYear = selectedMembershipFeeYear();
+          if (membershipYear) {
+            payload.membershipYear = membershipYear;
+          }
+          return { payload, reasonInput };
+        }
+
+        function applyMembershipQuickAction(actionValue, payload) {
+          const action = String(actionValue || "").trim();
+          if (!action) {
+            return null;
+          }
+          if (action === "mark_paid") {
+            payload.paymentStatus = "paid";
+            payload.standingStatus = "good_standing";
+            payload.accessStatus = "enabled";
+            payload.amountPaid = Math.max(Number(payload.amountPaid || 0), Number(payload.amountDue || 0));
+            return "marked_paid";
+          }
+          if (action === "mark_partial") {
+            payload.paymentStatus = "partial";
+            payload.standingStatus = "partial";
+            payload.accessStatus = "enabled";
+            return "marked_partial";
+          }
+          if (action === "mark_waived") {
+            payload.paymentStatus = "waived";
+            payload.standingStatus = "waived";
+            payload.accessStatus = "enabled";
+            payload.amountPaid = Math.max(Number(payload.amountPaid || 0), Number(payload.amountDue || 0));
+            return "marked_waived";
+          }
+          if (action === "mark_outstanding") {
+            payload.paymentStatus = "outstanding";
+            payload.standingStatus = "outstanding";
+            return "marked_outstanding";
+          }
+          if (action === "block") {
+            payload.accessStatus = "blocked";
+            payload.standingStatus = "blocked";
+            return "blocked";
+          }
+          if (action === "deactivate") {
+            payload.accessStatus = "deactivated";
+            payload.standingStatus = "deactivated";
+            return "deactivated";
+          }
+          if (action === "restore") {
+            payload.accessStatus = "enabled";
+            if (payload.standingStatus === "blocked" || payload.standingStatus === "deactivated") {
+              payload.standingStatus = "pending_review";
+            }
+            return "restored";
+          }
+          return null;
+        }
+
+        function canManageMembershipFees() {
+          return Boolean(authToken) && canUseAdminActions();
+        }
+
+        function resetMembershipFeesView(message) {
+          membershipFeeOverview = null;
+          membershipFeeMembers = [];
+          membershipFeeCycles = [];
+          membershipFeeCategories = [];
+          selectedMembershipFeeUserIds = new Set();
+          feeCycleYearInput.innerHTML = "<option value=''>Current cycle</option>";
+          feeMembersTableBody.innerHTML = "<tr><td colspan='7' class='muted'>" + escapeClientHtml(message) + "</td></tr>";
+          feeMembersStatus.textContent = message;
+          feeMemberCount.textContent = "";
+          feeCycleStatusText.textContent = message;
+          resetMembershipFeeKpis();
+          renderMembershipFeeCategoryFilter();
+          updateMembershipFeeBulkBar();
+        }
+
+        async function loadMembershipFeeCycles({ preserveSelection = true } = {}) {
+          if (!authToken) {
+            resetMembershipFeesView("Sign in to manage membership cycles.");
+            return;
+          }
+          if (!canUseAdminActions()) {
+            resetMembershipFeesView("Only admin and chief admin roles can manage membership fees.");
+            return;
+          }
+          feeCycleStatusText.textContent = "Loading membership cycles...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/admin/membership-fees/cycles?limit=60", {
+              headers: { Authorization: "Bearer " + authToken }
+            });
+            const json = await response.json();
+            if (!response.ok) {
+              if (clearAdminAuthOnUnauthorized(response)) return;
+              feeCycleStatusText.textContent = json.message || "Unable to load membership cycles.";
+              return;
+            }
+            const items = Array.isArray(json.items) ? json.items : [];
+            membershipFeeCycles = items
+              .map((item) => ({
+                id: Number(item.id || 0),
+                membershipYear: Number(item.membershipYear || 0),
+                dueDate: item.dueDate || "",
+                status: String(item.status || "draft")
+              }))
+              .filter((item) => Number.isInteger(item.membershipYear) && item.membershipYear > 0)
+              .sort((left, right) => Number(right.membershipYear) - Number(left.membershipYear));
+            if (json.activeCycle) {
+              membershipFeeOverview = {
+                cycle: {
+                  membershipYear: Number(json.activeCycle.membershipYear || 0) || null,
+                  dueDate: json.activeCycle.dueDate || null,
+                  status: json.activeCycle.status || "open"
+                }
+              };
+            }
+            renderMembershipFeeCycleOptions({ preserveSelection });
+            const selectedCycle = selectedMembershipCycleItem();
+            if (selectedCycle) {
+              feeCycleStatusText.textContent =
+                "Cycle " +
+                String(selectedCycle.membershipYear) +
+                " is " +
+                normalizeMembershipStatusLabel(selectedCycle.status).toLowerCase() +
+                " (due " +
+                String(selectedCycle.dueDate || "n/a") +
+                ").";
+            } else {
+              feeCycleStatusText.textContent = "No membership cycle found yet. Create one to begin annual fee tracking.";
+            }
+          } catch {
+            feeCycleStatusText.textContent = "Unable to reach API for membership cycles.";
+          }
+        }
+
+        async function loadMembershipFeesOverview() {
+          if (!authToken || !canUseAdminActions()) {
+            resetMembershipFeeKpis();
+            return;
+          }
+          try {
+            const membershipYear = selectedMembershipFeeYear();
+            const suffix = membershipYear ? "?membershipYear=" + encodeURIComponent(String(membershipYear)) : "";
+            const response = await fetch("${config.apiBaseUrl}/api/admin/membership-fees/overview" + suffix, {
+              headers: { Authorization: "Bearer " + authToken }
+            });
+            const json = await response.json();
+            if (!response.ok) {
+              if (clearAdminAuthOnUnauthorized(response)) return;
+              feeMembersStatus.textContent = json.message || "Unable to load membership summary.";
+              resetMembershipFeeKpis();
+              return;
+            }
+            membershipFeeOverview = json || null;
+            renderMembershipFeeKpis(json.summary || {});
+          } catch {
+            feeMembersStatus.textContent = "Unable to reach API for membership summary.";
+            resetMembershipFeeKpis();
+          }
+        }
+
+        async function loadMembershipFeeMembers() {
+          if (!authToken || !canUseAdminActions()) {
+            membershipFeeMembers = [];
+            feeMembersTableBody.innerHTML = "<tr><td colspan='7' class='muted'>Sign in to load membership fee records.</td></tr>";
+            updateMembershipFeeMemberCount(0);
+            return;
+          }
+          feeMembersStatus.textContent = "Loading membership fee records...";
+          feeMembersTableBody.innerHTML = "<tr><td colspan='7' class='muted'>Loading membership fee records...</td></tr>";
+          try {
+            const response = await fetch(
+              "${config.apiBaseUrl}/api/admin/membership-fees/members?" + membershipFeeMembersQueryString(),
+              {
+                headers: { Authorization: "Bearer " + authToken }
+              }
+            );
+            const json = await response.json();
+            if (!response.ok) {
+              if (clearAdminAuthOnUnauthorized(response)) return;
+              feeMembersStatus.textContent = json.message || "Unable to load membership fee records.";
+              feeMembersTableBody.innerHTML = "<tr><td colspan='7' class='muted'>Unable to load membership fee records.</td></tr>";
+              updateMembershipFeeMemberCount(0);
+              return;
+            }
+            membershipFeeMembers = Array.isArray(json.items) ? json.items : [];
+            const categorySet = new Set(membershipFeeCategories.map((value) => String(value || "").trim()));
+            for (const item of membershipFeeMembers) {
+              const category = String(item.membershipCategory || "").trim();
+              if (category) {
+                categorySet.add(category);
+              }
+            }
+            membershipFeeCategories = Array.from(categorySet.values())
+              .filter(Boolean)
+              .sort((left, right) => left.localeCompare(right));
+            renderMembershipFeeCategoryFilter();
+            renderMembershipFeeMembers(membershipFeeMembers);
+            updateMembershipFeeMemberCount(Number(json.total || membershipFeeMembers.length));
+            const membershipYear = selectedMembershipFeeYear();
+            feeMembersStatus.textContent = membershipYear
+              ? "Loaded " + String(membershipFeeMembers.length) + " records for " + String(membershipYear) + "."
+              : "Loaded " + String(membershipFeeMembers.length) + " membership fee records.";
+          } catch {
+            feeMembersStatus.textContent = "Unable to reach API for membership fee records.";
+            feeMembersTableBody.innerHTML = "<tr><td colspan='7' class='muted'>Unable to reach API.</td></tr>";
+            updateMembershipFeeMemberCount(0);
+          }
+        }
+
+        async function loadMembershipFeesWorkspace({ reloadCycles = true } = {}) {
+          if (!authToken || !canUseAdminActions()) {
+            return;
+          }
+          if (reloadCycles) {
+            await loadMembershipFeeCycles({ preserveSelection: true });
+            if (!authToken) return;
+          }
+          await loadMembershipFeesOverview();
+          if (!authToken) return;
+          await loadMembershipFeeMembers();
+        }
+
+        async function saveMembershipCycle() {
+          if (!authToken || !canUseAdminActions()) {
+            feeCycleStatusText.textContent = "Only admin and chief admin roles can update membership cycles.";
+            return;
+          }
+          const membershipYear = Number(String(feeCycleCreateYearInput.value || "").trim());
+          const dueDate = String(feeCycleDueDateInput.value || "").trim();
+          const statusValue = String(feeCycleStatusInput.value || "open").trim();
+          if (!Number.isInteger(membershipYear) || membershipYear < 2000 || membershipYear > 2100) {
+            feeCycleStatusText.textContent = "Cycle year must be between 2000 and 2100.";
+            return;
+          }
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
+            feeCycleStatusText.textContent = "Due date must be a valid YYYY-MM-DD date.";
+            return;
+          }
+
+          feeCycleStatusText.textContent = "Saving cycle...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/admin/membership-fees/cycles", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer " + authToken
+              },
+              body: JSON.stringify({
+                membershipYear,
+                dueDate,
+                status: statusValue
+              })
+            });
+            const json = await response.json();
+            if (!response.ok) {
+              if (clearAdminAuthOnUnauthorized(response)) return;
+              feeCycleStatusText.textContent = json.message || "Unable to save membership cycle.";
+              return;
+            }
+            if (feeCycleYearInput) {
+              feeCycleYearInput.value = String(membershipYear);
+            }
+            const closedCycles = Number(json.closedOpenCycles || 0);
+            feeCycleStatusText.textContent =
+              closedCycles > 0
+                ? "Cycle saved. Closed " + String(closedCycles) + " previously open cycle(s)."
+                : "Cycle saved successfully.";
+            await loadMembershipFeesWorkspace({ reloadCycles: true });
+          } catch {
+            feeCycleStatusText.textContent = "Unable to reach API to save membership cycle.";
+          }
+        }
+
+        async function updateMembershipFeeAccount(userId, { quickAction = "" } = {}) {
+          if (!authToken || !canUseAdminActions()) {
+            setFeeRowStatus(userId, "Only admin and chief admin roles can update fee accounts.");
+            return;
+          }
+          const parsedUserId = Number(userId);
+          if (!Number.isInteger(parsedUserId) || parsedUserId <= 0) {
+            return;
+          }
+          const { payload, reasonInput, error } = readMembershipFeeRowPayload(parsedUserId);
+          if (error) {
+            setFeeRowStatus(parsedUserId, error);
+            return;
+          }
+          const quickOutcome = applyMembershipQuickAction(quickAction, payload);
+          if (quickAction && !quickOutcome) {
+            setFeeRowStatus(parsedUserId, "Select a valid quick action first.");
+            return;
+          }
+          if (quickAction && reasonInput && !String(reasonInput.value || "").trim()) {
+            reasonInput.value = String(quickOutcome || "quick_action");
+            payload.reason = String(reasonInput.value || "").trim() || payload.reason;
+          }
+
+          setFeeRowStatus(parsedUserId, "Saving...");
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/admin/membership-fees/accounts/" + String(parsedUserId), {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer " + authToken
+              },
+              body: JSON.stringify(payload)
+            });
+            const json = await response.json();
+            if (!response.ok) {
+              if (clearAdminAuthOnUnauthorized(response)) return;
+              setFeeRowStatus(parsedUserId, json.message || "Unable to update member fee account.");
+              return;
+            }
+            setFeeRowStatus(parsedUserId, "Saved.");
+            await loadMembershipFeesOverview();
+            if (!authToken) return;
+            await loadMembershipFeeMembers();
+          } catch {
+            setFeeRowStatus(parsedUserId, "Unable to reach API for fee updates.");
+          }
+        }
+
+        async function applyBulkMembershipFeeUpdate() {
+          if (!authToken || !canUseAdminActions()) {
+            feeMembersStatus.textContent = "Only admin and chief admin roles can update fee accounts.";
+            return;
+          }
+          const userIds = selectedMembershipFeeUserIdList();
+          if (!userIds.length) {
+            feeMembersStatus.textContent = "Select at least one member fee record.";
+            return;
+          }
+          const standingStatus = String(feeBulkStandingInput?.value || "").trim();
+          const accessStatus = String(feeBulkAccessInput?.value || "").trim();
+          if (!standingStatus && !accessStatus) {
+            feeMembersStatus.textContent = "Choose a standing or access change before applying bulk update.";
+            return;
+          }
+          const payload = {
+            userIds,
+            reason: String(feeBulkReasonInput?.value || "").trim() || "bulk_membership_fee_update"
+          };
+          const membershipYear = selectedMembershipFeeYear();
+          if (membershipYear) {
+            payload.membershipYear = membershipYear;
+          }
+          if (standingStatus) {
+            payload.standingStatus = standingStatus;
+            if (standingStatus === "good_standing") {
+              payload.paymentStatus = "paid";
+            } else if (standingStatus === "waived") {
+              payload.paymentStatus = "waived";
+            } else if (standingStatus === "partial") {
+              payload.paymentStatus = "partial";
+            } else if (standingStatus === "outstanding") {
+              payload.paymentStatus = "outstanding";
+            }
+          }
+          if (accessStatus) {
+            payload.accessStatus = accessStatus;
+          }
+
+          feeMembersStatus.textContent = "Applying bulk membership fee update...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/admin/membership-fees/accounts/bulk", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer " + authToken
+              },
+              body: JSON.stringify(payload)
+            });
+            const json = await response.json();
+            if (!response.ok) {
+              if (clearAdminAuthOnUnauthorized(response)) return;
+              feeMembersStatus.textContent = json.message || "Unable to apply bulk membership fee update.";
+              return;
+            }
+            feeMembersStatus.textContent =
+              "Bulk update saved for " +
+              String(Number(json.updated || 0)) +
+              " member(s)" +
+              (Number(json.failed || 0) > 0 ? "; " + String(Number(json.failed || 0)) + " failed." : ".");
+            selectedMembershipFeeUserIds = new Set();
+            if (feeBulkStandingInput) feeBulkStandingInput.value = "";
+            if (feeBulkAccessInput) feeBulkAccessInput.value = "";
+            await loadMembershipFeesOverview();
+            if (!authToken) return;
+            await loadMembershipFeeMembers();
+          } catch {
+            feeMembersStatus.textContent = "Unable to reach API for bulk membership fee updates.";
+          }
+        }
+
+        async function sendMembershipDuesReminder(userIds = selectedMembershipFeeUserIdList()) {
+          if (!authToken || !canUseAdminActions()) {
+            feeMembersStatus.textContent = "Only admin and chief admin roles can send dues reminders.";
+            return;
+          }
+          const selectedIds = normalizeClientIdList(userIds);
+          if (!selectedIds.length) {
+            feeMembersStatus.textContent = "Select at least one member fee record.";
+            return;
+          }
+          const payload = {
+            userIds: selectedIds,
+            reason: String(feeBulkReasonInput?.value || "").trim() || "dues_reminder"
+          };
+          const membershipYear = selectedMembershipFeeYear();
+          if (membershipYear) {
+            payload.membershipYear = membershipYear;
+          }
+
+          feeMembersStatus.textContent = "Queueing dues reminder...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/admin/membership-fees/dues-reminders", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer " + authToken
+              },
+              body: JSON.stringify(payload)
+            });
+            const json = await response.json();
+            if (!response.ok) {
+              if (clearAdminAuthOnUnauthorized(response)) return;
+              feeMembersStatus.textContent = json.message || "Unable to queue dues reminder.";
+              return;
+            }
+            feeMembersStatus.textContent =
+              "Dues reminder queued for " + String(Number(json.queued || 0)) + " member(s).";
+          } catch {
+            feeMembersStatus.textContent = "Unable to reach API for dues reminders.";
+          }
+        }
+
+        async function loadMembershipFeeAudit(userId) {
+          if (!authToken || !canUseAdminActions()) {
+            setFeeRowStatus(userId, "Only admin and chief admin roles can view fee audit history.");
+            return;
+          }
+          const parsedUserId = Number(userId);
+          if (!Number.isInteger(parsedUserId) || parsedUserId <= 0) {
+            return;
+          }
+          const membershipYear = selectedMembershipFeeYear();
+          const suffix = membershipYear ? "?membershipYear=" + encodeURIComponent(String(membershipYear)) : "";
+          setFeeRowStatus(parsedUserId, "Loading audit history...");
+          try {
+            const response = await fetch(
+              "${config.apiBaseUrl}/api/admin/membership-fees/accounts/" + String(parsedUserId) + "/audit" + suffix,
+              { headers: { Authorization: "Bearer " + authToken } }
+            );
+            const json = await response.json();
+            if (!response.ok) {
+              if (clearAdminAuthOnUnauthorized(response)) return;
+              setFeeRowStatus(parsedUserId, json.message || "Unable to load audit history.");
+              return;
+            }
+            const items = Array.isArray(json.items) ? json.items : [];
+            if (!items.length) {
+              setFeeRowStatus(parsedUserId, "No standing or access audit entries yet.");
+              return;
+            }
+            const summary = items
+              .slice(0, 3)
+              .map((item) => {
+                const actor = item.actorUsername ? " by " + item.actorUsername : "";
+                return (
+                  formatMembershipDateTime(item.createdAt) +
+                  ": standing " +
+                  normalizeMembershipStatusLabel(item.previousStandingStatus || "none") +
+                  " -> " +
+                  normalizeMembershipStatusLabel(item.nextStandingStatus) +
+                  ", access " +
+                  normalizeMembershipStatusLabel(item.previousAccessStatus || "none") +
+                  " -> " +
+                  normalizeMembershipStatusLabel(item.nextAccessStatus) +
+                  actor +
+                  (item.reason ? " (" + item.reason + ")" : "")
+                );
+              })
+              .join(" | ");
+            setFeeRowStatus(parsedUserId, summary);
+          } catch {
+            setFeeRowStatus(parsedUserId, "Unable to reach API for audit history.");
+          }
+        }
 
           function sanitizeName(value) {
             return String(value || "").trim();
@@ -4381,6 +7632,9 @@ export function renderAdminPage(config) {
           importDetailUsernamePolicy.textContent = "n/a";
           importDetailActivationPolicy.textContent = "n/a";
           importDetailInvitePolicy.textContent = "n/a";
+          importDetailMembershipYear.textContent = "n/a";
+          importDetailMembershipCategory.textContent = "n/a";
+          importDetailStandingDefault.textContent = "n/a";
           importDetailBlockingIssues.textContent = "0";
           importDetailInvites.textContent = "Queued: 0 | Failed: 0";
         }
@@ -4441,6 +7695,9 @@ export function renderAdminPage(config) {
           importDetailUsernamePolicy.textContent = formatImportLabel(batch.username_policy);
           importDetailActivationPolicy.textContent = formatImportLabel(batch.activation_policy);
           importDetailInvitePolicy.textContent = formatImportLabel(batch.invite_policy);
+          importDetailMembershipYear.textContent = batch.membership_cycle_year ? String(batch.membership_cycle_year) : "n/a";
+          importDetailMembershipCategory.textContent = batch.membership_category_default || "Active Member";
+          importDetailStandingDefault.textContent = formatImportLabel(batch.standing_default || "pending_review");
           importDetailBlockingIssues.textContent = String(blockingIssueCount);
           importDetailInvites.textContent = "Queued: " + invitesQueued + " | Failed: " + invitesFailed;
 
@@ -4544,6 +7801,9 @@ export function renderAdminPage(config) {
               headers: { Authorization: "Bearer " + authToken }
             });
             const json = await response.json();
+            if (clearAdminAuthOnUnauthorized(response)) {
+              return "";
+            }
             if (!response.ok || !json.item || !json.item.batch_id) {
               return "";
             }
@@ -5467,6 +8727,12 @@ export function renderAdminPage(config) {
             String(importActivationPolicyInput.value || DEFAULT_IMPORT_ACTIVATION_POLICY)
           );
           formData.set("invite_policy", String(importInvitePolicyInput.value || "queue_on_apply"));
+          formData.set("membership_cycle_year", String(importMembershipCycleYearInput.value || "").trim());
+          formData.set(
+            "membership_category_default",
+            String(importMembershipCategoryDefaultInput.value || "Active Member").trim()
+          );
+          formData.set("standing_default", String(importStandingDefaultInput.value || "pending_review"));
 
           try {
             const response = await fetch("${config.apiBaseUrl}/api/admin/member-imports/dry-run", {
@@ -5558,10 +8824,13 @@ export function renderAdminPage(config) {
               (summary.error || 0) +
               ". Invites queued: " +
               (invites.queued || 0) +
+              ". Fee accounts created: " +
+              (json.fee_accounts_created || 0) +
               ".";
 
             await loadImportBatch(batchId);
             await loadMembers();
+            await loadMembershipFeesWorkspace({ reloadCycles: true });
           } catch {
             importStatus.textContent = "Unable to reach API to apply batch.";
             updateImportButtons();
@@ -5674,6 +8943,46 @@ export function renderAdminPage(config) {
           }
         });
 
+        if (eventInviteeSearchInput) {
+          eventInviteeSearchInput.addEventListener("input", () => {
+            renderEventInviteeResults(eventInviteeSearchInput.value);
+          });
+        }
+
+        if (eventInviteeResults) {
+          eventInviteeResults.addEventListener("click", (event) => {
+            const button = event.target.closest("button[data-add-event-invitee]");
+            if (!button) return;
+            const id = Number(button.getAttribute("data-add-event-invitee"));
+            const member = memberDirectorySource.find((item) => eventInviteeId(item) === id);
+            if (!member) return;
+            selectedEventInvitees.set(id, member);
+            if (eventInviteeSearchInput) {
+              eventInviteeSearchInput.value = "";
+              eventInviteeSearchInput.focus();
+            }
+            renderEventInviteeSelections();
+            renderEventInviteeResults();
+          });
+        }
+
+        if (eventSelectedInvitees) {
+          eventSelectedInvitees.addEventListener("click", (event) => {
+            const button = event.target.closest("button[data-remove-event-invitee]");
+            if (!button) return;
+            const id = Number(button.getAttribute("data-remove-event-invitee"));
+            selectedEventInvitees.delete(id);
+            renderEventInviteeSelections();
+            renderEventInviteeResults(eventInviteeSearchInput?.value || "");
+          });
+        }
+
+        if (eventInviteeClearButton) {
+          eventInviteeClearButton.addEventListener("click", () => {
+            setEventInviteeSelections([]);
+          });
+        }
+
         eventForm.addEventListener("submit", async (event) => {
           event.preventDefault();
           if (!authToken) {
@@ -5689,7 +8998,11 @@ export function renderAdminPage(config) {
             eventStatus.textContent = validation.error || "Complete all required fields.";
             return;
           }
-          eventStatus.textContent = isEditing ? "Updating meeting..." : "Creating meeting...";
+          const attachmentFile = eventAttachmentInput?.files?.[0] || null;
+          const publishNow = Boolean(eventPublishNowInput && eventPublishNowInput.checked);
+          eventStatus.textContent = isEditing
+            ? publishNow ? "Updating meeting and preparing email invitations..." : "Updating meeting..."
+            : publishNow ? "Creating meeting and preparing email invitations..." : "Creating meeting...";
           const payload = validation.payload;
 
           try {
@@ -5699,11 +9012,11 @@ export function renderAdminPage(config) {
                 : "${config.apiBaseUrl}/api/events",
               {
                 method: isEditing ? "PATCH" : "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: "Bearer " + authToken
-              },
-              body: JSON.stringify(payload)
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: "Bearer " + authToken
+                },
+                body: JSON.stringify(payload)
               }
             );
             const json = await response.json();
@@ -5712,11 +9025,41 @@ export function renderAdminPage(config) {
                 json.message || (isEditing ? "Unable to update meeting." : "Unable to create meeting.");
               return;
             }
+
+            const targetEventId = Number(json.id || activeEventId || 0);
+            let attachmentMessage = "";
+            let publishMessage = "";
+            if (attachmentFile && targetEventId) {
+              await uploadAdminEventAttachment(targetEventId, attachmentFile, authToken);
+              attachmentMessage = " File attached.";
+            }
+            if (publishNow && targetEventId) {
+              const publishResponse = await fetch("${config.apiBaseUrl}/api/events/" + String(targetEventId) + "/submit", {
+                method: "POST",
+                headers: { Authorization: "Bearer " + authToken }
+              });
+              const publishJson = await publishResponse.json();
+              if (!publishResponse.ok) {
+                eventStatus.textContent =
+                  (isEditing ? "Meeting updated" : "Meeting created") +
+                  attachmentMessage +
+                  ", but invitation emails could not be queued: " +
+                  (publishJson.message || "publish failed") +
+                  ".";
+                await loadEvents();
+                return;
+              }
+              publishMessage = publishJson.alreadyPublished
+                ? " Meeting was already published; existing invite notifications were not duplicated."
+                : " Invitation emails queued for the selected audience.";
+            }
+
             if (isEditing) {
-              resetEventFormState("Meeting updated.");
+              resetEventFormState("Meeting updated." + attachmentMessage + publishMessage);
             } else {
               const clashWarning =
                 json && json.clashWarning && json.clashWarning.hasClash ? json.clashWarning : null;
+              let createdMessage = "Meeting created (id " + json.id + ")." + attachmentMessage + publishMessage;
               if (clashWarning) {
                 const conflictCount = Number(clashWarning.conflictCount || 0);
                 const conflicts = Array.isArray(clashWarning.conflicts) ? clashWarning.conflicts : [];
@@ -5728,28 +9071,23 @@ export function renderAdminPage(config) {
                 const conflictSummary = conflictTitles.length
                   ? " Overlap with: " + conflictTitles.join(", ") + (remaining > 0 ? " +" + remaining + " more." : ".")
                   : "";
-                eventStatus.textContent =
-                  "Meeting created (id " +
-                  json.id +
-                  "). Time overlap detected with " +
+                createdMessage +=
+                  " Time overlap detected with " +
                   conflictCount +
                   " existing meeting(s)." +
                   conflictSummary +
                   " Proceed is allowed, but shared members may need to choose one meeting.";
-              } else {
-                eventStatus.textContent = "Meeting created (id " + json.id + ").";
               }
-              eventForm.reset();
-              setEventGroupSelections([]);
-              resetEventFormValidation();
+              resetEventFormState(createdMessage);
             }
             await loadEvents();
-          } catch {
-            eventStatus.textContent = isEditing
+          } catch (error) {
+            eventStatus.textContent = error?.message || (isEditing
               ? "Unable to reach API to update meeting."
-              : "Unable to reach API to create meeting.";
+              : "Unable to reach API to create meeting.");
           }
         });
+
 
         if (eventCancelButton) {
           eventCancelButton.addEventListener("click", () => {
@@ -5850,6 +9188,203 @@ export function renderAdminPage(config) {
         refreshQueueButton.addEventListener("click", () => {
           loadQueueStatus();
         });
+
+        if (feeRefreshButton) {
+          feeRefreshButton.addEventListener("click", () => {
+            loadMembershipFeesWorkspace({ reloadCycles: true });
+          });
+        }
+
+        if (feeCycleSaveButton) {
+          feeCycleSaveButton.addEventListener("click", () => {
+            saveMembershipCycle();
+          });
+        }
+
+        if (feeCycleYearInput) {
+          feeCycleYearInput.addEventListener("change", () => {
+            loadMembershipFeesWorkspace({ reloadCycles: false });
+          });
+        }
+
+        if (feeFiltersApplyButton) {
+          feeFiltersApplyButton.addEventListener("click", () => {
+            loadMembershipFeeMembers();
+          });
+        }
+
+        if (feeFiltersResetButton) {
+          feeFiltersResetButton.addEventListener("click", () => {
+            if (feeSearchInput) feeSearchInput.value = "";
+            if (feeStandingFilterInput) feeStandingFilterInput.value = "all";
+            if (feeAccountFilterInput) feeAccountFilterInput.value = "all";
+            if (feeCategoryFilterInput) feeCategoryFilterInput.value = "";
+            if (feeProfileFilterInput) feeProfileFilterInput.value = "all";
+            loadMembershipFeeMembers();
+          });
+        }
+
+        if (feeSearchInput) {
+          feeSearchInput.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              loadMembershipFeeMembers();
+            }
+          });
+        }
+
+        if (feeMembersTableBody) {
+          feeMembersTableBody.addEventListener("click", (event) => {
+            const auditButton = event.target.closest("[data-fee-audit-id]");
+            if (auditButton) {
+              const userId = Number(auditButton.getAttribute("data-fee-audit-id"));
+              if (Number.isInteger(userId) && userId > 0) {
+                loadMembershipFeeAudit(userId);
+              }
+              return;
+            }
+
+            const reminderButton = event.target.closest("[data-fee-reminder-id]");
+            if (reminderButton) {
+              const userId = Number(reminderButton.getAttribute("data-fee-reminder-id"));
+              if (Number.isInteger(userId) && userId > 0) {
+                sendMembershipDuesReminder([userId]);
+              }
+              return;
+            }
+
+            const saveButton = event.target.closest("[data-fee-save-id]");
+            if (saveButton) {
+              const userId = Number(saveButton.getAttribute("data-fee-save-id"));
+              if (Number.isInteger(userId) && userId > 0) {
+                updateMembershipFeeAccount(userId);
+              }
+              return;
+            }
+
+            const quickButton = event.target.closest("[data-fee-quick-apply-id]");
+            if (quickButton) {
+              const userId = Number(quickButton.getAttribute("data-fee-quick-apply-id"));
+              if (!Number.isInteger(userId) || userId <= 0) {
+                return;
+              }
+              const quickInput = feeMembersTableBody.querySelector("[data-fee-quick-action='" + userId + "']");
+              const quickAction = String(quickInput?.value || "").trim();
+              if (!quickAction) {
+                setFeeRowStatus(userId, "Select a quick action first.");
+                return;
+              }
+              updateMembershipFeeAccount(userId, { quickAction });
+            }
+          });
+
+          feeMembersTableBody.addEventListener("change", (event) => {
+            const checkbox = event.target.closest("input[data-fee-select-id]");
+            if (!checkbox) {
+              return;
+            }
+            const userId = Number(checkbox.getAttribute("data-fee-select-id"));
+            if (!Number.isInteger(userId) || userId <= 0) {
+              return;
+            }
+            if (checkbox.checked) {
+              selectedMembershipFeeUserIds.add(userId);
+            } else {
+              selectedMembershipFeeUserIds.delete(userId);
+            }
+            updateMembershipFeeBulkBar();
+          });
+        }
+
+        if (feeSelectAllMembersInput) {
+          feeSelectAllMembersInput.addEventListener("change", () => {
+            const visibleIds = (membershipFeeMembers || [])
+              .map((item) => Number(item.userId || 0))
+              .filter((id) => Number.isInteger(id) && id > 0);
+            if (feeSelectAllMembersInput.checked) {
+              selectedMembershipFeeUserIds = new Set(visibleIds);
+            } else {
+              selectedMembershipFeeUserIds = new Set();
+            }
+            renderMembershipFeeMembers(membershipFeeMembers);
+          });
+        }
+
+        if (feeBulkApplyButton) {
+          feeBulkApplyButton.addEventListener("click", () => {
+            applyBulkMembershipFeeUpdate();
+          });
+        }
+
+        if (feeBulkReminderButton) {
+          feeBulkReminderButton.addEventListener("click", () => {
+            sendMembershipDuesReminder();
+          });
+        }
+
+        if (newsForm) {
+          newsForm.addEventListener("submit", saveAdminNews);
+        }
+
+        if (newsCancelButton) {
+          newsCancelButton.addEventListener("click", () => {
+            resetNewsComposer("News edit cancelled.");
+          });
+        }
+
+        if (refreshNewsButton) {
+          refreshNewsButton.addEventListener("click", () => {
+            loadAdminNews();
+          });
+        }
+
+        if (newsFilterStatusInput) {
+          newsFilterStatusInput.addEventListener("change", () => {
+            loadAdminNews();
+          });
+        }
+
+        if (newsTableBody) {
+          newsTableBody.addEventListener("click", (event) => {
+            const editButton = event.target.closest("[data-news-edit-id]");
+            if (editButton) {
+              const newsId = Number(editButton.getAttribute("data-news-edit-id"));
+              const match = newsItemsCache.find((item) => Number(item.id) === newsId);
+              if (match) {
+                beginNewsEdit(match);
+              }
+              return;
+            }
+
+            const publishButton = event.target.closest("[data-news-publish-id]");
+            if (publishButton) {
+              const newsId = Number(publishButton.getAttribute("data-news-publish-id"));
+              if (Number.isInteger(newsId) && newsId > 0) {
+                publishAdminNews(newsId);
+              }
+              return;
+            }
+
+            const pinButton = event.target.closest("[data-news-pin-id]");
+            if (pinButton) {
+              const newsId = Number(pinButton.getAttribute("data-news-pin-id"));
+              const shouldPin = pinButton.getAttribute("data-news-pin-value") === "1";
+              if (Number.isInteger(newsId) && newsId > 0) {
+                updateNewsPinnedState(newsId, shouldPin);
+              }
+              return;
+            }
+
+            const archiveButton = event.target.closest("[data-news-archive-id]");
+            if (archiveButton) {
+              const newsId = Number(archiveButton.getAttribute("data-news-archive-id"));
+              if (Number.isInteger(newsId) && newsId > 0) {
+                archiveAdminNews(newsId);
+              }
+            }
+          });
+        }
+
 
         refreshReportsButton.addEventListener("click", () => {
           loadReports();
@@ -5998,14 +9533,9 @@ export function renderAdminPage(config) {
               return;
             }
 
-            setAuthToken(json.token, json.user.role, json.user.username);
+            setAuthToken(json.token, json.user.role, json.user.username, json.expiresAt);
             window.location.hash = "#overview";
-            await loadMembers();
-            await loadEvents();
-            await loadDeliveries();
-            await loadQueueStatus();
-            await loadReports();
-            await loadModerators();
+            await loadAdminWorkspace();
           } catch {
             status.textContent = "Sign in failed: unable to reach API.";
           }
@@ -6020,12 +9550,7 @@ export function renderAdminPage(config) {
         if (authToken && (!window.location.hash || window.location.hash === "#access")) {
           window.location.hash = "#overview";
         }
-        loadMembers();
-        loadEvents();
-        loadDeliveries();
-        loadQueueStatus();
-        loadReports();
-        loadModerators();
+        void loadAdminWorkspace();
       </script>
     `
   });
