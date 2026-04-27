@@ -3,7 +3,7 @@
 This runbook describes day-to-day operations for the IWFSA application.
 
 ## 0) Using the Admin Console
-- **Navigation**: Use the top-level tabs to switch between public site, Member Portal, and Admin Console. Inside the Admin Console, use the sub-navigation links to jump between modules (Directory, Membership & Fees, Imports, Event Hub, Notifications).
+- **Navigation**: Use the top-level tabs to switch between public site, Member Portal, and Admin Console after signing in through the shared `Sign in` entry point. Inside the Admin Console, use the sub-navigation links to jump between modules (Directory, Membership & Fees, Imports, Event Hub, Notifications, Public Profile Review, Honorary Members, Memorials).
 - **Event Hub**: Use this dashboard to see all upcoming events (published and draft) and access planning tools.
 - **Help Banners**: Most admin screens have a help banner at the top explaining key tasks. You can click the **"X"** to dismiss these instructions. They will stay hidden on your device unless you clear your browser data.
 - **Queue Status**: Check the "Notification Queue Status" card on the main admin dashboard for a quick health check of the email system (`Healthy`, `Degraded`, etc.).
@@ -87,7 +87,8 @@ This runbook describes day-to-day operations for the IWFSA application.
 4. Run the import and review the summary report (created/updated/skipped/failed).
 5. Send onboarding invites:
    - From Admin → Members → Invites/Onboarding, select members and click “Send invites”.
-   - The invite email includes preset login details (temporary) and a secure onboarding link.
+   - The invite email includes the member's username and a secure activation link.
+   - The member completes activation by following the link and setting a password.
    - Where mobile numbers are available and the channel is configured, send a WhatsApp onboarding prompt as well.
 6. Confirm invite delivery status and follow up on bounces.
 
@@ -108,8 +109,22 @@ Admin may edit or add to the same information when needed.
 ### Credential reset (Admin-triggered)
 - Use when a member needs to reset their login credentials.
 - From Admin → Members, select the member(s) → “Trigger credential reset”.
-- The system sends a private email to the member with a secure, short-lived reset link (and/or temporary password).
+- The system sends a private email to the member with a secure, short-lived reset link.
 - Admins cannot view the member’s password.
+
+### Public profile review queue
+1. Open Admin → Public Profile Review.
+2. Review submitted profile elements, including public biography, display details, and links marked for public consideration.
+3. Compare the submitted public preview against the member-visible profile to confirm nothing private is being exposed.
+4. Approve, reject, request revision, or archive the submission.
+5. Confirm the review action is reflected in the queue and captured in audit history.
+
+### Honorary members and memorial management
+1. Open Admin → Honorary Members or Admin → Memorials.
+2. Create or edit entries with the approved portrait/image, biography or tribute text, and display ordering.
+3. Keep unpublished drafts hidden until wording, imagery, and governance approvals are complete.
+4. Publish only entries that are appropriate for the public site and aligned with IWFSA's respectful presentation standards.
+5. If an entry needs to be withdrawn or revised, change it to hidden or archived and record the reason in the admin note or audit trail.
 
 ### Disable an account
 - Suspend login and remove elevated permissions.
@@ -177,6 +192,7 @@ Admin may edit or add to the same information when needed.
 - Review admin alerts for:
    - profile confirmations
    - profile edits
+   - public profile submissions and review outcomes
    - image/bio/contact changes
    - onboarding delivery failures
    - members still incomplete after invitation
@@ -196,6 +212,8 @@ The system must record:
 - Event edits and rollbacks
 - Notification sends for cancellations/postponements
 - Document upload/removal actions
+- Public profile review decisions
+- Honorary and memorial publication changes
 
 ## 9.1 Privacy and retention baseline
 - Follow `docs/privacy-baseline.md` for:

@@ -27,6 +27,37 @@ Use this structure for each new proposal:
 
 ## Entries
 
+### CAL-011 - Unified sign-in, member-controlled profiles, connected sharing, honorary members, and memorial sections
+- Date: 2026-04-27
+- Status: Open
+- Classification: Enhancement (non-breaking)
+- Potential break:
+  - Existing approved documentation does not yet define a unified sign-in flow, field-level profile visibility, member-submitted public storytelling, conference memory contributions, or admin-managed honorary and memorial surfaces.
+  - Implementing these behaviors without a shared plan could create drift across authentication, privacy rules, RBAC, public/member/admin surfaces, and documentation sequencing.
+- Non-breaking checklist result:
+  - MVP scope + feature flags preserved: Pending alignment decision.
+  - role/permission + consent expectations preserved: Pending documentation update.
+  - API/workflow compatibility preserved (or versioned): Pending implementation design.
+  - reliability expectations preserved (idempotency, auditability, admin reporting): Pending audit and moderation design.
+- Impacted docs:
+  - `docs/2026-04-27-member-profiles-connected-sharing-plan.md`
+  - `docs/product-requirements.md`
+  - `docs/roadmap.md`
+  - `docs/privacy-baseline.md`
+  - `docs/rbac-permissions.md`
+  - `docs/ux-notes.md`
+  - `docs/User-dictionary.md`
+  - `docs/data-model.md`
+  - `docs/build-playbook.md`
+  - `AGENT.md`
+- Alignment decision:
+  - Record one canonical plan first, then update the affected requirements and sequencing docs before code implementation begins.
+  - Treat member profile data as private by default, require consent plus admin approval for public storytelling, and keep honorary and memorial surfaces under admin governance.
+  - Implement the smallest useful slice first: unified sign-in, member profile editing, manual social links, member-only conference threads, and admin-managed honorary and memorial sections.
+- Mitigation applied:
+  - Added a dated canonical implementation plan for the 2026-04-27 work item.
+  - Logged the feature proposal as a coordinated documentation-first change instead of an isolated code patch.
+
 ### CAL-010 - Membership fees, good-standing access control, and annual active-member administration
 - Date: 2026-04-26
 - Status: Resolved

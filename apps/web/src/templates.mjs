@@ -1,34 +1,28 @@
-﻿const UI_BUILD = "2026-03-30.1";
+﻿const UI_BUILD = "2026-04-27.9";
+
+const CURATED_AUDIENCE_GROUPS = [
+  { value: "Board of Directors", label: "IWFSA Board of Director" },
+  { value: "Advocacy and Voice", label: "Advocacy and Voice" },
+  { value: "Catalytic Strategy", label: "Catalytic Strategy" },
+  { value: "Leadership Development Committee", label: "Leadership Development" },
+  { value: "Member Affairs", label: "Member Affairs" },
+  { value: "Brand and Reputation", label: "Brand and Reputation" }
+];
 
 function htmlLayout({ title, body, appBaseUrl, currentPath, pageClass = "" }) {
   const normalizedPath = currentPath || "/";
-  let navItems = [];
-  if (currentPath === "/member") {
-    navItems = [
-      { href: `${appBaseUrl}/`, label: "Public", path: "/" },
-      { href: `${appBaseUrl}/member`, label: "Member Sign In", path: "/member" },
-      { href: `${appBaseUrl}/admin`, label: "Admin Sign In", path: "/admin" }
-    ];
-  } else if (currentPath === "/admin") {
-    navItems = [
-      { href: `${appBaseUrl}/`, label: "Public", path: "/" },
-      { href: `${appBaseUrl}/member`, label: "Member Sign In", path: "/member" },
-      { href: `${appBaseUrl}/admin`, label: "Admin Sign In", path: "/admin" }
-    ];
-  } else {
-    navItems = [
-      { href: `${appBaseUrl}/`, label: "Public", path: "/" },
-      { href: `${appBaseUrl}/member`, label: "Member Sign In", path: "/member" },
-      { href: `${appBaseUrl}/admin`, label: "Admin Sign In", path: "/admin" }
-    ];
-  }
+  const navItems = [
+    { href: `${appBaseUrl}/`, label: "Public", path: "/" },
+    { href: `${appBaseUrl}/sign-in`, label: "Sign In", path: "/sign-in" },
+    { href: "https://www.iwfsa.co.za/", label: "Legacy", path: "/legacy", external: true }
+  ];
   const navLinks = navItems
     .map((item) => {
       const isActive = normalizedPath === item.path;
-      const routeClass = item.path === "/member" ? " nav-link-member" : item.path === "/admin" ? " nav-link-admin" : " nav-link-public";
+      const routeClass = item.path === "/sign-in" ? " nav-link-sign-in" : item.external ? " nav-link-legacy" : " nav-link-public";
       return `<a class="nav-link${routeClass}${isActive ? " nav-link-active" : ""}" href="${item.href}"${
         isActive ? ' aria-current="page"' : ""
-      }>${item.label}</a>`;
+      }${item.external ? ' target="_blank" rel="noopener noreferrer"' : ""}>${item.label}</a>`;
     })
     .join("");
   return `<!doctype html>
@@ -44,14 +38,18 @@ function htmlLayout({ title, body, appBaseUrl, currentPath, pageClass = "" }) {
     <header class="site-header">
       <div class="shell site-header-shell">
         <div class="brand-lockup">
-          <p class="eyebrow">IWFSA Web Platform</p>
           <a class="brand-link" href="${appBaseUrl}/">
-            <span class="brand-title">International Women's Forum South Africa</span>
-            <span class="brand-subtitle">Public website, member workspace, and governance console</span>
+            <img class="brand-logo" src="${appBaseUrl}/assets/iwfsa-logo.svg?v=${UI_BUILD}" alt="International Women's Forum South Africa" />
+            <span class="brand-copy">
+              <span class="eyebrow">IWFSA Web Platform</span>
+              <span class="brand-title">International Women's Forum South Africa</span>
+              <span class="brand-subtitle">Public website, member workspace, and governance console</span>
+            </span>
           </a>
         </div>
         <nav class="site-nav" aria-label="Primary">
           ${navLinks}
+          <button type="button" hidden class="nav-link nav-link-signout session-nav-signout member-session-logout admin-session-logout">Sign Out</button>
         </nav>
       </div>
     </header>
@@ -80,22 +78,14 @@ export function renderPublicPage(config) {
     body: `
       <section class="panel panel-hero public-hero">
         <div class="hero-copy">
-          <p class="eyebrow eyebrow-contrast">Public Surface | International Women's Forum of South Africa</p>
-          <h1 class="page-title" style="text-align: center; width: 100%; max-width: none;">Leading with Purpose.</h1>
-          <h2 style="text-align: center; margin-top: 0; font-weight: normal; font-size: 1.75rem;">ignite. inspire. impact.</h2>
-          <p class="lead" style="margin-top: 1.5rem; text-align: center;">
-            IWFSA is the SA chapter of the International Women’s Forum (“IWF”), our core objective is to nurture and develop a pipeline of the next generation of women leaders through targeted Leadership Development programmes, mentoring and coaching.
-          </p>
-          <div class="public-entry-actions" aria-label="Application sign-in choices">
-            <a class="button-link" href="${config.appBaseUrl}/member">Member Sign In</a>
-            <a class="button-link button-link-subtle" href="${config.appBaseUrl}/admin">Admin Sign In</a>
-            <a class="button-link button-link-soft" href="https://www.iwfsa.co.za/our-impact/" target="_blank" rel="noopener noreferrer">View Our Impact</a>
-          </div>
-          <p class="muted login-route-note">
-            Choose Member Sign In for the member workspace or Admin Sign In for the governance console.
+          <img class="hero-logo-mark" src="${config.appBaseUrl}/assets/iwfsa-logo.svg?v=${UI_BUILD}" alt="" aria-hidden="true" />
+          <p class="eyebrow eyebrow-contrast">Public Service | International Women's Forum South Africa</p>
+          <h1 class="page-title">Leading with Purpose.</h1>
+          <p class="lead public-hero-lead">
+            IWFSA brings women leaders together through purposeful programmes, mentoring, and events, creating a forum for connection, leadership growth, and meaningful impact across South Africa.
           </p>
         </div>
-        <figure class="featured-signal-figure" style="margin-top: 3rem;">
+        <figure class="featured-signal-figure">
           <div class="featured-photo-frame">
             <img
               class="featured-hero-image"
@@ -106,6 +96,19 @@ export function renderPublicPage(config) {
             />
           </div>
         </figure>
+      </section>
+
+      <section class="public-highlights" aria-label="IWFSA public highlights">
+        <div class="hero-stat-grid public-highlights-grid">
+          <div class="hero-stat public-highlight-card">
+            <strong>Purposeful programmes</strong>
+            <span>Leadership conversations, knowledge exchange, and shared learning for women shaping South Africa.</span>
+          </div>
+          <div class="hero-stat public-highlight-card">
+            <strong>Mentoring and connection</strong>
+            <span>A trusted network where accomplished women build relationships, support growth, and extend opportunity.</span>
+          </div>
+        </div>
       </section>
 
       <section class="panel panel-carousel" aria-label="IWFSA photo gallery" style="margin-top: 2rem; padding: 0; overflow: hidden;">
@@ -251,6 +254,264 @@ export function renderPublicPage(config) {
   });
 }
 
+export function renderSignInPage(config) {
+  return htmlLayout({
+    title: "IWFSA | Sign In",
+    appBaseUrl: config.appBaseUrl,
+    currentPath: "/sign-in",
+    pageClass: "page-sign-in",
+    body: `
+      <section class="sign-in-stage" aria-labelledby="sign-in-title">
+        <div class="sign-in-stage-backdrop"></div>
+        <div class="sign-in-stage-copy">
+          <p class="eyebrow eyebrow-contrast">Secure Access</p>
+          <h1 id="sign-in-title" class="page-title">Sign In</h1>
+          <p class="lead">Enter your username and password in the movable sign-in box to continue.</p>
+        </div>
+        <div id="sign-in-card" class="sign-in-card">
+          <div id="sign-in-drag-handle" class="sign-in-card-handle" role="button" tabindex="0" aria-label="Move sign in box">
+            <span class="eyebrow">Drag to move</span>
+            <span class="sign-in-card-grip" aria-hidden="true"></span>
+          </div>
+          <div class="sign-in-card-brand" aria-hidden="true">
+            <img src="${config.appBaseUrl}/assets/iwfsa-logo.svg?v=${UI_BUILD}" alt="" />
+            <span>Member and admin access</span>
+          </div>
+          <form id="prompt-sign-in-form" class="sign-in-card-form login-form">
+            <label for="sign-in-username">Username</label>
+            <input id="sign-in-username" name="username" autocomplete="username" required />
+            <label for="sign-in-password">Password</label>
+            <input id="sign-in-password" name="password" type="password" autocomplete="current-password" required />
+            <button id="sign-in-submit" class="button-link sign-in-submit" type="submit">Sign In</button>
+            <p id="sign-in-status" class="muted" aria-live="polite">Use the form below to access your workspace.</p>
+          </form>
+        </div>
+      </section>
+      <script>
+        (function () {
+          const signInCard = document.getElementById("sign-in-card");
+          const dragHandle = document.getElementById("sign-in-drag-handle");
+          const status = document.getElementById("sign-in-status");
+          const form = document.getElementById("prompt-sign-in-form");
+          const usernameInput = document.getElementById("sign-in-username");
+          const passwordInput = document.getElementById("sign-in-password");
+          const submitButton = document.getElementById("sign-in-submit");
+          const signInStage = document.querySelector(".sign-in-stage");
+          let dragState = null;
+
+          function roleDefaultPath(role) {
+            const normalized = String(role || "").trim().toLowerCase();
+            if (normalized === "chief_admin" || normalized === "admin") {
+              return "/admin#overview";
+            }
+            if (normalized === "event_editor") {
+              return "/admin#events";
+            }
+            return "/member#dashboard";
+          }
+
+          function safeRedirectPath(payload) {
+            const serverPath = String(payload?.redirectPath || "").trim();
+            const fallback = roleDefaultPath(payload?.user?.role);
+            const candidate = serverPath || fallback;
+            try {
+              const url = new URL(candidate, window.location.origin);
+              if (url.origin !== window.location.origin) {
+                return fallback;
+              }
+              if (url.pathname === "/admin" || url.pathname === "/member") {
+                return url.pathname + (url.hash || "");
+              }
+            } catch {
+              return fallback;
+            }
+            return fallback;
+          }
+
+          function clearStoredSessions() {
+            sessionStorage.removeItem("iwfsa_token");
+            sessionStorage.removeItem("iwfsa_member_username");
+            sessionStorage.removeItem("iwfsa_member_role");
+            sessionStorage.removeItem("iwfsa_admin_token");
+            sessionStorage.removeItem("iwfsa_admin_role");
+            sessionStorage.removeItem("iwfsa_admin_username");
+            sessionStorage.removeItem("iwfsa_admin_expires_at");
+          }
+
+          function persistSession(payload, redirectPath) {
+            const token = String(payload?.token || "");
+            const role = String(payload?.user?.role || "");
+            const username = String(payload?.user?.username || "");
+            const expiresAt = String(payload?.expiresAt || "");
+            clearStoredSessions();
+            if (!token) {
+              return;
+            }
+            if (String(redirectPath || "").startsWith("/admin")) {
+              sessionStorage.setItem("iwfsa_admin_token", token);
+              sessionStorage.setItem("iwfsa_admin_role", role);
+              sessionStorage.setItem("iwfsa_admin_username", username);
+              if (expiresAt) {
+                sessionStorage.setItem("iwfsa_admin_expires_at", expiresAt);
+              }
+              return;
+            }
+            sessionStorage.setItem("iwfsa_token", token);
+            sessionStorage.setItem("iwfsa_member_username", username);
+            sessionStorage.setItem("iwfsa_member_role", role || "member");
+          }
+
+          function setCardPosition(x, y) {
+            if (!signInCard) {
+              return;
+            }
+            signInCard.style.setProperty("--drag-x", x + "px");
+            signInCard.style.setProperty("--drag-y", y + "px");
+            signInCard.dataset.translateX = String(x);
+            signInCard.dataset.translateY = String(y);
+          }
+
+          function getBoundedPosition(x, y) {
+            const stageRect = signInStage?.getBoundingClientRect();
+            const maxX = Math.max(40, ((stageRect?.width || window.innerWidth) - signInCard.offsetWidth) / 2 - 12);
+            const maxY = Math.max(24, ((stageRect?.height || window.innerHeight) - signInCard.offsetHeight) / 2 - 12);
+            return {
+              x: Math.min(Math.max(-maxX, x), maxX),
+              y: Math.min(Math.max(-maxY, y), maxY)
+            };
+          }
+
+          function endDrag() {
+            if (!dragState) {
+              return;
+            }
+            dragState = null;
+            document.body.classList.remove("dragging-sign-in-card");
+          }
+
+          function startDrag(event) {
+            if (window.innerWidth <= 480 || !signInCard) {
+              return;
+            }
+            const currentX = Number(signInCard.dataset.translateX || 0);
+            const currentY = Number(signInCard.dataset.translateY || 0);
+            dragState = {
+              pointerId: event.pointerId,
+              offsetX: event.clientX - currentX,
+              offsetY: event.clientY - currentY
+            };
+            document.body.classList.add("dragging-sign-in-card");
+            dragHandle.setPointerCapture(event.pointerId);
+          }
+
+          function continueDrag(event) {
+            if (!dragState || !signInCard) {
+              return;
+            }
+            const next = getBoundedPosition(event.clientX - dragState.offsetX, event.clientY - dragState.offsetY);
+            setCardPosition(next.x, next.y);
+          }
+
+          async function startPromptSignIn() {
+            const payload = {
+              username: String(usernameInput.value || "").trim(),
+              password: String(passwordInput.value || "")
+            };
+            if (!payload.username || !payload.password) {
+              status.textContent = "Username and password are required.";
+              return;
+            }
+            status.textContent = "Signing in...";
+            submitButton.disabled = true;
+            try {
+              const response = await fetch("${config.apiBaseUrl}/api/auth/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+              });
+              const json = await response.json();
+              if (!response.ok) {
+                status.textContent = "Sign in failed: " + (json.message || "Invalid credentials.");
+                submitButton.disabled = false;
+                return;
+              }
+              const redirectPath = safeRedirectPath(json);
+              persistSession(json, redirectPath);
+              status.textContent = "Opening your workspace...";
+              window.location.assign("${config.appBaseUrl}" + redirectPath);
+            } catch {
+              status.textContent = "Sign in failed: unable to reach API.";
+              submitButton.disabled = false;
+            }
+          }
+
+          window.setTimeout(() => usernameInput?.focus(), 0);
+
+          form.addEventListener("submit", (event) => {
+            event.preventDefault();
+            void startPromptSignIn();
+          });
+
+          dragHandle.addEventListener("pointerdown", (event) => {
+            startDrag(event);
+          });
+
+          document.addEventListener("pointermove", (event) => {
+            continueDrag(event);
+          });
+
+          document.addEventListener("pointerup", () => {
+            endDrag();
+          });
+
+          document.addEventListener("pointercancel", () => {
+            endDrag();
+          });
+
+          dragHandle.addEventListener("keydown", (event) => {
+            if (!signInCard) {
+              return;
+            }
+            const currentX = Number(signInCard.dataset.translateX || 0);
+            const currentY = Number(signInCard.dataset.translateY || 0);
+            const step = event.shiftKey ? 24 : 12;
+            let nextX = currentX;
+            let nextY = currentY;
+            if (event.key === "ArrowLeft") {
+              nextX -= step;
+            } else if (event.key === "ArrowRight") {
+              nextX += step;
+            } else if (event.key === "ArrowUp") {
+              nextY -= step;
+            } else if (event.key === "ArrowDown") {
+              nextY += step;
+            } else {
+              return;
+            }
+            event.preventDefault();
+            const next = getBoundedPosition(nextX, nextY);
+            setCardPosition(next.x, next.y);
+          });
+
+          window.addEventListener("resize", () => {
+            if (!signInCard) {
+              return;
+            }
+            if (window.innerWidth <= 480) {
+              setCardPosition(0, 0);
+              return;
+            }
+            const currentX = Number(signInCard.dataset.translateX || 0);
+            const currentY = Number(signInCard.dataset.translateY || 0);
+            const next = getBoundedPosition(currentX, currentY);
+            setCardPosition(next.x, next.y);
+          });
+        })();
+      </script>
+    `
+  });
+}
+
 export function renderMemberPage(config) {
   return htmlLayout({
     title: "IWFSA | Member Portal",
@@ -265,62 +526,38 @@ export function renderMemberPage(config) {
                 <p class="eyebrow">Member Experience</p>
                 <h1 class="page-title">Member Event Directory</h1>
                <p class="lead">
-                 One responsive workspace for events, birthdays, notifications, celebration threads, and personal
-                 communication preferences.
+                 A focused member workspace for events, birthdays, notifications, celebrations, and personal communication preferences.
                </p>
              </div>
-             <div class="auth-controls">
-                 <div class="role-switcher" aria-label="Choose sign-in area">
-                   <a class="role-switcher-link role-switcher-active" href="${config.appBaseUrl}/member" aria-current="page">Member Sign In</a>
-                   <a class="role-switcher-link" href="${config.appBaseUrl}/admin">Admin Sign In</a>
-                 </div>
-                 <p id="member-login-status" class="muted">Not signed in.</p>
-                 <form id="member-login-form" class="inline-login-form member-login-form">
-                    <div id="member-login-credentials" class="member-login-credentials">
-                      <input
-                        id="member-username"
-                        name="username"
-                        placeholder="Member username"
-                        autocomplete="section-member username"
-                        list="member-test-usernames"
-                      />
-                      <datalist id="member-test-usernames">
-                        <option value="nomsa">Nomsa Dlamini</option>
-                        <option value="thandi">Thandi van Dyk</option>
-                        <option value="zara">Zara Patel</option>
-                        <option value="lerato">Lerato Maseko</option>
-                        <option value="naledi">Naledi Khumalo</option>
-                        <option value="ava">Ava Naidoo</option>
-                      </datalist>
-                      <input
-                        id="member-password"
-                        type="password"
-                        name="password"
-                        placeholder="Member password"
-                        autocomplete="section-member current-password"
-                      />
-                    </div>
-                    <label id="member-impersonation-toggle-label" class="inline-checkbox">
-                      <input id="member-login-impersonate" name="impersonateAsMember" type="checkbox" />
-                      Use admin password to impersonate this member
-                    </label>
-                    <div id="member-admin-login-credentials" class="member-login-credentials" hidden>
-                      <input
-                        id="member-admin-username"
-                        name="adminUsername"
-                        placeholder="Admin username (akeida)"
-                        autocomplete="section-admin username"
-                      />
-                    </div>
-                    <p id="member-impersonation-help" class="muted member-impersonation-help" hidden>
-                      Test members: nomsa, thandi, zara, lerato, naledi, or ava. Use admin username akeida and the admin password.
-                    </p>
-                    <div class="member-login-actions">
-                      <button id="member-login-submit" type="submit">Sign in</button>
-                    </div>
-                 </form>
-             </div>
+             <aside class="portal-hero-card" aria-label="Member workspace areas">
+                <img class="portal-hero-logo" src="${config.appBaseUrl}/assets/iwfsa-logo.svg?v=${UI_BUILD}" alt="" aria-hidden="true" />
+                <div class="portal-hero-card-content">
+                  <p class="eyebrow">Workspace</p>
+                  <strong>Members can move quickly between events, profiles, news, and celebrations.</strong>
+                  <div class="portal-hero-tags" aria-hidden="true">
+                    <span>Events</span>
+                    <span>Profile</span>
+                    <span>Notifications</span>
+                  </div>
+                </div>
+             </aside>
+             <p id="member-login-status" class="sr-only" aria-live="polite"></p>
           </div>
+          <div id="member-session-bar" class="session-bar member-top-session-bar" hidden>
+            <div>
+              <p class="eyebrow">Signed in area</p>
+              <p id="member-session-summary" class="session-summary">Member portal session active.</p>
+            </div>
+          </div>
+          <nav class="module-nav" id="member-nav" aria-label="Member modules" hidden>
+            <a href="#dashboard" class="module-nav-link" data-module="dashboard" data-member-module-link="dashboard">Dashboard</a>
+            <a href="#events" class="module-nav-link" data-module="events" data-member-module-link="events">Events</a>
+            <a href="#profile" class="module-nav-link" data-module="profile" data-member-module-link="profile">Member Profile</a>
+            <a href="#birthdays" class="module-nav-link" data-module="birthdays" data-member-module-link="birthdays">Birthdays</a>
+            <a href="#notifications" class="module-nav-link" data-module="notifications" data-member-module-link="notifications">Notifications</a>
+            <a href="#sms" class="module-nav-link" data-module="sms" data-member-module-link="sms">SMS Settings</a>
+            <a href="#celebrations" class="module-nav-link" data-module="celebrations" data-member-module-link="celebrations">Celebration Thread</a>
+          </nav>
           <section id="member-birthday-panel" class="panel panel-accent member-birthday-panel" hidden>
             <div class="member-birthday-copy">
               <p class="eyebrow">Birthday Circle</p>
@@ -332,25 +569,6 @@ export function renderMemberPage(config) {
             </div>
             <a class="button-link member-birthday-link" href="#birthdays">Open Birthday Circle</a>
           </section>
-           
-          <nav class="module-nav" id="member-nav" aria-label="Member modules" hidden>
-            <a href="#dashboard" class="module-nav-link" data-module="dashboard" data-member-module-link="dashboard">Dashboard</a>
-            <a href="#events" class="module-nav-link" data-module="events" data-member-module-link="events">Events</a>
-            <a href="#profile" class="module-nav-link" data-module="profile" data-member-module-link="profile">Member Profile</a>
-            <a href="#birthdays" class="module-nav-link" data-module="birthdays" data-member-module-link="birthdays">Birthdays</a>
-            <a href="#notifications" class="module-nav-link" data-module="notifications" data-member-module-link="notifications">Notifications</a>
-            <a href="#sms" class="module-nav-link" data-module="sms" data-member-module-link="sms">SMS Settings</a>
-            <a href="#celebrations" class="module-nav-link" data-module="celebrations" data-member-module-link="celebrations">Celebration Thread</a>
-          </nav>
-          <div id="member-session-bar" class="session-bar" hidden>
-            <div>
-              <p class="eyebrow">Signed in area</p>
-              <p id="member-session-summary" class="session-summary">Member portal session active.</p>
-            </div>
-            <div class="session-actions session-actions-single">
-              <button type="button" class="button-link session-logout-button member-session-logout">Sign out</button>
-            </div>
-          </div>
         </section>
 
                 <section id="module-dashboard" class="panel module-section">
@@ -437,6 +655,178 @@ export function renderMemberPage(config) {
                     <input id="member-profile-phone" type="text" maxlength="48" disabled />
                   </div>
                   <div>
+                    <label for="member-profile-business-title">Professional title</label>
+                    <input id="member-profile-business-title" type="text" maxlength="120" disabled />
+                  </div>
+                  <div>
+                    <label for="member-profile-iwfsa-position">IWFSA position</label>
+                    <input id="member-profile-iwfsa-position" type="text" maxlength="160" disabled />
+                  </div>
+                  <div class="field-span-full">
+                    <label for="member-profile-bio">Short biography</label>
+                    <textarea id="member-profile-bio" maxlength="300" rows="4" disabled></textarea>
+                  </div>
+                  <div>
+                    <label for="member-profile-expertise">Expertise and sector</label>
+                    <input id="member-profile-expertise" type="text" maxlength="300" disabled />
+                  </div>
+                  <div>
+                    <label for="member-profile-linkedin-url">LinkedIn URL</label>
+                    <input
+                      id="member-profile-linkedin-url"
+                      type="url"
+                      maxlength="2048"
+                      placeholder="https://www.linkedin.com/in/your-profile"
+                      disabled
+                    />
+                  </div>
+                  <div>
+                    <label for="member-profile-visibility">Profile visibility</label>
+                    <select id="member-profile-visibility" disabled>
+                      <option value="private">Private</option>
+                      <option value="admins_only">Admins only</option>
+                      <option value="members_only">Members only</option>
+                      <option value="submitted_for_public_review">Submitted for public review</option>
+                      <option value="public_approved">Public approved</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="member-profile-links-visibility">Links visibility</label>
+                    <select id="member-profile-links-visibility" disabled>
+                      <option value="private">Private</option>
+                      <option value="admins_only">Admins only</option>
+                      <option value="members_only">Members only</option>
+                      <option value="submitted_for_public_review">Submitted for public review</option>
+                      <option value="public_approved">Public approved</option>
+                    </select>
+                  </div>
+                  <div class="field-span-full">
+                    <label>Field visibility overrides</label>
+                    <div class="sms-grid" id="member-profile-field-visibility-grid">
+                      <div>
+                        <label for="member-profile-visibility-full-name">Full name visibility</label>
+                        <select id="member-profile-visibility-full-name" data-profile-field-visibility="fullName" disabled>
+                          <option value="private">Private</option>
+                          <option value="admins_only">Admins only</option>
+                          <option value="members_only">Members only</option>
+                          <option value="submitted_for_public_review">Submitted for public review</option>
+                          <option value="public_approved">Public approved</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label for="member-profile-visibility-company">Organisation visibility</label>
+                        <select id="member-profile-visibility-company" data-profile-field-visibility="company" disabled>
+                          <option value="private">Private</option>
+                          <option value="admins_only">Admins only</option>
+                          <option value="members_only">Members only</option>
+                          <option value="submitted_for_public_review">Submitted for public review</option>
+                          <option value="public_approved">Public approved</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label for="member-profile-visibility-phone">Phone visibility</label>
+                        <select id="member-profile-visibility-phone" data-profile-field-visibility="phone" disabled>
+                          <option value="private">Private</option>
+                          <option value="admins_only">Admins only</option>
+                          <option value="members_only">Members only</option>
+                          <option value="submitted_for_public_review">Submitted for public review</option>
+                          <option value="public_approved">Public approved</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label for="member-profile-visibility-business-title">Professional title visibility</label>
+                        <select id="member-profile-visibility-business-title" data-profile-field-visibility="businessTitle" disabled>
+                          <option value="private">Private</option>
+                          <option value="admins_only">Admins only</option>
+                          <option value="members_only">Members only</option>
+                          <option value="submitted_for_public_review">Submitted for public review</option>
+                          <option value="public_approved">Public approved</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label for="member-profile-visibility-iwfsa-position">IWFSA position visibility</label>
+                        <select id="member-profile-visibility-iwfsa-position" data-profile-field-visibility="iwfsaPosition" disabled>
+                          <option value="private">Private</option>
+                          <option value="admins_only">Admins only</option>
+                          <option value="members_only">Members only</option>
+                          <option value="submitted_for_public_review">Submitted for public review</option>
+                          <option value="public_approved">Public approved</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label for="member-profile-visibility-bio">Biography visibility</label>
+                        <select id="member-profile-visibility-bio" data-profile-field-visibility="bio" disabled>
+                          <option value="private">Private</option>
+                          <option value="admins_only">Admins only</option>
+                          <option value="members_only">Members only</option>
+                          <option value="submitted_for_public_review">Submitted for public review</option>
+                          <option value="public_approved">Public approved</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label for="member-profile-visibility-linkedin-url">LinkedIn visibility</label>
+                        <select id="member-profile-visibility-linkedin-url" data-profile-field-visibility="linkedinUrl" disabled>
+                          <option value="private">Private</option>
+                          <option value="admins_only">Admins only</option>
+                          <option value="members_only">Members only</option>
+                          <option value="submitted_for_public_review">Submitted for public review</option>
+                          <option value="public_approved">Public approved</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label for="member-profile-visibility-professional-links">Professional links visibility</label>
+                        <select id="member-profile-visibility-professional-links" data-profile-field-visibility="professionalLinks" disabled>
+                          <option value="private">Private</option>
+                          <option value="admins_only">Admins only</option>
+                          <option value="members_only">Members only</option>
+                          <option value="submitted_for_public_review">Submitted for public review</option>
+                          <option value="public_approved">Public approved</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label for="member-profile-visibility-expertise">Expertise visibility</label>
+                        <select id="member-profile-visibility-expertise" data-profile-field-visibility="expertiseFreeText" disabled>
+                          <option value="private">Private</option>
+                          <option value="admins_only">Admins only</option>
+                          <option value="members_only">Members only</option>
+                          <option value="submitted_for_public_review">Submitted for public review</option>
+                          <option value="public_approved">Public approved</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label for="member-profile-visibility-photo">Photo visibility</label>
+                        <select id="member-profile-visibility-photo" data-profile-field-visibility="photo" disabled>
+                          <option value="private">Private</option>
+                          <option value="admins_only">Admins only</option>
+                          <option value="members_only">Members only</option>
+                          <option value="submitted_for_public_review">Submitted for public review</option>
+                          <option value="public_approved">Public approved</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label for="member-profile-visibility-birthday">Birthday visibility override</label>
+                        <select id="member-profile-visibility-birthday" data-profile-field-visibility="birthday" disabled>
+                          <option value="private">Private</option>
+                          <option value="admins_only">Admins only</option>
+                          <option value="members_only">Members only</option>
+                          <option value="submitted_for_public_review">Submitted for public review</option>
+                          <option value="public_approved">Public approved</option>
+                        </select>
+                      </div>
+                    </div>
+                    <p class="muted">Use the two selectors above as defaults, then override individual fields that need a different review or audience rule.</p>
+                  </div>
+                  <div class="field-span-full">
+                    <label for="member-profile-professional-links">Professional links</label>
+                    <textarea
+                      id="member-profile-professional-links"
+                      rows="4"
+                      placeholder="One link per line: Label | https://example.com"
+                      disabled
+                    ></textarea>
+                    <p class="muted">Use one link per line. You can write Label | URL or just paste a URL.</p>
+                  </div>
+                  <div>
                     <label for="member-profile-birthday-visibility">Birthday visibility</label>
                     <select id="member-profile-birthday-visibility" disabled>
                       <option value="hidden">Hidden</option>
@@ -454,10 +844,10 @@ export function renderMemberPage(config) {
                   </div>
                 </div>
                 <div class="member-actions">
-                  <button id="member-profile-save" type="submit" disabled>Save Personal Details</button>
+                  <button id="member-profile-save" type="submit" disabled>Save Profile</button>
                   <button id="member-profile-clear-birthday" type="button" class="ghost" disabled>Clear birthday</button>
                 </div>
-                <p id="member-profile-status" class="muted">Sign in to edit your personal details.</p>
+                <p id="member-profile-status" class="muted">Sign in to edit your profile details and visibility.</p>
               </form>
             </div>
             <aside class="sidebar-card">
@@ -488,7 +878,7 @@ export function renderMemberPage(config) {
               <div class="event-create-intro">
                 <p class="eyebrow">Member event setup</p>
                 <h3>New member event</h3>
-                <p class="muted">Use All Members for an organisation-wide invitation, or choose a smaller audience group for a targeted invitation.</p>
+                <p class="muted">Member-created events are sent to active IWFSA members in good standing. Add individual invitees only when a smaller working group is needed.</p>
               </div>
               <form id="member-event-create-form" class="login-form member-event-create-form">
                 <div class="sms-grid event-create-grid">
@@ -538,18 +928,18 @@ export function renderMemberPage(config) {
                   <div class="wide-field">
                     <label for="member-event-audience">Invite audience</label>
                     <select id="member-event-audience" name="audienceCode" required>
-                      <option value="all_members">All Members</option>
-                      <option value="board_of_directors">Board of Directors</option>
-                      <option value="member_affairs">Member Affairs</option>
-                      <option value="brand_and_reputation">Brand and Reputation</option>
-                      <option value="strategic_alliances_and_advocacy">Strategic Alliances and Advocacy</option>
-                      <option value="catalytic_strategy_and_voice">Catalytic Strategy and Voice</option>
-                      <option value="leadership_development">Leadership Development</option>
+                      <option value="all_members">All Active IWFSA Members</option>
                     </select>
-                    <p class="muted form-hint">Choose a group above, then add individual members below. If no group is selected, the selected members become the event audience.</p>
                   </div>
                   <div class="wide-field invitee-search-panel">
-                    <label for="member-event-invitee-search">Invite individual members</label>
+                    <div class="field-label-row">
+                      <label for="member-event-invitee-search">Invite individual members</label>
+                      <span
+                        class="tooltip-help"
+                        tabindex="0"
+                        aria-label="Search by member name, email, organisation, or group. Choose a result to add that member to this event, or leave this blank to invite all active members."
+                      >?</span>
+                    </div>
                     <div class="invitee-search-row">
                       <input id="member-event-invitee-search" type="search" placeholder="Type a member name or email" autocomplete="off" />
                       <button id="member-event-invitee-clear" type="button" class="ghost">Clear selected</button>
@@ -721,18 +1111,7 @@ export function renderMemberPage(config) {
         const memberHomeStatus = document.getElementById("member-home-status");
         const refreshHomeButton = document.getElementById("member-refresh-home");
         const memberNav = document.getElementById("member-nav");
-        const loginForm = document.getElementById("member-login-form");
-        const loginCredentials = document.getElementById("member-login-credentials");
-        const loginSubmitButton = document.getElementById("member-login-submit");
-        const memberUsernameInput = document.getElementById("member-username");
-        const memberPasswordInput = document.getElementById("member-password");
-        const memberImpersonationToggle = document.getElementById("member-login-impersonate");
-        const memberImpersonationToggleLabel = document.getElementById("member-impersonation-toggle-label");
-        const memberAdminCredentials = document.getElementById("member-admin-login-credentials");
-        const memberAdminUsernameInput = document.getElementById("member-admin-username");
-        const memberImpersonationHelp = document.getElementById("member-impersonation-help");
         const loginStatus = document.getElementById("member-login-status");
-        const logoutButton = document.getElementById("member-logout");
         const birthdayPanel = document.getElementById("member-birthday-panel");
         const viewSelect = document.getElementById("member-event-view");
         const refreshEventsButton = document.getElementById("member-refresh-events");
@@ -775,6 +1154,15 @@ export function renderMemberPage(config) {
         const profileFullNameInput = document.getElementById("member-profile-full-name");
         const profileCompanyInput = document.getElementById("member-profile-company");
         const profilePhoneInput = document.getElementById("member-profile-phone");
+        const profileBusinessTitleInput = document.getElementById("member-profile-business-title");
+        const profileIwfsaPositionInput = document.getElementById("member-profile-iwfsa-position");
+        const profileBioInput = document.getElementById("member-profile-bio");
+        const profileExpertiseInput = document.getElementById("member-profile-expertise");
+        const profileLinkedinUrlInput = document.getElementById("member-profile-linkedin-url");
+        const profileVisibilityInput = document.getElementById("member-profile-visibility");
+        const profileLinksVisibilityInput = document.getElementById("member-profile-links-visibility");
+        const profileFieldVisibilityInputs = Array.from(document.querySelectorAll("[data-profile-field-visibility]"));
+        const profileProfessionalLinksInput = document.getElementById("member-profile-professional-links");
         const profileBirthdayVisibilityInput = document.getElementById("member-profile-birthday-visibility");
         const profileBirthdayMonthInput = document.getElementById("member-profile-birthday-month");
         const profileBirthdayDayInput = document.getElementById("member-profile-birthday-day");
@@ -803,6 +1191,7 @@ export function renderMemberPage(config) {
         let currentEvents = [];
         let memberInviteDirectory = [];
         const selectedMemberEventInvitees = new Map();
+        const MEMBER_SIGN_IN_URL = "${config.appBaseUrl}/sign-in";
 
         function showMemberModule(moduleName, { scroll = false } = {}) {
           const nextModule = ["dashboard", "events", "profile", "birthdays", "notifications", "sms", "celebrations"].includes(moduleName)
@@ -863,35 +1252,12 @@ export function renderMemberPage(config) {
 
         let memberUsername = sessionStorage.getItem("iwfsa_member_username") || "";
         let memberRole = sessionStorage.getItem("iwfsa_member_role") || "member";
-        let memberImpersonation = null;
-
-        try {
-          const storedImpersonation = sessionStorage.getItem("iwfsa_member_impersonation");
-          if (storedImpersonation) {
-            const parsed = JSON.parse(storedImpersonation);
-            if (parsed && parsed.active === true && parsed.adminUser && parsed.adminUser.username) {
-              memberImpersonation = parsed;
-            }
-          }
-        } catch {
-          memberImpersonation = null;
-        }
 
         function formatMemberSessionSummary() {
-          const base = "Signed in as " + (memberUsername || "member") + " (" + formatRoleLabel(memberRole) + ").";
-          if (!memberImpersonation || memberImpersonation.active !== true) {
-            return base;
-          }
-
-          const adminName = String(memberImpersonation.adminUser?.username || "").trim();
-          if (!adminName) {
-            return base;
-          }
-
-          return base + " Impersonating via admin " + adminName + ".";
+          return "Signed in as " + (memberUsername || "member") + " (" + formatRoleLabel(memberRole) + ").";
         }
 
-        function setToken(token, username = "", role = "member", impersonation = null) {
+        function setToken(token, username = "", role = "member") {
           if (token) {
             sessionStorage.setItem("iwfsa_token", token);
             memberUsername = String(username || memberUsername || "").trim();
@@ -902,86 +1268,20 @@ export function renderMemberPage(config) {
               sessionStorage.removeItem("iwfsa_member_username");
             }
             sessionStorage.setItem("iwfsa_member_role", memberRole);
-
-            if (impersonation && impersonation.active === true && impersonation.adminUser && impersonation.adminUser.username) {
-              memberImpersonation = {
-                active: true,
-                adminUser: {
-                  id: Number(impersonation.adminUser.id || 0),
-                  username: String(impersonation.adminUser.username || "").trim(),
-                  role: String(impersonation.adminUser.role || "admin").trim() || "admin"
-                }
-              };
-              sessionStorage.setItem("iwfsa_member_impersonation", JSON.stringify(memberImpersonation));
-            } else {
-              memberImpersonation = null;
-              sessionStorage.removeItem("iwfsa_member_impersonation");
-            }
           } else {
             sessionStorage.removeItem("iwfsa_token");
             sessionStorage.removeItem("iwfsa_member_username");
             sessionStorage.removeItem("iwfsa_member_role");
-            sessionStorage.removeItem("iwfsa_member_impersonation");
             memberUsername = "";
             memberRole = "member";
-            memberImpersonation = null;
-          }
-        }
-
-        function updateImpersonationInputs() {
-          const showAdminCredentials = Boolean(memberImpersonationToggle && memberImpersonationToggle.checked);
-          if (memberAdminCredentials) {
-            memberAdminCredentials.hidden = !showAdminCredentials;
-          }
-          if (memberImpersonationHelp) {
-            memberImpersonationHelp.hidden = !showAdminCredentials;
-          }
-          if (memberUsernameInput) {
-            memberUsernameInput.placeholder = showAdminCredentials ? "Member username to impersonate" : "Member username";
-            memberUsernameInput.setAttribute("autocomplete", showAdminCredentials ? "section-member username" : "section-member username");
-          }
-          if (memberPasswordInput) {
-            memberPasswordInput.placeholder = showAdminCredentials ? "Admin password" : "Member password";
-            memberPasswordInput.setAttribute(
-              "autocomplete",
-              showAdminCredentials ? "section-admin current-password" : "section-member current-password"
-            );
-          }
-          if (memberAdminUsernameInput) {
-            memberAdminUsernameInput.toggleAttribute("required", showAdminCredentials);
-            if (showAdminCredentials && !String(memberAdminUsernameInput.value || "").trim()) {
-              memberAdminUsernameInput.value = "akeida";
-            }
-            if (!showAdminCredentials) {
-              memberAdminUsernameInput.value = "";
-            }
           }
         }
 
         function setSignedInState(isSignedIn) {
           document.body.classList.toggle("member-signed-in", isSignedIn);
-          if (loginCredentials) {
-            loginCredentials.hidden = isSignedIn;
-          }
-          if (loginSubmitButton) {
-            loginSubmitButton.hidden = isSignedIn;
-          }
-          if (memberImpersonationToggleLabel) {
-            memberImpersonationToggleLabel.hidden = isSignedIn;
-          }
-          if (memberImpersonationHelp) {
-            memberImpersonationHelp.hidden = isSignedIn || !Boolean(memberImpersonationToggle && memberImpersonationToggle.checked);
-          }
-          if (memberImpersonationToggle) {
-            memberImpersonationToggle.toggleAttribute("disabled", isSignedIn);
-          }
-          if (memberAdminCredentials) {
-            memberAdminCredentials.hidden = isSignedIn || !Boolean(memberImpersonationToggle && memberImpersonationToggle.checked);
-          }
-          if (logoutButton) {
-            logoutButton.disabled = !isSignedIn;
-            logoutButton.hidden = !isSignedIn;
-          }
+          document.querySelectorAll(".session-nav-signout").forEach((button) => {
+            button.hidden = !isSignedIn;
+          });
           if (birthdayPanel) {
             birthdayPanel.hidden = !isSignedIn;
           }
@@ -1055,11 +1355,18 @@ export function renderMemberPage(config) {
               link.classList.remove('active');
             });
             memberHomeStatus.textContent = "Sign in to load invitations and news.";
-            profileStatus.textContent = "Sign in to edit your personal details.";
+            profileStatus.textContent = "Sign in to edit your profile details and visibility.";
             memberPhotoStatus.textContent = "Sign in to upload your photo.";
-            updateImpersonationInputs();
           }
         }
+
+        function redirectToUnifiedSignIn(message = "Please sign in to continue.") {
+          if (loginStatus) {
+            loginStatus.textContent = message;
+          }
+          window.location.replace(MEMBER_SIGN_IN_URL);
+        }
+
         function nowWithServerSkew() {
           return Date.now() + serverSkewMs;
         }
@@ -1072,6 +1379,38 @@ export function renderMemberPage(config) {
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#39;");
         }
+
+        function normalizeDisplayText(value) {
+          const text = String(value || "").trim();
+          if (!text) {
+            return "";
+          }
+          const longDashPrefix = String.fromCharCode(195, 162, 226, 8218, 172, 226, 8364);
+          const shortPrefix = String.fromCharCode(226, 8364);
+          return text
+            .replaceAll(longDashPrefix + String.fromCharCode(156), "-")
+            .replaceAll(longDashPrefix + String.fromCharCode(157), "-")
+            .replaceAll(shortPrefix + String.fromCharCode(8220), "-")
+            .replaceAll(shortPrefix + String.fromCharCode(8221), "-")
+            .replaceAll(shortPrefix + String.fromCharCode(8482), "'")
+            .replaceAll(shortPrefix + String.fromCharCode(732), "'")
+            .replaceAll(shortPrefix + String.fromCharCode(339), '"')
+            .replaceAll(shortPrefix + String.fromCharCode(157), '"')
+            .replaceAll(shortPrefix + String.fromCharCode(166), "...")
+            .replace(/\s+/g, " ")
+            .trim();
+        }
+
+        function isMissingDisplayText(value) {
+          const normalized = normalizeDisplayText(value);
+          return !normalized || ["-", "--", "n/a", "na", "null", "undefined"].includes(normalized.toLowerCase());
+        }
+
+        function displayTextHtml(value, missingHtml = "<span class='muted'>&mdash;</span>") {
+          const normalized = normalizeDisplayText(value);
+          return isMissingDisplayText(normalized) ? missingHtml : escapeClientHtml(normalized);
+        }
+
         function memberInviteeId(member) {
           const id = Number(member?.userId || member?.id || 0);
           return Number.isInteger(id) && id > 0 ? id : 0;
@@ -1118,7 +1457,7 @@ export function renderMemberPage(config) {
             return;
           }
           if (!query) {
-            memberEventInviteeResults.innerHTML = "<p class='muted'>Start typing a member name or email to add individual invitees.</p>";
+            memberEventInviteeResults.innerHTML = "<p class='muted'>Use the help icon above for search tips, then choose a matching member from the results.</p>";
             return;
           }
           const matches = source
@@ -1126,7 +1465,7 @@ export function renderMemberPage(config) {
               const id = memberInviteeId(member);
               if (!id || selectedMemberEventInvitees.has(id)) return false;
               const haystack = [member.fullName, member.username, member.email, member.organisation, ...(Array.isArray(member.groups) ? member.groups : [])]
-                .map((value) => String(value || "").toLowerCase())
+                .map((value) => normalizeDisplayText(value).toLowerCase())
                 .join(" ");
               return haystack.includes(query);
             })
@@ -1139,7 +1478,10 @@ export function renderMemberPage(config) {
             .map((member) => {
               const id = memberInviteeId(member);
               const label = memberInviteeLabel(member);
-              const detailParts = [member.email, member.organisation].filter(Boolean).join(" | ");
+              const detailParts = [member.email, member.organisation]
+                .map((value) => normalizeDisplayText(value))
+                .filter((value) => !isMissingDisplayText(value))
+                .join(" | ");
               return (
                 "<button type='button' class='invitee-result' data-add-member-invitee='" + id + "'>" +
                 "<strong>" + escapeClientHtml(label) + "</strong>" +
@@ -1268,6 +1610,26 @@ export function renderMemberPage(config) {
           return date.toISOString();
         }
 
+        function formatMemberDateTimeLocal(date = new Date()) {
+          const pad = (value) => String(value).padStart(2, "0");
+          return (
+            String(date.getFullYear()) +
+            "-" +
+            pad(date.getMonth() + 1) +
+            "-" +
+            pad(date.getDate()) +
+            "T" +
+            pad(date.getHours()) +
+            ":" +
+            pad(date.getMinutes())
+          );
+        }
+
+        function setMemberEventStartDefault() {
+          if (!memberEventStartInput) return;
+          memberEventStartInput.value = formatMemberDateTimeLocal(new Date());
+        }
+
         function clearMemberEventCreateErrors() {
           [
             memberEventTitleInput,
@@ -1303,9 +1665,8 @@ export function renderMemberPage(config) {
           const hostName = String(formData.get("hostName") || "").trim();
           const capacity = Number(formData.get("capacity") || 0);
           const registrationClosesAt = toIsoStringFromMemberLocalInput(formData.get("registrationClosesAt"));
-          const audienceCode = String(formData.get("audienceCode") || "all_members").trim() || "all_members";
+          const audienceCode = "all_members";
           const inviteeUserIds = selectedMemberInviteeIds();
-          const targetAudienceCode = inviteeUserIds.length > 0 && audienceCode === "all_members" ? "groups" : audienceCode;
           const targetAudienceType = inviteeUserIds.length > 0 && audienceCode === "all_members" ? "groups" : "";
           const errors = [];
 
@@ -1359,7 +1720,7 @@ export function renderMemberPage(config) {
               hostName,
               capacity,
               registrationClosesAt,
-              audienceCode: targetAudienceCode,
+              audienceCode,
               inviteeUserIds,
               ...(targetAudienceType ? { audienceType: targetAudienceType } : {})
             }
@@ -1470,7 +1831,7 @@ export function renderMemberPage(config) {
                 startLabel +
                 "</p>" +
                 "<p><strong>Audience:</strong> " +
-                escapeClientHtml(item.audienceLabel || "All Members") +
+                escapeClientHtml(item.audienceLabel || "All Active IWFSA Members") +
                 "</p>" +
                 "<p><strong>Venue:</strong> " +
                 escapeClientHtml(venueLabel || "TBA") +
@@ -1564,6 +1925,67 @@ export function renderMemberPage(config) {
           }
         }
 
+        function formatProfessionalLinksText(links) {
+          if (!Array.isArray(links) || links.length === 0) {
+            return "";
+          }
+          return links
+            .map((item) => {
+              const label = String(item?.label || "").trim();
+              const url = String(item?.url || "").trim();
+              if (!url) {
+                return "";
+              }
+              return label ? label + " | " + url : url;
+            })
+            .filter(Boolean)
+            .join("\\n");
+        }
+
+        function parseProfessionalLinksText(value) {
+          function looksLikeHttpUrl(input) {
+            const normalized = String(input || "").trim().toLowerCase();
+            return normalized.startsWith("http://") || normalized.startsWith("https://");
+          }
+
+          const lines = String(value || "")
+            .split(/\\r?\\n/)
+            .map((line) => line.trim())
+            .filter(Boolean);
+          const items = [];
+          for (const line of lines) {
+            const parts = line.split("|").map((part) => part.trim()).filter(Boolean);
+            if (parts.length === 0) {
+              continue;
+            }
+            if (parts.length === 1) {
+              if (!looksLikeHttpUrl(parts[0])) {
+                throw new Error("Professional links must be a URL or Label | URL.");
+              }
+              items.push({ label: "Link", url: parts[0] });
+              continue;
+            }
+            const url = parts[parts.length - 1];
+            const label = parts.slice(0, -1).join(" | ");
+            if (!looksLikeHttpUrl(url)) {
+              throw new Error("Professional links must use http or https URLs.");
+            }
+            items.push({ label: label || "Link", url });
+          }
+          return items;
+        }
+
+        function memberProfileFieldFallback(profileVisibility, fieldName) {
+          const source = profileVisibility || {};
+          const fields = source.fields || {};
+          if (fields[fieldName]) {
+            return String(fields[fieldName]);
+          }
+          return fieldName === "linkedinUrl" || fieldName === "professionalLinks"
+            ? String(source.links || "members_only")
+            : String(source.profile || "members_only");
+        }
+
         function populateMemberProfile(item) {
           const profile = item || {};
           profileUsernameInput.value = String(profile.username || memberUsername || "");
@@ -1571,6 +1993,18 @@ export function renderMemberPage(config) {
           profileFullNameInput.value = String(profile.fullName || "");
           profileCompanyInput.value = String(profile.company || "");
           profilePhoneInput.value = String(profile.phone || "");
+          profileBusinessTitleInput.value = String(profile.businessTitle || "");
+          profileIwfsaPositionInput.value = String(profile.iwfsaPosition || "");
+          profileBioInput.value = String(profile.bio || "");
+          profileExpertiseInput.value = String(profile.expertiseFreeText || "");
+          profileLinkedinUrlInput.value = String(profile.linkedinUrl || "");
+          profileVisibilityInput.value = String(profile.profileVisibility?.profile || "members_only");
+          profileLinksVisibilityInput.value = String(profile.profileVisibility?.links || "members_only");
+          profileFieldVisibilityInputs.forEach((input) => {
+            const fieldName = String(input.getAttribute("data-profile-field-visibility") || "").trim();
+            input.value = memberProfileFieldFallback(profile.profileVisibility, fieldName);
+          });
+          profileProfessionalLinksInput.value = formatProfessionalLinksText(profile.professionalLinks || []);
           profileBirthdayMonthInput.value = profile.birthdayMonth ? String(profile.birthdayMonth) : "";
           profileBirthdayDayInput.value = profile.birthdayDay ? String(profile.birthdayDay) : "";
           profileBirthdayVisibilityInput.value = String(profile.birthdayVisibility || "hidden");
@@ -1580,13 +2014,24 @@ export function renderMemberPage(config) {
         async function loadMemberProfile() {
           const token = getToken();
           if (!token) {
-            profileStatus.textContent = "Sign in to edit your personal details.";
+            profileStatus.textContent = "Sign in to edit your profile details and visibility.";
             memberPhotoStatus.textContent = "Sign in to upload your photo.";
             profileUsernameInput.value = "";
             profileEmailInput.value = "";
             profileFullNameInput.value = "";
             profileCompanyInput.value = "";
             profilePhoneInput.value = "";
+            profileBusinessTitleInput.value = "";
+            profileIwfsaPositionInput.value = "";
+            profileBioInput.value = "";
+            profileExpertiseInput.value = "";
+            profileLinkedinUrlInput.value = "";
+            profileVisibilityInput.value = "members_only";
+            profileLinksVisibilityInput.value = "members_only";
+            profileFieldVisibilityInputs.forEach((input) => {
+              input.value = "members_only";
+            });
+            profileProfessionalLinksInput.value = "";
             profileBirthdayMonthInput.value = "";
             profileBirthdayDayInput.value = "";
             profileBirthdayVisibilityInput.value = "hidden";
@@ -1690,7 +2135,15 @@ export function renderMemberPage(config) {
         async function saveMemberProfile({ clearBirthday = false } = {}) {
           const token = getToken();
           if (!token) {
-            profileStatus.textContent = "Sign in to edit your personal details.";
+            profileStatus.textContent = "Sign in to edit your profile details and visibility.";
+            return;
+          }
+
+          let professionalLinks;
+          try {
+            professionalLinks = parseProfessionalLinksText(profileProfessionalLinksInput.value);
+          } catch (error) {
+            profileStatus.textContent = String(error.message || error);
             return;
           }
 
@@ -1700,6 +2153,24 @@ export function renderMemberPage(config) {
             fullName: String(profileFullNameInput.value || "").trim(),
             company: String(profileCompanyInput.value || "").trim(),
             phone: String(profilePhoneInput.value || "").trim(),
+            businessTitle: String(profileBusinessTitleInput.value || "").trim(),
+            iwfsaPosition: String(profileIwfsaPositionInput.value || "").trim(),
+            bio: String(profileBioInput.value || "").trim(),
+            expertiseFreeText: String(profileExpertiseInput.value || "").trim(),
+            linkedinUrl: String(profileLinkedinUrlInput.value || "").trim(),
+            professionalLinks,
+            profileVisibility: {
+              profile: String(profileVisibilityInput.value || "members_only").trim(),
+              links: String(profileLinksVisibilityInput.value || "members_only").trim(),
+              fields: profileFieldVisibilityInputs.reduce((accumulator, input) => {
+                const fieldName = String(input.getAttribute("data-profile-field-visibility") || "").trim();
+                if (!fieldName) {
+                  return accumulator;
+                }
+                accumulator[fieldName] = String(input.value || "members_only").trim() || "members_only";
+                return accumulator;
+              }, {})
+            },
             birthdayVisibility: String(profileBirthdayVisibilityInput.value || "hidden").trim()
           };
 
@@ -1710,7 +2181,7 @@ export function renderMemberPage(config) {
             payload.birthdayDay = Number(dayValue || 0);
           }
 
-          profileStatus.textContent = "Saving personal details...";
+          profileStatus.textContent = "Saving profile...";
           try {
             const response = await fetch("${config.apiBaseUrl}/api/member/profile", {
               method: "PUT",
@@ -1722,11 +2193,11 @@ export function renderMemberPage(config) {
             });
             const responsePayload = await response.json();
             if (!response.ok) {
-              profileStatus.textContent = responsePayload.message || "Unable to save personal details.";
+              profileStatus.textContent = responsePayload.message || "Unable to save profile.";
               return;
             }
             populateMemberProfile(responsePayload.item || {});
-            profileStatus.textContent = "Personal details saved.";
+            profileStatus.textContent = "Profile saved.";
             await loadBirthdays();
             await loadMemberHome();
           } catch {
@@ -2346,7 +2817,7 @@ export function renderMemberPage(config) {
               const countdown = computeCountdown(event.countdownEndsAt);
               const urgency = urgencyMessage({ ...event, registrationState: countdown.state });
               const draftValue = getDraftValue(event);
-              const audienceLabel = escapeClientHtml(event.audienceLabel || "All Members");
+              const audienceLabel = escapeClientHtml(event.audienceLabel || "All Active IWFSA Members");
               const registerDisabled =
                 countdown.state === "closed" ||
                 event.mySignupStatus === "confirmed" ||
@@ -2540,6 +3011,7 @@ export function renderMemberPage(config) {
             container.innerHTML = "<p class='muted'>Sign in to load events.</p>";
             if (memberEventCreateForm) {
               memberEventCreateForm.reset();
+              setMemberEventStartDefault();
               clearMemberEventCreateErrors();
             }
             resetMemberEventInviteePicker();
@@ -2575,7 +3047,7 @@ export function renderMemberPage(config) {
 
             renderEvents(payload.items || []);
           } catch {
-            container.innerHTML = "<p class='muted'>Unable to reach API. Start npm run dev:api first.</p>";
+            container.innerHTML = "<p class='muted'>Unable to reach the event service. Refresh the page and try again.</p>";
           }
         }
 
@@ -2583,6 +3055,7 @@ export function renderMemberPage(config) {
           memberEventCreateResetButton.addEventListener("click", () => {
             clearMemberEventCreateErrors();
             resetMemberEventInviteePicker();
+            setTimeout(setMemberEventStartDefault, 0);
             if (memberEventCreateStatus) {
               memberEventCreateStatus.textContent = getToken()
                 ? "Form cleared. Create a new event when ready."
@@ -2702,10 +3175,14 @@ export function renderMemberPage(config) {
               }
 
               memberEventCreateForm.reset();
+              setMemberEventStartDefault();
               resetMemberEventInviteePicker();
               clearMemberEventCreateErrors();
               if (memberEventPublishNowInput) {
                 memberEventPublishNowInput.checked = true;
+              }
+              if (viewSelect) {
+                viewSelect.value = "";
               }
               memberEventCreateStatus.textContent = statusMessage;
               await loadEvents();
@@ -2720,73 +3197,6 @@ export function renderMemberPage(config) {
           });
         }
 /* Demo button removed */
-
-        if (memberImpersonationToggle) {
-          memberImpersonationToggle.addEventListener("change", updateImpersonationInputs);
-        }
-
-        loginForm.addEventListener("submit", async (event) => {
-          event.preventDefault();
-          loginStatus.textContent = "Signing in...";
-
-          const formData = new FormData(loginForm);
-          const useAdminImpersonation = Boolean(memberImpersonationToggle && memberImpersonationToggle.checked);
-          const payload = {
-            username: String(formData.get("username") || "").trim(),
-            password: String(formData.get("password") || "")
-          };
-
-          if (useAdminImpersonation) {
-            const adminUsername = String(formData.get("adminUsername") || "").trim();
-            if (!adminUsername) {
-              loginStatus.textContent = "Sign in failed: admin username is required for impersonation.";
-              return;
-            }
-            payload.impersonateAsMember = true;
-            payload.adminUsername = adminUsername;
-          }
-
-          let loginSucceeded = false;
-          try {
-            const response = await fetch("${config.apiBaseUrl}/api/auth/login", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(payload)
-            });
-            const json = await response.json();
-            if (!response.ok) {
-              const fallbackMessage = useAdminImpersonation
-                ? "Impersonation failed. Use the member username, admin username, and admin password."
-                : "Invalid credentials.";
-              const failureMessage =
-                useAdminImpersonation && json.error === "invalid_credentials"
-                  ? fallbackMessage
-                  : json.message || fallbackMessage;
-              loginStatus.textContent = "Sign in failed: " + failureMessage;
-              return;
-            }
-
-            setToken(json.token, json.user.username, json.user.role, json.impersonation || null);
-            loginSucceeded = true;
-            setSignedInState(true);
-            loginStatus.textContent = formatMemberSessionSummary();
-            loginForm.reset();
-            updateImpersonationInputs();
-            showMemberModule("profile", { scroll: true });
-            await loadMemberHome();
-            await loadMemberProfile();
-            await loadMemberInviteDirectory();
-            await loadEvents();
-            await loadBirthdays();
-            await loadNotifications();
-            await loadSmsSettings();
-            await loadCelebrations();
-          } catch {
-            loginStatus.textContent = loginSucceeded
-              ? formatMemberSessionSummary() + " Some member content could not load. Use the portal navigation to continue."
-              : "Sign in failed: unable to reach API.";
-          }
-        });
 
         async function handleMemberLogout() {
           const token = getToken();
@@ -2805,9 +3215,9 @@ export function renderMemberPage(config) {
           if (window.location.hash) {
             history.replaceState(null, "", window.location.pathname + window.location.search);
           }
-          loginStatus.textContent = "Signed out.";
-          loginForm.reset();
-          updateImpersonationInputs();
+          if (loginStatus) {
+            loginStatus.textContent = "Signed out.";
+          }
           container.innerHTML = "<p class='muted'>Sign in to load events.</p>";
           if (memberEventCreateForm) {
             memberEventCreateForm.reset();
@@ -2823,7 +3233,7 @@ export function renderMemberPage(config) {
           memberHomeStatus.textContent = "Sign in to load invitations and news.";
           birthdayList.innerHTML = "<p class='muted'>Sign in to load birthdays.</p>";
           notificationList.innerHTML = "<p class='muted'>Sign in to load notifications.</p>";
-          profileStatus.textContent = "Sign in to edit your personal details.";
+          profileStatus.textContent = "Sign in to edit your profile details and visibility.";
           memberPhotoStatus.textContent = "Sign in to upload your photo.";
           smsStatus.textContent = "Sign in to manage SMS preferences.";
           smsLimits.textContent = "Sign in to load SMS policy guidance.";
@@ -2831,11 +3241,14 @@ export function renderMemberPage(config) {
           celebrationList.innerHTML = "<p class='muted'>Sign in to load celebration posts.</p>";
           celebrationRules.innerHTML = "<li>Sign in to load moderation rules.</li>";
           populateMemberProfile({});
+          window.location.href = MEMBER_SIGN_IN_URL;
         }
 
         document.querySelectorAll("#member-logout, .member-session-logout").forEach((button) => {
           button.addEventListener("click", handleMemberLogout);
         });
+
+        setMemberEventStartDefault();
 
         refreshEventsButton.addEventListener("click", () => {
           loadEvents();
@@ -3009,19 +3422,24 @@ export function renderMemberPage(config) {
         }, 60 * 1000);
 
         syncServerTime();
-        setSignedInState(Boolean(getToken()));
-        if (getToken()) {
-          loginStatus.textContent = formatMemberSessionSummary();
+        const hasStoredMemberSession = Boolean(getToken());
+        setSignedInState(hasStoredMemberSession);
+        if (hasStoredMemberSession) {
+          if (loginStatus) {
+            loginStatus.textContent = formatMemberSessionSummary();
+          }
           showMemberModule(window.location.hash.substring(1) || "dashboard");
+          loadMemberHome();
+          loadMemberProfile();
+          loadMemberInviteDirectory();
+          loadEvents();
+          loadBirthdays();
+          loadNotifications();
+          loadSmsSettings();
+          loadCelebrations();
+        } else {
+          redirectToUnifiedSignIn();
         }
-        loadMemberHome();
-        loadMemberProfile();
-        loadMemberInviteDirectory();
-        loadEvents();
-        loadBirthdays();
-        loadNotifications();
-        loadSmsSettings();
-        loadCelebrations();
       </script>
     `
   });
@@ -3037,21 +3455,31 @@ export function renderAdminPage(config) {
       <div id="admin-root">
         <section class="panel panel-hero portal-hero">
           <div class="header-cluster">
-             <div>
-               <p class="eyebrow">Operations</p>
-               <h1 class="page-title">Admin Console</h1>
-               <p class="lead">
-                 Governance-first controls for members, imports, event operations, delivery monitoring, reporting,
-                 and celebration moderation.
-               </p>
-               <p class="muted">
-                 Sign in through the Access tab first. The Event Hub stays separate so meeting work has its own workspace.
-               </p>
-             </div>
-          </div>
+              <div>
+                <p class="eyebrow">Operations</p>
+                <h1 class="page-title">Admin Console</h1>
+                <p class="lead">
+                  Governance-first controls for members, imports, event operations, delivery monitoring, reporting,
+                  and celebration moderation.
+                </p>
+                <p class="muted">
+                  The system opens this console automatically for accounts with administrator permissions.
+                </p>
+              </div>
+              <aside class="portal-hero-card" aria-label="Admin console areas">
+                <div class="portal-hero-card-content">
+                  <p class="eyebrow">Governance Console</p>
+                  <strong>Operational modules are grouped for member stewardship, events, fees, and reporting.</strong>
+                  <div class="portal-hero-tags" aria-hidden="true">
+                    <span>Members</span>
+                    <span>Events</span>
+                    <span>Audit</span>
+                  </div>
+                </div>
+              </aside>
+           </div>
 
           <nav class="module-nav" id="admin-nav" aria-label="Admin modules">
-             <a href="#access" class="module-nav-link" data-module="access" data-admin-module-link="access">Access</a>
              <a href="#overview" class="module-nav-link" data-module="overview" data-admin-module-link="overview">Overview</a>
              <a href="#members" class="module-nav-link" data-module="members" data-admin-module-link="members">Members</a>
              <a href="#fees" class="module-nav-link" data-module="fees" data-admin-module-link="fees">Membership &amp; Fees</a>
@@ -3062,69 +3490,41 @@ export function renderAdminPage(config) {
              <a href="#reports" class="module-nav-link" data-module="reports" data-admin-module-link="reports">Reports</a>
           </nav>
           <div id="admin-session-bar" class="session-bar admin-session-bar" hidden>
-            <div>
-              <p class="eyebrow">Admin area</p>
-              <p id="admin-session-summary" class="session-summary">Admin console session active.</p>
-            </div>
-            <div class="session-actions session-actions-single">
-              <button type="button" class="button-link session-logout-button admin-session-logout">Sign out</button>
-            </div>
+            <p id="admin-session-summary" class="sr-only">Admin console session active.</p>
           </div>
         </section>
-
-          <section id="module-access" class="panel module-section">
-             <div class="section-heading">
-                <div>
-                  <p class="eyebrow">Access</p>
-                  <h2>Sign in to open the admin workspace</h2>
-                </div>
-                <p class="muted">The Event Hub is kept separate from login so meeting work stays focused.</p>
-             </div>
-             <div class="admin-access-panel">
-               <div class="role-switcher" aria-label="Choose sign-in area">
-                 <a class="role-switcher-link" href="${config.appBaseUrl}/member">Member Sign In</a>
-                 <a class="role-switcher-link role-switcher-active" href="${config.appBaseUrl}/admin" aria-current="page">Admin Sign In</a>
-               </div>
-               <p id="login-status" class="muted">Not signed in.</p>
-               <form id="admin-login-form" class="inline-login-form admin-login-form">
-                  <input id="admin-username" name="username" placeholder="Username" autocomplete="username" />
-                  <input id="admin-password" type="password" name="password" placeholder="Password" autocomplete="current-password" />
-                  <button type="submit">Sign in</button>
-               </form>
-             </div>
-          </section>
 
           <section id="module-overview" class="panel module-section">
              <p class="muted">Select a module to manage the platform.</p>
              <div class="dashboard-cards">
-                <div class="dashboard-card" onclick="window.location.hash='#events'">
+                <button type="button" class="dashboard-card" onclick="window.location.hash='#events'">
                    <h4>Event Hub</h4>
                    <p>Manage drafts, publish meetings, and track RSVPs.</p>
-                </div>
-                <div class="dashboard-card" onclick="window.location.hash='#members'">
+                </button>
+                <button type="button" class="dashboard-card" onclick="window.location.hash='#members'">
                    <h4>Member Directory</h4>
                    <p>Onboard members and manage groups.</p>
-                </div>
-                <div class="dashboard-card" onclick="window.location.hash='#fees'">
+                </button>
+                <button type="button" class="dashboard-card" onclick="window.location.hash='#fees'">
                    <h4>Membership &amp; Fees</h4>
                    <p>Run annual cycle checks and standing/access controls.</p>
-                </div>
-                <div class="dashboard-card" onclick="window.location.hash='#imports'">
+                </button>
+                <button type="button" class="dashboard-card" onclick="window.location.hash='#imports'">
                    <h4>Bulk Import</h4>
                    <p>Upload member spreadsheets.</p>
-                </div>
-                <div class="dashboard-card" onclick="window.location.hash='#notifications'">
+                </button>
+                <button type="button" class="dashboard-card" onclick="window.location.hash='#notifications'">
                    <h4>Notifications</h4>
                    <p>Monitor delivery health and queues.</p>
-                </div>
-                <div class="dashboard-card" onclick="window.location.hash='#news'">
+                </button>
+                <button type="button" class="dashboard-card" onclick="window.location.hash='#news'">
                    <h4>Member News</h4>
                    <p>Publish curated IWFSA updates for the member dashboard.</p>
-                </div>
-                <div class="dashboard-card" onclick="window.location.hash='#reports'">
+                </button>
+                <button type="button" class="dashboard-card" onclick="window.location.hash='#reports'">
                    <h4>Reporting</h4>
                    <p>Review engagement metrics, SMS activity, and moderation controls.</p>
-                </div>
+                </button>
              </div>
           </section>
 
@@ -3142,15 +3542,35 @@ export function renderAdminPage(config) {
                   <span id="member-count" class="muted"></span>
                 </div>
                 <!-- ..rest of member directory.. -->
-                <div class="member-actions">
-                  <input id="member-search" type="search" placeholder="Search name, email, or group" />
+                <div class="member-actions member-directory-controls" aria-label="Member directory filters">
+                  <input id="member-search" type="search" placeholder="Search name, email, organisation, or group" />
+                  <select id="member-status-filter" aria-label="Filter members by status">
+                    <option value="">All statuses</option>
+                  </select>
+                  <select id="member-role-filter" aria-label="Filter members by role">
+                    <option value="">All roles</option>
+                  </select>
+                  <select id="member-group-filter" aria-label="Filter members by group">
+                    <option value="">All groups</option>
+                  </select>
+                  <select id="member-sort" aria-label="Sort member list">
+                    <option value="name">Name A-Z</option>
+                    <option value="organisation">Organisation A-Z</option>
+                    <option value="status">Status</option>
+                    <option value="recent">Newest first</option>
+                  </select>
+                  <button id="member-filter-reset" type="button" class="ghost">Reset filters</button>
                 </div>
-                <form id="member-add-form" class="login-form">
-                  <label for="member-add-name">Full name</label>
-                  <input id="member-add-name" name="fullName" autocomplete="name" required />
-                  <label for="member-add-email">Email</label>
-                  <input id="member-add-email" name="email" type="email" autocomplete="email" required />
-                  <fieldset class="group-picker-fieldset">
+                <form id="member-add-form" class="login-form member-add-form">
+                  <div>
+                    <label for="member-add-name">Full name</label>
+                    <input id="member-add-name" name="fullName" autocomplete="name" required />
+                  </div>
+                  <div>
+                    <label for="member-add-email">Email</label>
+                    <input id="member-add-email" name="email" type="email" autocomplete="email" required />
+                  </div>
+                  <fieldset class="group-picker-fieldset field-span-full">
                     <legend>Group memberships</legend>
                     <p class="muted group-picker-help">Select one or more groups for targeted event visibility and invites.</p>
                     <div id="member-add-groups" class="group-picker"></div>
@@ -3178,7 +3598,173 @@ export function renderAdminPage(config) {
             </tbody>
           </table>
         </div>
+        <div id="member-detail-shell" class="admin-card member-detail-card" hidden>
+          <div class="member-detail-header">
+            <div>
+              <h4 id="member-detail-title">Member details</h4>
+              <p id="member-detail-summary" class="muted">Select a member name to review and edit personal details.</p>
+            </div>
+            <button id="member-detail-close" type="button" class="ghost-link">Close</button>
+          </div>
+          <form id="member-detail-form" class="login-form member-detail-form">
+            <div class="member-detail-form-grid">
+              <div>
+                <label for="member-detail-full-name">Full name</label>
+                <input id="member-detail-full-name" maxlength="160" required />
+              </div>
+              <div>
+                <label for="member-detail-email">Email</label>
+                <input id="member-detail-email" type="email" maxlength="160" required />
+              </div>
+              <div>
+                <label for="member-detail-company">Organisation</label>
+                <input id="member-detail-company" maxlength="180" />
+              </div>
+              <div>
+                <label for="member-detail-phone">Cell phone</label>
+                <input id="member-detail-phone" maxlength="48" placeholder="+27 82 123 4567" />
+              </div>
+              <div>
+                <label for="member-detail-business-title">Professional title</label>
+                <input id="member-detail-business-title" maxlength="120" />
+              </div>
+              <div>
+                <label for="member-detail-iwfsa-position">IWFSA position</label>
+                <input id="member-detail-iwfsa-position" maxlength="160" />
+              </div>
+              <div class="field-span-full">
+                <label for="member-detail-linkedin-url">LinkedIn URL</label>
+                <input id="member-detail-linkedin-url" maxlength="2048" placeholder="https://www.linkedin.com/in/..." />
+              </div>
+              <div class="field-span-full">
+                <label for="member-detail-expertise">Professional links or expertise</label>
+                <input id="member-detail-expertise" maxlength="300" />
+              </div>
+              <div class="field-span-full">
+                <label for="member-detail-bio">Short biography</label>
+                <textarea id="member-detail-bio" rows="4" maxlength="300"></textarea>
+              </div>
+              <fieldset class="group-picker-fieldset field-span-full">
+                <legend>Group memberships</legend>
+                <p class="muted group-picker-help">Update the member's group access and event visibility.</p>
+                <div id="member-detail-groups" class="group-picker"></div>
+              </fieldset>
+            </div>
+            <div class="member-actions">
+              <button id="member-detail-save" type="submit">Save member details</button>
+            </div>
+            <p id="member-detail-status" class="muted">Select a member name to edit their record.</p>
+          </form>
+        </div>
      </div>
+     <div class="admin-card" data-admin-panel="public_profile_reviews">
+        <h3>Public Profile Review</h3>
+        <p class="muted">Review member requests for public-facing profile fields before they appear outside the portal.</p>
+        <div class="member-actions">
+          <button id="refresh-profile-reviews" type="button" disabled>Refresh review queue</button>
+        </div>
+        <p id="profile-review-status" class="muted">Sign in to review public profile submissions.</p>
+        <div class="table-shell">
+          <table class="member-table">
+            <thead>
+              <tr>
+                <th>Member</th>
+                <th>Requested fields</th>
+                <th>Submitted</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="profile-review-table-body">
+              <tr><td colspan="4" class="muted">Sign in to load public profile submissions.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <section class="historical-section" data-admin-panel="historical_figures" aria-labelledby="historical-figures-title">
+        <div class="section-heading historical-heading">
+          <div>
+            <p class="eyebrow">Institutional memory</p>
+            <h3 id="historical-figures-title">Historical Figures &amp; Past Members</h3>
+          </div>
+          <p class="muted">Maintain the significant figures, honorary members, memorial records, and past members who helped establish and shape the organisation.</p>
+        </div>
+        <div class="historical-grid">
+      <article class="historical-panel" data-admin-panel="honorary_members">
+        <h4>Honorary Members</h4>
+        <p class="muted">Record significant leaders and honorary members whose service, founding work, or contribution should remain part of IWFSA's institutional history.</p>
+        <form id="honorary-member-form" class="login-form">
+          <label for="honorary-member-full-name">Full name</label>
+          <input id="honorary-member-full-name" maxlength="160" disabled />
+          <label for="honorary-member-title">Title</label>
+          <input id="honorary-member-title" maxlength="160" disabled />
+          <label for="honorary-member-organisation">Organisation</label>
+          <input id="honorary-member-organisation" maxlength="180" disabled />
+          <label for="honorary-member-citation">Citation</label>
+          <textarea id="honorary-member-citation" rows="3" maxlength="320" disabled></textarea>
+          <label for="honorary-member-status">Status</label>
+          <select id="honorary-member-status" disabled>
+            <option value="draft">Draft</option>
+            <option value="published">Published</option>
+            <option value="archived">Archived</option>
+          </select>
+          <button id="honorary-member-submit" type="submit" disabled>Create honorary member</button>
+        </form>
+        <p id="honorary-member-status-text" class="muted">Sign in to manage honorary member entries.</p>
+        <div class="table-shell">
+          <table class="member-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Title</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="honorary-member-table-body">
+              <tr><td colspan="4" class="muted">Sign in to load honorary member entries.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
+      <article class="historical-panel" data-admin-panel="memorial_entries">
+        <h4>Memorial &amp; Past Member Records</h4>
+        <p class="muted">Capture memorial records and past-member tributes with governance oversight before they are used in remembrance or legacy surfaces.</p>
+        <form id="memorial-entry-form" class="login-form">
+          <label for="memorial-entry-full-name">Full name</label>
+          <input id="memorial-entry-full-name" maxlength="160" disabled />
+          <label for="memorial-entry-title">Title</label>
+          <input id="memorial-entry-title" maxlength="160" disabled />
+          <label for="memorial-entry-date">Date of passing</label>
+          <input id="memorial-entry-date" maxlength="32" placeholder="YYYY-MM-DD" disabled />
+          <label for="memorial-entry-tribute">Tribute</label>
+          <textarea id="memorial-entry-tribute" rows="4" maxlength="4000" disabled></textarea>
+          <label for="memorial-entry-status">Status</label>
+          <select id="memorial-entry-status" disabled>
+            <option value="draft">Draft</option>
+            <option value="published">Published</option>
+            <option value="archived">Archived</option>
+          </select>
+          <button id="memorial-entry-submit" type="submit" disabled>Create memorial entry</button>
+        </form>
+        <p id="memorial-entry-status-text" class="muted">Sign in to manage memorial entries.</p>
+        <div class="table-shell">
+          <table class="member-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Title</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="memorial-entry-table-body">
+              <tr><td colspan="4" class="muted">Sign in to load memorial entries.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
+        </div>
+      </section>
      </div>
 
      <div id="module-fees" class="module-section">
@@ -3561,13 +4147,16 @@ export function renderAdminPage(config) {
           <input id="event-registration-close" name="registrationClosesAt" type="datetime-local" />
           <label for="event-audience">Audience</label>
           <select id="event-audience" name="audienceCode" required>
-            <option value="all_members">All Members</option>
+            <option value="all_members">All Active IWFSA Members</option>
+            <option value="external_stakeholders">External Stakeholders</option>
+            <option value="iwfsa_programme_sponsors">IWFSA Programme Sponsors</option>
+            <option value="honourary_members">Honourary Members</option>
             <option value="board_of_directors">Board of Directors</option>
+            <option value="advocacy_and_voice">Advocacy and Voice</option>
+            <option value="catalytic_strategy">Catalytic Strategy</option>
+            <option value="leadership_development_committee">Leadership Development Committee</option>
             <option value="member_affairs">Member Affairs</option>
             <option value="brand_and_reputation">Brand and Reputation</option>
-            <option value="strategic_alliances_and_advocacy">Strategic Alliances and Advocacy</option>
-            <option value="catalytic_strategy_and_voice">Catalytic Strategy and Voice</option>
-            <option value="leadership_development">Leadership Development</option>
           </select>
           <fieldset class="group-picker-fieldset">
             <legend>Invite groups (optional)</legend>
@@ -3730,7 +4319,7 @@ export function renderAdminPage(config) {
             <button id="news-cancel" type="button" class="ghost" hidden>Cancel edit</button>
           </div>
         </form>
-        <p id="news-status-text" class="muted">Sign in as admin to manage curated member news.</p>
+        <p id="news-status-text" class="muted">Sign in to manage curated member news.</p>
       </div>
       <div class="admin-card">
         <div class="member-actions">
@@ -3756,7 +4345,7 @@ export function renderAdminPage(config) {
               </tr>
             </thead>
             <tbody id="news-table-body">
-              <tr><td colspan="6" class="muted">Sign in as admin to load member news posts.</td></tr>
+              <tr><td colspan="6" class="muted">Sign in to load member news posts.</td></tr>
             </tbody>
           </table>
         </div>
@@ -3860,7 +4449,8 @@ export function renderAdminPage(config) {
       <script>
         const DEFAULT_IMPORT_ACTIVATION_POLICY = "password_change_required";
         
-        const ADMIN_MODULES = ["access", "overview", "members", "fees", "imports", "events", "notifications", "news", "reports"];
+        const ADMIN_MODULES = ["overview", "members", "fees", "imports", "events", "notifications", "news", "reports"];
+        const ADMIN_SIGN_IN_URL = "${config.appBaseUrl}/sign-in";
 
         function getToken() {
           return sessionStorage.getItem("iwfsa_admin_token");
@@ -3880,10 +4470,9 @@ export function renderAdminPage(config) {
         }
 
         function showAdminModule(moduleName, { scroll = false } = {}) {
-          const isSignedIn = Boolean(getToken());
           const nextModule = ADMIN_MODULES.includes(moduleName)
             ? moduleName
-            : isSignedIn ? "overview" : "access";
+            : "overview";
           if (window.location.hash.substring(1) !== nextModule) {
             window.location.hash = "#" + nextModule;
           }
@@ -3895,12 +4484,8 @@ export function renderAdminPage(config) {
         }
 
         function handleHashChange() {
-           const isSignedIn = Boolean(getToken());
-           const requestedModule = window.location.hash.substring(1) || (isSignedIn ? "overview" : "access");
-           let activeModule = ADMIN_MODULES.includes(requestedModule) ? requestedModule : isSignedIn ? "overview" : "access";
-           if (!isSignedIn && activeModule !== "access") {
-              activeModule = "access";
-           }
+           const requestedModule = window.location.hash.substring(1) || "overview";
+           let activeModule = ADMIN_MODULES.includes(requestedModule) ? requestedModule : "overview";
 
            document.querySelectorAll('.module-nav-link').forEach(link => {
               link.classList.toggle('active', link.getAttribute('data-module') === activeModule);
@@ -3914,14 +4499,42 @@ export function renderAdminPage(config) {
         window.addEventListener('hashchange', handleHashChange);
         handleHashChange();
 
-        const form = document.getElementById("admin-login-form");
+        function formatEventDateTime(value) {
+          if (!value) return "";
+          const date = new Date(value);
+          if (!Number.isFinite(date.getTime())) return "";
+
+          const day = date.getDate();
+          const monthNames = [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December"
+          ];
+          const month = monthNames[date.getMonth()] || "";
+          const year = date.getFullYear();
+
+          const hours24 = date.getHours();
+          const minutes = date.getMinutes();
+          const ampm = hours24 >= 12 ? "pm" : "am";
+          const hours12 = hours24 % 12 || 12;
+
+          return day + " " + month + " " + year + " at " + hours12 + ":" + String(minutes).padStart(2, "0") + ampm;
+        }
+
         const adminPanelGrid = document.getElementById("admin-panel-grid");
-        const status = document.getElementById("login-status");
+        const status = null;
         const logoutButton = document.getElementById("admin-logout");
         const adminSessionBar = document.getElementById("admin-session-bar");
         const adminSessionSummary = document.getElementById("admin-session-summary");
-        const usernameInput = document.getElementById("admin-username");
-        const passwordInput = document.getElementById("admin-password");
         const memberStatus = document.getElementById("member-status");
         const memberCount = document.getElementById("member-count");
         const memberTableBody = document.getElementById("member-table-body");
@@ -3929,6 +4542,11 @@ export function renderAdminPage(config) {
         const queueButton = document.getElementById("queue-invites");
         const resetButton = document.getElementById("queue-resets");
         const memberSearch = document.getElementById("member-search");
+        const memberStatusFilter = document.getElementById("member-status-filter");
+        const memberRoleFilter = document.getElementById("member-role-filter");
+        const memberGroupFilter = document.getElementById("member-group-filter");
+        const memberSortInput = document.getElementById("member-sort");
+        const memberFilterResetButton = document.getElementById("member-filter-reset");
         const memberAddForm = document.getElementById("member-add-form");
         const memberAddNameInput = document.getElementById("member-add-name");
         const memberAddEmailInput = document.getElementById("member-add-email");
@@ -3936,6 +4554,31 @@ export function renderAdminPage(config) {
         const memberAddStatus = document.getElementById("member-add-status");
         const selectAll = document.getElementById("select-all-members");
         const memberOutput = document.getElementById("member-output");
+        const CURATED_AUDIENCE_GROUPS = [
+          { value: "Board of Directors", label: "IWFSA Board of Director" },
+          { value: "Advocacy and Voice", label: "Advocacy and Voice" },
+          { value: "Catalytic Strategy", label: "Catalytic Strategy" },
+          { value: "Leadership Development Committee", label: "Leadership Development" },
+          { value: "Member Affairs", label: "Member Affairs" },
+          { value: "Brand and Reputation", label: "Brand and Reputation" }
+        ];
+        const memberDetailShell = document.getElementById("member-detail-shell");
+        const memberDetailForm = document.getElementById("member-detail-form");
+        const memberDetailCloseButton = document.getElementById("member-detail-close");
+        const memberDetailTitle = document.getElementById("member-detail-title");
+        const memberDetailSummary = document.getElementById("member-detail-summary");
+        const memberDetailFullNameInput = document.getElementById("member-detail-full-name");
+        const memberDetailEmailInput = document.getElementById("member-detail-email");
+        const memberDetailCompanyInput = document.getElementById("member-detail-company");
+        const memberDetailPhoneInput = document.getElementById("member-detail-phone");
+        const memberDetailBusinessTitleInput = document.getElementById("member-detail-business-title");
+        const memberDetailIwfsaPositionInput = document.getElementById("member-detail-iwfsa-position");
+        const memberDetailLinkedinUrlInput = document.getElementById("member-detail-linkedin-url");
+        const memberDetailExpertiseInput = document.getElementById("member-detail-expertise");
+        const memberDetailBioInput = document.getElementById("member-detail-bio");
+        const memberDetailGroups = document.getElementById("member-detail-groups");
+        const memberDetailSaveButton = document.getElementById("member-detail-save");
+        const memberDetailStatus = document.getElementById("member-detail-status");
         const eventForm = document.getElementById("event-form");
         const eventTitleInput = document.getElementById("event-title");
         const eventDescriptionInput = document.getElementById("event-description");
@@ -4090,6 +4733,27 @@ export function renderAdminPage(config) {
         const feeKpiOnboardingMembers = document.getElementById("fee-kpi-onboarding-members");
         const feeKpiFeesCollected = document.getElementById("fee-kpi-fees-collected");
         const feeKpiOutstandingBalance = document.getElementById("fee-kpi-outstanding-balance");
+        const refreshProfileReviewsButton = document.getElementById("refresh-profile-reviews");
+        const profileReviewStatus = document.getElementById("profile-review-status");
+        const profileReviewTableBody = document.getElementById("profile-review-table-body");
+        const honoraryMemberForm = document.getElementById("honorary-member-form");
+        const honoraryMemberFullNameInput = document.getElementById("honorary-member-full-name");
+        const honoraryMemberTitleInput = document.getElementById("honorary-member-title");
+        const honoraryMemberOrganisationInput = document.getElementById("honorary-member-organisation");
+        const honoraryMemberCitationInput = document.getElementById("honorary-member-citation");
+        const honoraryMemberStatusInput = document.getElementById("honorary-member-status");
+        const honoraryMemberSubmitButton = document.getElementById("honorary-member-submit");
+        const honoraryMemberStatusText = document.getElementById("honorary-member-status-text");
+        const honoraryMemberTableBody = document.getElementById("honorary-member-table-body");
+        const memorialEntryForm = document.getElementById("memorial-entry-form");
+        const memorialEntryFullNameInput = document.getElementById("memorial-entry-full-name");
+        const memorialEntryTitleInput = document.getElementById("memorial-entry-title");
+        const memorialEntryDateInput = document.getElementById("memorial-entry-date");
+        const memorialEntryTributeInput = document.getElementById("memorial-entry-tribute");
+        const memorialEntryStatusInput = document.getElementById("memorial-entry-status");
+        const memorialEntrySubmitButton = document.getElementById("memorial-entry-submit");
+        const memorialEntryStatusText = document.getElementById("memorial-entry-status-text");
+        const memorialEntryTableBody = document.getElementById("memorial-entry-table-body");
 
         if (importActivationPolicyInput && !importActivationPolicyInput.value) {
           importActivationPolicyInput.value = DEFAULT_IMPORT_ACTIVATION_POLICY;
@@ -4146,6 +4810,9 @@ export function renderAdminPage(config) {
         let activeEventSnapshot = null;
         let selectedEventIds = new Set();
         let currentEvents = [];
+        let publicProfileReviewItems = [];
+        let honoraryMemberItems = [];
+        let memorialEntryItems = [];
         const selectedEventInvitees = new Map();
 
         function resolveEventAudienceSelection(formData) {
@@ -4389,6 +5056,7 @@ export function renderAdminPage(config) {
         let importRowsCache = [];
         let activeImportRowId = 0;
         let importRestoreRequested = false;
+        let activeMemberDetailId = 0;
         let activeNewsPostId = null;
         let newsItemsCache = [];
         let membershipFeeCycles = [];
@@ -4415,8 +5083,8 @@ export function renderAdminPage(config) {
             .slice(0, 8)
             .map((member) => {
               const label = String(member.fullName || member.username || member.email || "").trim();
-              const org = String(member.organisation || "").trim();
-              const detail = org ? " (" + org + ")" : "";
+              const org = normalizeDisplayText(member.organisation || "");
+              const detail = isMissingDisplayText(org) ? "" : " (" + org + ")";
               return (
                 "<button type='button' class='host-suggestion' data-host-label='" +
                 escapeClientHtml(label) +
@@ -4441,56 +5109,31 @@ export function renderAdminPage(config) {
           });
         }
 
+        function configuredAudienceGroups() {
+          return CURATED_AUDIENCE_GROUPS.map((group) => ({ ...group }));
+        }
+
         function listConfiguredAudienceGroups() {
-          const fromMembers = Array.isArray(memberDirectorySource)
-            ? memberDirectorySource.flatMap((member) => normalizeGroupList(member.groups || []))
-            : [];
-          let labels = normalizeGroupList(fromMembers);
-
-          if (!labels.length && eventAudienceInput) {
-            const fromAudienceSelect = Array.from(eventAudienceInput.options || [])
-              .filter((option) => {
-                const value = String(option.value || "").trim();
-                return value !== "" && value !== "all_members" && value !== "groups";
-              })
-              .map((option) => String(option.textContent || "").trim())
-              .filter((label) => Boolean(label) && label.toLowerCase() !== "legacy audience");
-            labels = normalizeGroupList(fromAudienceSelect);
-          }
-
-          const lowerLabels = new Set(labels.map((label) => label.toLowerCase()));
-          if (!lowerLabels.has("member")) {
-            labels.push("Member");
-            lowerLabels.add("member");
-          }
-          if (!lowerLabels.has("common member")) {
-            labels.push("Common Member");
-            lowerLabels.add("common member");
-          }
-          if (!lowerLabels.has("basic member")) {
-            labels.push("Basic Member");
-          }
-
-          return labels;
+          return configuredAudienceGroups().map((group) => group.value);
         }
 
         function renderMemberGroupOptions() {
           if (!memberAddGroups) {
             return;
           }
-          const groups = listConfiguredAudienceGroups();
+          const groups = configuredAudienceGroups();
           if (groups.length === 0) {
             memberAddGroups.innerHTML = "<p class='muted'>No audience groups configured yet.</p>";
             return;
           }
           memberAddGroups.innerHTML = groups
             .map(
-              (groupLabel) =>
+              (group) =>
                 "<label class='group-option'>" +
                 "<input type='checkbox' name='member-add-group' value='" +
-                escapeClientHtml(groupLabel) +
+                escapeClientHtml(group.value) +
                 "' />" +
-                escapeClientHtml(groupLabel) +
+                "<span class='group-option-copy'>" + escapeClientHtml(group.label) + "</span>" +
                 "</label>"
             )
             .join("");
@@ -4500,23 +5143,23 @@ export function renderAdminPage(config) {
           if (!eventAudienceGroups) {
             return;
           }
-          const groups = listConfiguredAudienceGroups();
+          const groups = configuredAudienceGroups();
           if (groups.length === 0) {
             eventAudienceGroups.innerHTML = "<p class='muted'>No audience groups configured yet.</p>";
             return;
           }
           const selectedLower = new Set(selected.map((label) => String(label || "").toLowerCase()));
           eventAudienceGroups.innerHTML = groups
-            .map((groupLabel) => {
-              const isChecked = selectedLower.has(String(groupLabel || "").toLowerCase()) ? " checked" : "";
+            .map((group) => {
+              const isChecked = selectedLower.has(String(group.value || "").toLowerCase()) ? " checked" : "";
               return (
                 "<label class='group-option'>" +
                 "<input type='checkbox' name='event-audience-group' value='" +
-                escapeClientHtml(groupLabel) +
+                escapeClientHtml(group.value) +
                 "'" +
                 isChecked +
                 " />" +
-                escapeClientHtml(groupLabel) +
+                "<span class='group-option-copy'>" + escapeClientHtml(group.label) + "</span>" +
                 "</label>"
               );
             })
@@ -4603,7 +5246,7 @@ export function renderAdminPage(config) {
               const id = eventInviteeId(member);
               if (!id || selectedEventInvitees.has(id)) return false;
               const haystack = [member.fullName, member.username, member.email, member.organisation || member.company, ...(Array.isArray(member.groups) ? member.groups : [])]
-                .map((value) => String(value || "").toLowerCase())
+                .map((value) => normalizeDisplayText(value).toLowerCase())
                 .join(" ");
               return haystack.includes(query);
             })
@@ -4616,7 +5259,10 @@ export function renderAdminPage(config) {
             .map((member) => {
               const id = eventInviteeId(member);
               const label = eventInviteeLabel(member);
-              const detailParts = [member.email, member.organisation || member.company].filter(Boolean).join(" | ");
+              const detailParts = [member.email, member.organisation || member.company]
+                .map((value) => normalizeDisplayText(value))
+                .filter((value) => !isMissingDisplayText(value))
+                .join(" | ");
               return (
                 "<button type='button' class='invitee-result' data-add-event-invitee='" + id + "'>" +
                 "<strong>" + escapeClientHtml(label) + "</strong>" +
@@ -5066,9 +5712,6 @@ export function renderAdminPage(config) {
                 "."
               : "Not signed in.";
           }
-          if (form) {
-            form.hidden = Boolean(authToken);
-          }
           if (adminSessionBar) {
             adminSessionBar.hidden = !authToken;
           }
@@ -5080,6 +5723,9 @@ export function renderAdminPage(config) {
                 ". Full admin editing is enabled for member and event operations."
               : "Not signed in.";
           }
+          document.querySelectorAll(".session-nav-signout").forEach((button) => {
+            button.hidden = !authToken;
+          });
           if (logoutButton) {
             logoutButton.disabled = !authToken;
             logoutButton.hidden = !authToken;
@@ -5136,6 +5782,29 @@ export function renderAdminPage(config) {
           if (newsSubmitButton) {
             newsSubmitButton.disabled = !canManageNews;
           }
+          if (refreshProfileReviewsButton) {
+            refreshProfileReviewsButton.disabled = !authToken || !canManageNews;
+          }
+          if (honoraryMemberForm) {
+            Array.from(honoraryMemberForm.elements || []).forEach((element) => {
+              if (element instanceof HTMLElement) {
+                element.toggleAttribute("disabled", !canManageNews);
+              }
+            });
+          }
+          if (honoraryMemberSubmitButton) {
+            honoraryMemberSubmitButton.disabled = !canManageNews;
+          }
+          if (memorialEntryForm) {
+            Array.from(memorialEntryForm.elements || []).forEach((element) => {
+              if (element instanceof HTMLElement) {
+                element.toggleAttribute("disabled", !canManageNews);
+              }
+            });
+          }
+          if (memorialEntrySubmitButton) {
+            memorialEntrySubmitButton.disabled = !canManageNews;
+          }
           if (!authToken) {
             importRestoreRequested = false;
             resetImportView("Sign in to run imports.");
@@ -5147,11 +5816,17 @@ export function renderAdminPage(config) {
             moderatorStatus.textContent = "Sign in to manage moderators.";
             moderatorTableBody.innerHTML = "<tr><td colspan='4' class='muted'>Sign in to load moderators.</td></tr>";
             moderatorUserIdInput.innerHTML = "<option value=''>Select member</option>";
-            newsStatusText.textContent = "Sign in as admin to manage curated member news.";
-            newsTableBody.innerHTML = "<tr><td colspan='6' class='muted'>Sign in as admin to load member news posts.</td></tr>";
+            newsStatusText.textContent = "Sign in to manage curated member news.";
+            newsTableBody.innerHTML = "<tr><td colspan='6' class='muted'>Sign in to load member news posts.</td></tr>";
+            profileReviewStatus.textContent = "Sign in to review public profile submissions.";
+            profileReviewTableBody.innerHTML = "<tr><td colspan='4' class='muted'>Sign in to load public profile submissions.</td></tr>";
+            honoraryMemberStatusText.textContent = "Sign in to manage honorary member entries.";
+            honoraryMemberTableBody.innerHTML = "<tr><td colspan='4' class='muted'>Sign in to load honorary member entries.</td></tr>";
+            memorialEntryStatusText.textContent = "Sign in to manage memorial entries.";
+            memorialEntryTableBody.innerHTML = "<tr><td colspan='4' class='muted'>Sign in to load memorial entries.</td></tr>";
             activeNewsPostId = null;
             newsItemsCache = [];
-            resetMembershipFeesView("Sign in as admin to manage membership fee records.");
+            resetMembershipFeesView("Sign in to manage membership fee records.");
           } else {
             importStatus.textContent = "Run dry-run to create a new batch, or load an existing batch id.";
             updateImportButtons();
@@ -5172,10 +5847,10 @@ export function renderAdminPage(config) {
             return false;
           }
           setAuthToken(null, "", "");
-          window.location.hash = "#access";
           if (status) {
             status.textContent = "Admin session expired. Please sign in again.";
           }
+          window.location.replace(ADMIN_SIGN_IN_URL);
           return true;
         }
 
@@ -5184,6 +5859,12 @@ export function renderAdminPage(config) {
             return;
           }
           await loadMembers();
+          if (!authToken) return;
+          await loadPublicProfileReviews();
+          if (!authToken) return;
+          await loadHonoraryMembers();
+          if (!authToken) return;
+          await loadMemorialEntries();
           if (!authToken) return;
           await loadMembershipFeesWorkspace({ reloadCycles: true });
           if (!authToken) return;
@@ -5206,8 +5887,6 @@ export function renderAdminPage(config) {
         const ADMIN_PANEL_STORAGE_KEY = "iwfsa_admin_panel_config_v1";
         const DISMISSED_HELP_STORAGE_KEY = "iwfsa_admin_dismissed_help_v1";
         const DEFAULT_HELP_TEXT = {
-          "admin-username": "Admin username used for secure console sign-in.",
-          "admin-password": "Admin password for this environment.",
           "refresh-members": "Reload the member directory from the API.",
           "queue-invites": "Queue onboarding invite links for selected members.",
           "queue-resets": "Queue credential reset links for selected members.",
@@ -5343,6 +6022,254 @@ export function renderAdminPage(config) {
           );
         }
 
+        function normalizeSouthAfricanPhone(value) {
+          const raw = String(value || "").trim();
+          if (!raw) {
+            return "";
+          }
+          const digits = raw.replace(/\D+/g, "");
+          if (digits.startsWith("27") && digits.length === 11) {
+            return "+" + digits;
+          }
+          if (digits.startsWith("0") && digits.length === 10) {
+            return "+27" + digits.slice(1);
+          }
+          return raw.startsWith("+") ? raw : "";
+        }
+
+        function formatSouthAfricanPhoneLabel(value) {
+          const normalized = normalizeSouthAfricanPhone(value);
+          if (!normalized) {
+            return String(value || "").trim();
+          }
+          const digits = normalized.replace(/\D+/g, "");
+          if (digits.length !== 11 || !digits.startsWith("27")) {
+            return normalized;
+          }
+          return "+27 " + digits.slice(2, 4) + " " + digits.slice(4, 7) + " " + digits.slice(7);
+        }
+
+        function renderWhatsappPhoneCell(value) {
+          const raw = String(value || "").trim();
+          if (!raw) {
+            return "<span class='muted'>&mdash;</span>";
+          }
+          const normalized = normalizeSouthAfricanPhone(raw);
+          if (!normalized) {
+            return escapeClientHtml(raw);
+          }
+          const digits = normalized.replace(/\D+/g, "");
+          return (
+            "<a class='whatsapp-link' href='https://wa.me/" +
+            escapeClientHtml(digits) +
+            "' target='_blank' rel='noopener noreferrer'>" +
+            escapeClientHtml(formatSouthAfricanPhoneLabel(normalized)) +
+            "</a>"
+          );
+        }
+
+        function availableMemberDetailGroups(selected = []) {
+          return normalizeGroupList([].concat(listConfiguredAudienceGroups(), Array.isArray(selected) ? selected : []));
+        }
+
+        function renderMemberDetailGroups(selected = []) {
+          if (!memberDetailGroups) {
+            return;
+          }
+          const groups = availableMemberDetailGroups(selected);
+          const selectedKeys = new Set(normalizeGroupList(selected).map((value) => value.toLowerCase()));
+          if (!groups.length) {
+            memberDetailGroups.innerHTML = "<p class='muted'>No groups configured yet.</p>";
+            return;
+          }
+          memberDetailGroups.innerHTML = groups
+            .map((groupLabel) => {
+              const checked = selectedKeys.has(String(groupLabel || "").toLowerCase()) ? " checked" : "";
+              return (
+                "<label class='group-option'>" +
+                "<input type='checkbox' name='member-detail-group' value='" +
+                escapeClientHtml(groupLabel) +
+                "'" +
+                checked +
+                " />" +
+                escapeClientHtml(groupLabel) +
+                "</label>"
+              );
+            })
+            .join("");
+        }
+
+        function selectedMemberDetailGroups() {
+          if (!memberDetailGroups) {
+            return [];
+          }
+          return Array.from(memberDetailGroups.querySelectorAll("input[name='member-detail-group']:checked"))
+            .map((input) => String(input.value || "").trim())
+            .filter(Boolean);
+        }
+
+        function setMemberDetailEnabled(enabled) {
+          if (!memberDetailForm) {
+            return;
+          }
+          memberDetailForm.querySelectorAll("input, textarea, button").forEach((element) => {
+            if (element === memberDetailCloseButton) {
+              return;
+            }
+            element.disabled = !enabled;
+          });
+        }
+
+        function resetMemberDetail(message = "Select a member name to edit their record.") {
+          activeMemberDetailId = 0;
+          if (memberDetailForm) {
+            memberDetailForm.reset();
+          }
+          if (memberDetailShell) {
+            memberDetailShell.hidden = true;
+          }
+          if (memberDetailTitle) {
+            memberDetailTitle.textContent = "Member details";
+          }
+          if (memberDetailSummary) {
+            memberDetailSummary.textContent = "Select a member name to review and edit personal details.";
+          }
+          if (memberDetailStatus) {
+            memberDetailStatus.textContent = message;
+          }
+          renderMemberDetailGroups([]);
+          setMemberDetailEnabled(false);
+        }
+
+        function applyMemberDetail(item) {
+          if (!item || !memberDetailShell) {
+            return;
+          }
+          activeMemberDetailId = Number(item.userId || item.id || 0) || 0;
+          memberDetailShell.hidden = false;
+          setMemberDetailEnabled(true);
+          memberDetailTitle.textContent = String(item.fullName || item.username || "Member details");
+          memberDetailSummary.textContent =
+            (String(item.email || "").trim() || "No email") +
+            " | " +
+            (String(item.username || "").trim() || "No username");
+          memberDetailFullNameInput.value = String(item.fullName || "");
+          memberDetailEmailInput.value = String(item.email || "");
+          memberDetailCompanyInput.value = displayInputValue(item.company || item.organisation || "");
+          memberDetailPhoneInput.value = String(item.phone || "");
+          memberDetailBusinessTitleInput.value = String(item.businessTitle || "");
+          memberDetailIwfsaPositionInput.value = String(item.iwfsaPosition || "");
+          memberDetailLinkedinUrlInput.value = String(item.linkedinUrl || "");
+          memberDetailExpertiseInput.value = String(item.expertiseFreeText || "");
+          memberDetailBioInput.value = String(item.bio || "");
+          renderMemberDetailGroups(item.groups || []);
+          memberDetailStatus.textContent = "Editing member record.";
+        }
+
+        function upsertMemberDirectoryItem(item) {
+          const userId = Number(item?.id || item?.userId || 0);
+          if (!userId) {
+            return;
+          }
+          const nextItem = {
+            ...item,
+            id: userId,
+            userId,
+            organisation: displayInputValue(item.organisation || item.company || "")
+          };
+          const index = memberDirectorySource.findIndex((entry) => Number(entry.id || entry.userId || 0) === userId);
+          if (index >= 0) {
+            memberDirectorySource[index] = { ...memberDirectorySource[index], ...nextItem };
+          } else {
+            memberDirectorySource.push(nextItem);
+          }
+        }
+
+        async function openMemberDetail(memberId) {
+          const parsedUserId = Number(memberId || 0);
+          if (!parsedUserId || !authToken) {
+            return;
+          }
+          memberDetailShell.hidden = false;
+          setMemberDetailEnabled(false);
+          memberDetailTitle.textContent = "Loading member details...";
+          memberDetailSummary.textContent = "Fetching the latest profile data from the API.";
+          memberDetailStatus.textContent = "Loading member record...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/members/" + String(parsedUserId), {
+              headers: { Authorization: "Bearer " + authToken }
+            });
+            const json = await response.json();
+            if (!response.ok) {
+              if (clearAdminAuthOnUnauthorized(response)) return;
+              memberDetailStatus.textContent = json.message || "Unable to load member record.";
+              return;
+            }
+            upsertMemberDirectoryItem(json.item || {});
+            applyMemberDetail(json.item || {});
+            memberDetailShell.scrollIntoView({ behavior: "smooth", block: "start" });
+          } catch {
+            memberDetailStatus.textContent = "Unable to reach API for member details.";
+          }
+        }
+
+        function memberStatusLabel(value) {
+          const normalized = String(value || "active").trim().toLowerCase();
+          if (!normalized) return "Active";
+          return normalized
+            .replace(/_/g, " ")
+            .replace(/\b[a-z]/g, (char) => char.toUpperCase());
+        }
+
+        function updateMemberFilterOptions() {
+          const members = Array.isArray(memberDirectorySource) ? memberDirectorySource : [];
+          const currentStatus = String(memberStatusFilter?.value || "");
+          const currentRole = String(memberRoleFilter?.value || "");
+          const currentGroup = String(memberGroupFilter?.value || "");
+          const statuses = new Set();
+          const roles = new Set();
+          const groups = new Set();
+
+          for (const member of members) {
+            statuses.add(String(member.status || "active").trim().toLowerCase() || "active");
+            (Array.isArray(member.roles) ? member.roles : []).forEach((role) => {
+              const label = normalizeDisplayText(role);
+              if (label) roles.add(label);
+            });
+            normalizeGroupList(member.groups || []).forEach((group) => {
+              const label = normalizeDisplayText(group);
+              if (label) groups.add(label);
+            });
+          }
+
+          function renderOptions(select, defaultLabel, values, selectedValue, formatter = (value) => value) {
+            if (!select) return;
+            const sorted = Array.from(values).sort((left, right) => formatter(left).localeCompare(formatter(right)));
+            select.innerHTML =
+              "<option value=''>" +
+              escapeClientHtml(defaultLabel) +
+              "</option>" +
+              sorted
+                .map((value) => {
+                  const selected = String(value).toLowerCase() === String(selectedValue).toLowerCase() ? " selected" : "";
+                  return (
+                    "<option value='" +
+                    escapeClientHtml(value) +
+                    "'" +
+                    selected +
+                    ">" +
+                    escapeClientHtml(formatter(value)) +
+                    "</option>"
+                  );
+                })
+                .join("");
+          }
+
+          renderOptions(memberStatusFilter, "All statuses", statuses, currentStatus, memberStatusLabel);
+          renderOptions(memberRoleFilter, "All roles", roles, currentRole);
+          renderOptions(memberGroupFilter, "All groups", groups, currentGroup);
+        }
+
         function renderMembers(items) {
           const visibleItems = Array.isArray(items) ? items : [];
           const totalCount = memberDirectorySource.length;
@@ -5369,8 +6296,8 @@ export function renderAdminPage(config) {
           memberTableBody.innerHTML = visibleItems
             .map((member) => {
               const name = member.fullName || member.username || "(No name)";
-              const organisation = member.organisation || member.company || "â€”";
-              const cellPhone = member.cellPhone || member.mobile || member.phone || "â€”";
+              const organisation = member.organisation || member.company || "";
+              const cellPhone = member.cellPhone || member.mobile || member.phone || "";
               const roles = Array.isArray(member.roles) ? member.roles : [];
               const email = String(member.email || "").trim();
               const emailCell = email
@@ -5382,10 +6309,14 @@ export function renderAdminPage(config) {
                 escapeClientHtml(member.id) +
                 "' /></td>" +
                 "<td>" +
+                "<button type='button' class='member-name-button' data-member-edit-id='" +
+                escapeClientHtml(member.id) +
+                "'>" +
                 escapeClientHtml(name) +
+                "</button>" +
                 "</td>" +
                 "<td>" +
-                escapeClientHtml(organisation) +
+                displayTextHtml(organisation) +
                 "</td>" +
                 "<td>" +
                 renderMemberRoles(roles) +
@@ -5394,7 +6325,7 @@ export function renderAdminPage(config) {
                 emailCell +
                 "</td>" +
                 "<td>" +
-                escapeClientHtml(cellPhone) +
+                renderWhatsappPhoneCell(cellPhone) +
                 "</td>" +
                 "<td>" +
                 renderMemberGroups(member.groups || []) +
@@ -5412,6 +6343,12 @@ export function renderAdminPage(config) {
               const checked = selectedIds().length;
               selectAll.checked = checked > 0 && checked === visibleItems.length;
               updateQueueButton();
+            });
+          });
+
+          memberTableBody.querySelectorAll("[data-member-edit-id]").forEach((button) => {
+            button.addEventListener("click", () => {
+              openMemberDetail(button.getAttribute("data-member-edit-id"));
             });
           });
         }
@@ -5444,7 +6381,7 @@ export function renderAdminPage(config) {
             deliveryTableBody.innerHTML =
               "<tr><td colspan='5'>" +
               "<div class='import-empty-state'>" +
-              "<div class='import-empty-illustration' aria-hidden='true'>Ã¢Å“â€°Ã¯Â¸Â</div>" +
+              "<div class='import-empty-illustration' aria-hidden='true'>Mail</div>" +
               "<div class='import-empty-text'>" +
               "<h4>No deliveries yet</h4>" +
               "<p class='muted'>Deliveries will appear here after notifications are sent.</p>" +
@@ -5456,22 +6393,22 @@ export function renderAdminPage(config) {
               const statusLabel = prettyDeliveryStatus(item.status || "");
               const toneClass = deliveryStatusTone(item.status || "");
               const memberName = item.memberName || item.fullName || String(item.userId || "Member");
-              const email = item.email || "Ã¢â‚¬â€";
-              const phone = item.phone || "Ã¢â‚¬â€";
-              const organisation = item.organisation || item.company || "Ã¢â‚¬â€";
+              const email = item.email || "";
+              const phone = item.phone || "";
+              const organisation = item.organisation || item.company || "";
               return (
                 "<tr>" +
                 "<td>" +
                 escapeClientHtml(memberName) +
                 "</td>" +
                 "<td>" +
-                escapeClientHtml(email) +
+                displayTextHtml(email) +
                 "</td>" +
                 "<td>" +
-                escapeClientHtml(phone) +
+                displayTextHtml(phone) +
                 "</td>" +
                 "<td>" +
-                escapeClientHtml(organisation) +
+                displayTextHtml(organisation) +
                 "</td>" +
                 "<td><span class='status-pill " +
                 toneClass +
@@ -5792,8 +6729,8 @@ export function renderAdminPage(config) {
 
         async function loadAdminNews() {
           if (!authToken) {
-            newsStatusText.textContent = "Sign in as admin to manage curated member news.";
-            newsTableBody.innerHTML = "<tr><td colspan='6' class='muted'>Sign in as admin to load member news posts.</td></tr>";
+            newsStatusText.textContent = "Sign in to manage curated member news.";
+            newsTableBody.innerHTML = "<tr><td colspan='6' class='muted'>Sign in to load member news posts.</td></tr>";
             return;
           }
           if (!canUseAdminActions()) {
@@ -5946,6 +6883,287 @@ export function renderAdminPage(config) {
           }
         }
 
+        function renderPublicProfileReviews(items) {
+          const rows = Array.isArray(items) ? items : [];
+          if (rows.length === 0) {
+            profileReviewTableBody.innerHTML = "<tr><td colspan='4' class='muted'>No public profile submissions are waiting for review.</td></tr>";
+            return;
+          }
+          profileReviewTableBody.innerHTML = rows
+            .map((item) => {
+              const requestedFields = Array.isArray(item.requestedFieldKeys) && item.requestedFieldKeys.length
+                ? item.requestedFieldKeys.join(", ")
+                : "No fields listed";
+              return (
+                "<tr>" +
+                "<td><strong>" + escapeClientHtml(item.fullName || item.username || "Member") + "</strong><br /><span class='muted'>" + escapeClientHtml(item.email || "") + "</span></td>" +
+                "<td>" + escapeClientHtml(requestedFields) + "</td>" +
+                "<td>" + escapeClientHtml(item.submittedAt ? new Date(item.submittedAt).toLocaleString() : "n/a") + "</td>" +
+                "<td><button type='button' data-profile-review-decision='approved' data-profile-review-user-id='" + escapeClientHtml(item.userId) + "'>Approve</button> <button type='button' class='ghost' data-profile-review-decision='rejected' data-profile-review-user-id='" + escapeClientHtml(item.userId) + "'>Reject</button></td>" +
+                "</tr>"
+              );
+            })
+            .join("");
+        }
+
+        async function loadPublicProfileReviews() {
+          if (!authToken) {
+            profileReviewStatus.textContent = "Sign in to review public profile submissions.";
+            profileReviewTableBody.innerHTML = "<tr><td colspan='4' class='muted'>Sign in to load public profile submissions.</td></tr>";
+            return;
+          }
+          if (!canUseAdminActions()) {
+            profileReviewStatus.textContent = "Only admin and chief admin roles can review public profile submissions.";
+            profileReviewTableBody.innerHTML = "<tr><td colspan='4' class='muted'>Your role does not have public profile review access.</td></tr>";
+            return;
+          }
+          profileReviewStatus.textContent = "Loading public profile submissions...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/admin/member-profile-reviews?status=pending", {
+              headers: { Authorization: "Bearer " + authToken }
+            });
+            const json = await response.json();
+            if (!response.ok) {
+              profileReviewStatus.textContent = json.message || "Unable to load public profile submissions.";
+              return;
+            }
+            publicProfileReviewItems = Array.isArray(json.items) ? json.items : [];
+            renderPublicProfileReviews(publicProfileReviewItems);
+            profileReviewStatus.textContent = "Loaded " + String(publicProfileReviewItems.length) + " pending submission(s).";
+          } catch {
+            profileReviewStatus.textContent = "Unable to reach API for public profile reviews.";
+          }
+        }
+
+        async function reviewPublicProfile(userId, decision) {
+          if (!authToken || !canUseAdminActions()) {
+            profileReviewStatus.textContent = "Only admin and chief admin roles can review public profile submissions.";
+            return;
+          }
+          profileReviewStatus.textContent = decision === "approved" ? "Approving profile request..." : "Rejecting profile request...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/admin/member-profile-reviews/" + String(userId) + "/decision", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer " + authToken
+              },
+              body: JSON.stringify({ decision, reviewerNote: decision === "approved" ? "Approved from admin console." : "Rejected from admin console." })
+            });
+            const json = await response.json();
+            if (!response.ok) {
+              profileReviewStatus.textContent = json.message || "Unable to process public profile review.";
+              return;
+            }
+            profileReviewStatus.textContent = decision === "approved" ? "Public profile request approved." : "Public profile request rejected.";
+            await loadPublicProfileReviews();
+          } catch {
+            profileReviewStatus.textContent = "Unable to reach API for public profile reviews.";
+          }
+        }
+
+        function renderHonoraryMembers(items) {
+          const rows = Array.isArray(items) ? items : [];
+          if (rows.length === 0) {
+            honoraryMemberTableBody.innerHTML = "<tr><td colspan='4' class='muted'>No honorary member entries yet.</td></tr>";
+            return;
+          }
+          honoraryMemberTableBody.innerHTML = rows
+            .map((item) => (
+              "<tr>" +
+              "<td><strong>" + escapeClientHtml(item.fullName || "Honorary member") + "</strong></td>" +
+              "<td>" + escapeClientHtml(item.title || "") + "</td>" +
+              "<td>" + escapeClientHtml(item.status || "draft") + "</td>" +
+              "<td><button type='button' class='ghost danger-link' data-remove-honorary-id='" + escapeClientHtml(item.id) + "'>Delete</button></td>" +
+              "</tr>"
+            ))
+            .join("");
+        }
+
+        async function loadHonoraryMembers() {
+          if (!authToken) {
+            honoraryMemberStatusText.textContent = "Sign in to manage honorary member entries.";
+            honoraryMemberTableBody.innerHTML = "<tr><td colspan='4' class='muted'>Sign in to load honorary member entries.</td></tr>";
+            return;
+          }
+          honoraryMemberStatusText.textContent = "Loading honorary member entries...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/admin/honorary-members", {
+              headers: { Authorization: "Bearer " + authToken }
+            });
+            const json = await response.json();
+            if (!response.ok) {
+              honoraryMemberStatusText.textContent = json.message || "Unable to load honorary member entries.";
+              return;
+            }
+            honoraryMemberItems = Array.isArray(json.items) ? json.items : [];
+            renderHonoraryMembers(honoraryMemberItems);
+            honoraryMemberStatusText.textContent = "Loaded " + String(honoraryMemberItems.length) + " honorary member entry(ies).";
+          } catch {
+            honoraryMemberStatusText.textContent = "Unable to reach API for honorary member entries.";
+          }
+        }
+
+        async function saveHonoraryMember(event) {
+          event.preventDefault();
+          if (!authToken || !canUseAdminActions()) {
+            honoraryMemberStatusText.textContent = "Only admin and chief admin roles can manage honorary members.";
+            return;
+          }
+          honoraryMemberStatusText.textContent = "Creating honorary member entry...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/admin/honorary-members", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer " + authToken
+              },
+              body: JSON.stringify({
+                fullName: String(honoraryMemberFullNameInput.value || "").trim(),
+                title: String(honoraryMemberTitleInput.value || "").trim(),
+                organisation: String(honoraryMemberOrganisationInput.value || "").trim(),
+                citation: String(honoraryMemberCitationInput.value || "").trim(),
+                status: String(honoraryMemberStatusInput.value || "draft").trim()
+              })
+            });
+            const json = await response.json();
+            if (!response.ok) {
+              honoraryMemberStatusText.textContent = json.message || "Unable to create honorary member entry.";
+              return;
+            }
+            honoraryMemberForm.reset();
+            honoraryMemberStatusInput.value = "draft";
+            honoraryMemberStatusText.textContent = "Honorary member entry created.";
+            await loadHonoraryMembers();
+          } catch {
+            honoraryMemberStatusText.textContent = "Unable to reach API for honorary member entries.";
+          }
+        }
+
+        async function removeHonoraryMember(id) {
+          if (!authToken || !canUseAdminActions()) {
+            honoraryMemberStatusText.textContent = "Only admin and chief admin roles can manage honorary members.";
+            return;
+          }
+          honoraryMemberStatusText.textContent = "Removing honorary member entry...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/admin/honorary-members/" + String(id), {
+              method: "DELETE",
+              headers: { Authorization: "Bearer " + authToken }
+            });
+            const json = await response.json();
+            if (!response.ok) {
+              honoraryMemberStatusText.textContent = json.message || "Unable to remove honorary member entry.";
+              return;
+            }
+            honoraryMemberStatusText.textContent = "Honorary member entry removed.";
+            await loadHonoraryMembers();
+          } catch {
+            honoraryMemberStatusText.textContent = "Unable to reach API for honorary member entries.";
+          }
+        }
+
+        function renderMemorialEntries(items) {
+          const rows = Array.isArray(items) ? items : [];
+          if (rows.length === 0) {
+            memorialEntryTableBody.innerHTML = "<tr><td colspan='4' class='muted'>No memorial entries yet.</td></tr>";
+            return;
+          }
+          memorialEntryTableBody.innerHTML = rows
+            .map((item) => (
+              "<tr>" +
+              "<td><strong>" + escapeClientHtml(item.fullName || "Memorial entry") + "</strong></td>" +
+              "<td>" + escapeClientHtml(item.title || "") + "</td>" +
+              "<td>" + escapeClientHtml(item.status || "draft") + "</td>" +
+              "<td><button type='button' class='ghost danger-link' data-remove-memorial-id='" + escapeClientHtml(item.id) + "'>Delete</button></td>" +
+              "</tr>"
+            ))
+            .join("");
+        }
+
+        async function loadMemorialEntries() {
+          if (!authToken) {
+            memorialEntryStatusText.textContent = "Sign in to manage memorial entries.";
+            memorialEntryTableBody.innerHTML = "<tr><td colspan='4' class='muted'>Sign in to load memorial entries.</td></tr>";
+            return;
+          }
+          memorialEntryStatusText.textContent = "Loading memorial entries...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/admin/memorials", {
+              headers: { Authorization: "Bearer " + authToken }
+            });
+            const json = await response.json();
+            if (!response.ok) {
+              memorialEntryStatusText.textContent = json.message || "Unable to load memorial entries.";
+              return;
+            }
+            memorialEntryItems = Array.isArray(json.items) ? json.items : [];
+            renderMemorialEntries(memorialEntryItems);
+            memorialEntryStatusText.textContent = "Loaded " + String(memorialEntryItems.length) + " memorial entrie(s).";
+          } catch {
+            memorialEntryStatusText.textContent = "Unable to reach API for memorial entries.";
+          }
+        }
+
+        async function saveMemorialEntry(event) {
+          event.preventDefault();
+          if (!authToken || !canUseAdminActions()) {
+            memorialEntryStatusText.textContent = "Only admin and chief admin roles can manage memorial entries.";
+            return;
+          }
+          memorialEntryStatusText.textContent = "Creating memorial entry...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/admin/memorials", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer " + authToken
+              },
+              body: JSON.stringify({
+                fullName: String(memorialEntryFullNameInput.value || "").trim(),
+                title: String(memorialEntryTitleInput.value || "").trim(),
+                dateOfPassing: String(memorialEntryDateInput.value || "").trim(),
+                tributeText: String(memorialEntryTributeInput.value || "").trim(),
+                status: String(memorialEntryStatusInput.value || "draft").trim()
+              })
+            });
+            const json = await response.json();
+            if (!response.ok) {
+              memorialEntryStatusText.textContent = json.message || "Unable to create memorial entry.";
+              return;
+            }
+            memorialEntryForm.reset();
+            memorialEntryStatusInput.value = "draft";
+            memorialEntryStatusText.textContent = "Memorial entry created.";
+            await loadMemorialEntries();
+          } catch {
+            memorialEntryStatusText.textContent = "Unable to reach API for memorial entries.";
+          }
+        }
+
+        async function removeMemorialEntry(id) {
+          if (!authToken || !canUseAdminActions()) {
+            memorialEntryStatusText.textContent = "Only admin and chief admin roles can manage memorial entries.";
+            return;
+          }
+          memorialEntryStatusText.textContent = "Removing memorial entry...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/admin/memorials/" + String(id), {
+              method: "DELETE",
+              headers: { Authorization: "Bearer " + authToken }
+            });
+            const json = await response.json();
+            if (!response.ok) {
+              memorialEntryStatusText.textContent = json.message || "Unable to remove memorial entry.";
+              return;
+            }
+            memorialEntryStatusText.textContent = "Memorial entry removed.";
+            await loadMemorialEntries();
+          } catch {
+            memorialEntryStatusText.textContent = "Unable to reach API for memorial entries.";
+          }
+        }
+
         async function loadMembers() {
           if (!authToken) {
             memberStatus.textContent = "Sign in to load members.";
@@ -5971,9 +7189,18 @@ export function renderAdminPage(config) {
               return;
             }
             memberDirectorySource = Array.isArray(json.items) ? json.items : [];
+            updateMemberFilterOptions();
             applyMemberFilter();
             updateModeratorOptions();
             renderMemberGroupOptions();
+            if (activeMemberDetailId) {
+              const refreshed = memberDirectorySource.find(
+                (member) => Number(member.id || member.userId || 0) === Number(activeMemberDetailId)
+              );
+              if (refreshed) {
+                openMemberDetail(activeMemberDetailId);
+              }
+            }
             renderEventGroupOptions(selectedEventGroups());
             renderEventInviteeResults(eventInviteeSearchInput?.value || "");
             renderEventInviteeSelections();
@@ -5981,7 +7208,7 @@ export function renderAdminPage(config) {
               renderImportRows(importRowsCache);
             }
           } catch {
-            memberStatus.textContent = "Unable to reach API. Start npm run dev:api first.";
+            memberStatus.textContent = "Unable to reach the member service. Refresh the page and try again.";
             memberDirectorySource = [];
             memberTableBody.innerHTML = "<tr><td colspan='7' class='muted'>Unable to reach API.</td></tr>";
             memberOutput.textContent = "";
@@ -5992,7 +7219,7 @@ export function renderAdminPage(config) {
 
         async function handleAdminLogout() {
             if (!authToken) {
-              window.location.hash = "#access";
+              window.location.href = ADMIN_SIGN_IN_URL;
               return;
             }
 
@@ -6005,13 +7232,68 @@ export function renderAdminPage(config) {
               // Ignore network errors and clear the local session anyway.
             } finally {
               setAuthToken(null, "");
-              window.location.hash = "#access";
+              window.location.href = ADMIN_SIGN_IN_URL;
             }
         }
 
         document.querySelectorAll("#admin-logout, .admin-session-logout").forEach((button) => {
           button.addEventListener("click", handleAdminLogout);
         });
+
+        if (memberDetailCloseButton) {
+          memberDetailCloseButton.addEventListener("click", () => resetMemberDetail());
+        }
+
+        if (memberDetailForm) {
+          memberDetailForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const userId = Number(activeMemberDetailId || 0);
+            if (!userId || !authToken) {
+              memberDetailStatus.textContent = "Select a member before saving changes.";
+              return;
+            }
+            memberDetailSaveButton.disabled = true;
+            memberDetailStatus.textContent = "Saving member details...";
+            try {
+              const payload = {
+                fullName: String(memberDetailFullNameInput.value || "").trim(),
+                email: String(memberDetailEmailInput.value || "").trim(),
+                company: String(memberDetailCompanyInput.value || "").trim(),
+                phone: String(memberDetailPhoneInput.value || "").trim(),
+                businessTitle: String(memberDetailBusinessTitleInput.value || "").trim(),
+                iwfsaPosition: String(memberDetailIwfsaPositionInput.value || "").trim(),
+                linkedinUrl: String(memberDetailLinkedinUrlInput.value || "").trim(),
+                expertiseFreeText: String(memberDetailExpertiseInput.value || "").trim(),
+                bio: String(memberDetailBioInput.value || "").trim(),
+                groups: selectedMemberDetailGroups()
+              };
+              const response = await fetch("${config.apiBaseUrl}/api/members/" + String(userId), {
+                method: "PATCH",
+                headers: {
+                  Authorization: "Bearer " + authToken,
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload)
+              });
+              const json = await response.json();
+              if (!response.ok) {
+                if (clearAdminAuthOnUnauthorized(response)) return;
+                memberDetailStatus.textContent = json.message || "Unable to save member details.";
+                return;
+              }
+              upsertMemberDirectoryItem(json.item || {});
+              applyMemberFilter();
+              applyMemberDetail(json.item || {});
+              updateModeratorOptions();
+              renderMemberGroupOptions();
+              memberDetailStatus.textContent = "Member details saved.";
+            } catch {
+              memberDetailStatus.textContent = "Unable to reach API while saving member details.";
+            } finally {
+              memberDetailSaveButton.disabled = false;
+            }
+          });
+        }
 
         function updateModeratorOptions() {
           const items = Array.isArray(memberDirectorySource) ? memberDirectorySource : [];
@@ -7252,25 +8534,46 @@ export function renderAdminPage(config) {
 
         function applyMemberFilter() {
           const term = String(memberSearch.value || "").trim().toLowerCase();
-          if (!term) {
-            renderMembers(memberDirectorySource);
-            return;
-          }
+          const statusFilter = String(memberStatusFilter?.value || "").trim().toLowerCase();
+          const roleFilter = String(memberRoleFilter?.value || "").trim().toLowerCase();
+          const groupFilter = String(memberGroupFilter?.value || "").trim().toLowerCase();
+          const sortMode = String(memberSortInput?.value || "name").trim().toLowerCase();
           const filtered = memberDirectorySource.filter((member) => {
             const name = String(member.fullName || member.username || "").toLowerCase();
             const email = String(member.email || "").toLowerCase();
-            const groups = Array.isArray(member.groups) ? member.groups.join(" ").toLowerCase() : "";
-            const roles = Array.isArray(member.roles) ? member.roles.join(" ").toLowerCase() : "";
-            const organisation = String(member.organisation || member.company || "").toLowerCase();
-            return (
+            const groups = normalizeGroupList(member.groups || []);
+            const roles = Array.isArray(member.roles) ? member.roles : [];
+            const groupsText = groups.join(" ").toLowerCase();
+            const rolesText = roles.join(" ").toLowerCase();
+            const organisation = normalizeDisplayText(member.organisation || member.company || "").toLowerCase();
+            const status = String(member.status || "active").trim().toLowerCase() || "active";
+            const matchesTerm =
+              !term ||
               name.includes(term) ||
               email.includes(term) ||
-              groups.includes(term) ||
-              roles.includes(term) ||
-              organisation.includes(term)
-            );
+              groupsText.includes(term) ||
+              rolesText.includes(term) ||
+              organisation.includes(term);
+            const matchesStatus = !statusFilter || status === statusFilter;
+            const matchesRole = !roleFilter || roles.some((role) => String(role || "").toLowerCase() === roleFilter);
+            const matchesGroup = !groupFilter || groups.some((group) => String(group || "").toLowerCase() === groupFilter);
+            return matchesTerm && matchesStatus && matchesRole && matchesGroup;
           });
-          renderMembers(filtered);
+          const sorted = filtered.slice().sort((left, right) => {
+            if (sortMode === "organisation") {
+              return normalizeDisplayText(left.organisation || left.company || "").localeCompare(
+                normalizeDisplayText(right.organisation || right.company || "")
+              );
+            }
+            if (sortMode === "status") {
+              return String(left.status || "active").localeCompare(String(right.status || "active"));
+            }
+            if (sortMode === "recent") {
+              return Number(right.id || right.userId || 0) - Number(left.id || left.userId || 0);
+            }
+            return String(left.fullName || left.username || "").localeCompare(String(right.fullName || right.username || ""));
+          });
+          renderMembers(sorted);
         }
 
         function selectedImportBatchId() {
@@ -7331,7 +8634,7 @@ export function renderAdminPage(config) {
               email,
               fullName: String(member.fullName || member.username || "").trim(),
               status: String(member.status || "").trim().toLowerCase(),
-              organisation: String(member.organisation || member.company || "").trim(),
+              organisation: displayInputValue(member.organisation || member.company || ""),
               phone: String(member.phone || member.cellPhone || member.mobile || "").trim(),
               groups: normalizeGroupList(member.groups || []),
               action: "existing",
@@ -7353,7 +8656,7 @@ export function renderAdminPage(config) {
               email,
               fullName: String(row.fullName || "").trim(),
               status: String(row.status || "").trim().toLowerCase(),
-              organisation: String(row.organisation || "").trim(),
+              organisation: displayInputValue(row.organisation || ""),
               phone: String(row.phone || "").trim(),
               groups: normalizeGroupList(row.groups || []),
               action: String(row.action || "").trim().toLowerCase(),
@@ -7404,7 +8707,7 @@ export function renderAdminPage(config) {
                 email: String(row.email || "").trim(),
                 fullName: String(row.fullName || "").trim(),
                 status: String(row.status || "").trim().toLowerCase(),
-                organisation: String(row.organisation || "").trim(),
+                organisation: displayInputValue(row.organisation || ""),
                 phone: String(row.phone || "").trim(),
                 groups: normalizeGroupList(row.groups || ""),
                 action: String(row.action || "").trim(),
@@ -7528,7 +8831,7 @@ export function renderAdminPage(config) {
             importEditPhoneInput.value = row.phone || "";
           }
           if (importEditOrganisationInput) {
-            importEditOrganisationInput.value = row.organisation || "";
+            importEditOrganisationInput.value = displayInputValue(row.organisation || "");
           }
           renderImportEditGroupOptions(row.groups || []);
           if (importEditStatusText) {
@@ -7604,7 +8907,7 @@ export function renderAdminPage(config) {
           importRowsBody.innerHTML =
             "<tr><td colspan='4'>" +
             "<div class='import-empty-state'>" +
-            "<div class='import-empty-illustration' aria-hidden='true'>Ã°Å¸â€œâ€ž</div>" +
+            "<div class='import-empty-illustration' aria-hidden='true'>Data</div>" +
             "<div class='import-empty-text'>" +
             "<h4>No data to display</h4>" +
             "<p class='muted'>" +
@@ -7853,6 +9156,41 @@ export function renderAdminPage(config) {
             .replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#39;");
+        }
+
+        function normalizeDisplayText(value) {
+          const text = String(value || "").trim();
+          if (!text) {
+            return "";
+          }
+          const longDashPrefix = String.fromCharCode(195, 162, 226, 8218, 172, 226, 8364);
+          const shortPrefix = String.fromCharCode(226, 8364);
+          return text
+            .replaceAll(longDashPrefix + String.fromCharCode(156), "-")
+            .replaceAll(longDashPrefix + String.fromCharCode(157), "-")
+            .replaceAll(shortPrefix + String.fromCharCode(8220), "-")
+            .replaceAll(shortPrefix + String.fromCharCode(8221), "-")
+            .replaceAll(shortPrefix + String.fromCharCode(8482), "'")
+            .replaceAll(shortPrefix + String.fromCharCode(732), "'")
+            .replaceAll(shortPrefix + String.fromCharCode(339), '"')
+            .replaceAll(shortPrefix + String.fromCharCode(157), '"')
+            .replaceAll(shortPrefix + String.fromCharCode(166), "...")
+            .replace(/\s+/g, " ")
+            .trim();
+        }
+
+        function isMissingDisplayText(value) {
+          const normalized = normalizeDisplayText(value);
+          return !normalized || ["-", "--", "n/a", "na", "null", "undefined"].includes(normalized.toLowerCase());
+        }
+
+        function displayTextHtml(value, missingHtml = "<span class='muted'>&mdash;</span>") {
+          const normalized = normalizeDisplayText(value);
+          return isMissingDisplayText(normalized) ? missingHtml : escapeClientHtml(normalized);
+        }
+
+        function displayInputValue(value) {
+          return isMissingDisplayText(value) ? "" : normalizeDisplayText(value);
         }
 
         function canUseAdminActions() {
@@ -8369,10 +9707,17 @@ export function renderAdminPage(config) {
           const filtered = allItems.filter((eventItem) => eventMatchesView(eventItem, selectedView));
 
           if (!filtered.length) {
+            const total = allItems.length;
+            const hint =
+              total > 0
+                ? "There are " + String(total) + " event(s) in other views. Change View Events to All to see the full list."
+                : "Use Create Meeting to schedule your next session.";
             eventCardList.innerHTML =
               "<div class='event-empty-state'>" +
               "<h3>No events in this view</h3>" +
-              "<p class='muted'>Use Create Meeting to schedule your next session.</p>" +
+              "<p class='muted'>" +
+              escapeClientHtml(hint) +
+              "</p>" +
               "</div>";
             selectedEventIds = new Set();
             updateEventBulkBar();
@@ -8388,7 +9733,7 @@ export function renderAdminPage(config) {
               const canPlan = canPlanEventInUi(eventItem);
               const selected = selectedEventIds.has(String(eventItem.id));
               const deadline = buildDeadlineSummary(eventItem);
-              const audienceLabel = escapeClientHtml(eventItem.audienceLabel || "All Members");
+              const audienceLabel = escapeClientHtml(eventItem.audienceLabel || "All Active IWFSA Members");
 
               return (
                 "<article class='admin-event-card'>" +
@@ -8513,7 +9858,7 @@ export function renderAdminPage(config) {
             currentEvents = Array.isArray(json.items) ? json.items : [];
             renderEvents(currentEvents);
           } catch {
-            eventStatus.textContent = "Unable to reach the Event Hub API. Start npm run dev:api first.";
+            eventStatus.textContent = "Unable to reach the Event Hub service. Refresh the page and try again.";
           }
         }
 
@@ -8524,6 +9869,24 @@ export function renderAdminPage(config) {
         memberSearch.addEventListener("input", () => {
           applyMemberFilter();
         });
+
+        [memberStatusFilter, memberRoleFilter, memberGroupFilter, memberSortInput].forEach((control) => {
+          if (!control) return;
+          control.addEventListener("change", () => {
+            applyMemberFilter();
+          });
+        });
+
+        if (memberFilterResetButton) {
+          memberFilterResetButton.addEventListener("click", () => {
+            memberSearch.value = "";
+            if (memberStatusFilter) memberStatusFilter.value = "";
+            if (memberRoleFilter) memberRoleFilter.value = "";
+            if (memberGroupFilter) memberGroupFilter.value = "";
+            if (memberSortInput) memberSortInput.value = "name";
+            applyMemberFilter();
+          });
+        }
 
         memberAddForm.addEventListener("submit", async (event) => {
           event.preventDefault();
@@ -8559,7 +9922,9 @@ export function renderAdminPage(config) {
               memberAddStatus.textContent = json.message || "Unable to add member.";
               return;
             }
-            if (Number(json.inviteQueued || 0) > 0) {
+            if (json.inviteEmailSent === true) {
+              memberAddStatus.textContent = "Member added and establishment email sent.";
+            } else if (Number(json.inviteQueued || 0) > 0) {
               memberAddStatus.textContent = "Member added and invite queued.";
             } else {
               memberAddStatus.textContent = "Member added.";
@@ -9080,6 +10445,9 @@ export function renderAdminPage(config) {
               }
               resetEventFormState(createdMessage);
             }
+            if (eventViewInput) {
+              eventViewInput.value = "all";
+            }
             await loadEvents();
           } catch (error) {
             eventStatus.textContent = error?.message || (isEditing
@@ -9338,6 +10706,60 @@ export function renderAdminPage(config) {
           });
         }
 
+        if (refreshProfileReviewsButton) {
+          refreshProfileReviewsButton.addEventListener("click", () => {
+            loadPublicProfileReviews();
+          });
+        }
+
+        if (profileReviewTableBody) {
+          profileReviewTableBody.addEventListener("click", (event) => {
+            const button = event.target.closest("[data-profile-review-user-id]");
+            if (!button) {
+              return;
+            }
+            const userId = Number(button.getAttribute("data-profile-review-user-id"));
+            const decision = String(button.getAttribute("data-profile-review-decision") || "").trim();
+            if (Number.isInteger(userId) && userId > 0 && (decision === "approved" || decision === "rejected")) {
+              reviewPublicProfile(userId, decision);
+            }
+          });
+        }
+
+        if (honoraryMemberForm) {
+          honoraryMemberForm.addEventListener("submit", saveHonoraryMember);
+        }
+
+        if (honoraryMemberTableBody) {
+          honoraryMemberTableBody.addEventListener("click", (event) => {
+            const button = event.target.closest("[data-remove-honorary-id]");
+            if (!button) {
+              return;
+            }
+            const entryId = Number(button.getAttribute("data-remove-honorary-id"));
+            if (Number.isInteger(entryId) && entryId > 0) {
+              removeHonoraryMember(entryId);
+            }
+          });
+        }
+
+        if (memorialEntryForm) {
+          memorialEntryForm.addEventListener("submit", saveMemorialEntry);
+        }
+
+        if (memorialEntryTableBody) {
+          memorialEntryTableBody.addEventListener("click", (event) => {
+            const button = event.target.closest("[data-remove-memorial-id]");
+            if (!button) {
+              return;
+            }
+            const entryId = Number(button.getAttribute("data-remove-memorial-id"));
+            if (Number.isInteger(entryId) && entryId > 0) {
+              removeMemorialEntry(entryId);
+            }
+          });
+        }
+
         if (newsFilterStatusInput) {
           newsFilterStatusInput.addEventListener("change", () => {
             loadAdminNews();
@@ -9508,49 +10930,18 @@ export function renderAdminPage(config) {
           }
         });
 
-        async function handleLogin(event) {
-          if (event) {
-            event.preventDefault();
-          }
-          status.textContent = "Signing in...";
-
-          const formData = new FormData(form);
-          const payload = {
-            username: String(formData.get("username") || "").trim(),
-            password: String(formData.get("password") || "")
-          };
-
-          try {
-            const response = await fetch("${config.apiBaseUrl}/api/auth/login", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(payload)
-            });
-
-            const json = await response.json();
-            if (!response.ok) {
-              status.textContent = "Sign in failed: " + (json.message || "Invalid credentials.");
-              return;
-            }
-
-            setAuthToken(json.token, json.user.role, json.user.username, json.expiresAt);
-            window.location.hash = "#overview";
-            await loadAdminWorkspace();
-          } catch {
-            status.textContent = "Sign in failed: unable to reach API.";
-          }
-        }
-
-        form.addEventListener("submit", handleLogin);
-
         renderMemberGroupOptions();
         renderEventGroupOptions();
         persistHelpAndTooltips();
         setAuthToken(authToken, authRole, authUsername);
-        if (authToken && (!window.location.hash || window.location.hash === "#access")) {
+        if (authToken && !window.location.hash) {
           window.location.hash = "#overview";
         }
-        void loadAdminWorkspace();
+        if (authToken) {
+          void loadAdminWorkspace();
+        } else {
+          window.location.replace(ADMIN_SIGN_IN_URL);
+        }
       </script>
     `
   });
@@ -9560,7 +10951,7 @@ export function renderActivationPage(config) {
   return htmlLayout({
     title: "IWFSA | Activate Account",
     appBaseUrl: config.appBaseUrl,
-    currentPath: "/member",
+    currentPath: "/sign-in",
     body: `
       <section class="panel">
         <h2>Activate your account</h2>
@@ -9614,10 +11005,10 @@ export function renderActivationPage(config) {
               return;
             }
 
-            activateStatus.textContent = "Account activated. Continue to Member Portal sign in.";
+            activateStatus.textContent = "Account activated. Continue to sign in.";
             if (appBaseUrl) {
               window.setTimeout(() => {
-                window.location.assign(appBaseUrl + "/member");
+                window.location.assign(appBaseUrl + "/sign-in");
               }, 900);
             }
           } catch {
@@ -9633,7 +11024,7 @@ export function renderResetPage(config) {
   return htmlLayout({
     title: "IWFSA | Reset Password",
     appBaseUrl: config.appBaseUrl,
-    currentPath: "/member",
+    currentPath: "/sign-in",
     body: `
       <section class="panel">
         <h2>Reset your password</h2>
@@ -9683,10 +11074,10 @@ export function renderResetPage(config) {
               return;
             }
 
-            resetStatus.textContent = "Password reset complete. Continue to Member Portal sign in.";
+            resetStatus.textContent = "Password reset complete. Continue to sign in.";
             if (appBaseUrl) {
               window.setTimeout(() => {
-                window.location.assign(appBaseUrl + "/member");
+                window.location.assign(appBaseUrl + "/sign-in");
               }, 900);
             }
           } catch {
@@ -9702,7 +11093,7 @@ export function renderMeetingRsvpPage(config) {
   return htmlLayout({
     title: "IWFSA | Confirm RSVP",
     appBaseUrl: config.appBaseUrl,
-    currentPath: "/member",
+    currentPath: "/sign-in",
     body: `
       <section class="panel">
         <h2>Confirm meeting participation</h2>

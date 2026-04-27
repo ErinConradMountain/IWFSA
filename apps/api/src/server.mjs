@@ -23,21 +23,20 @@ const ADMIN_ROLES = Object.freeze(["admin", "chief_admin"]);
 const MEETING_PLANNING_SCOPES = new Set(["all_invited", "confirmed_only", "waitlisted_only", "pending_only"]);
 const EVENT_VENUE_TYPES = new Set(["physical", "online"]);
 const EVENT_AUDIENCE_OPTIONS = Object.freeze([
-  { code: "all_members", label: "All Members", groupNames: [] },
+  { code: "all_members", label: "All Active IWFSA Members", groupNames: [] },
+  { code: "external_stakeholders", label: "External Stakeholders", groupNames: ["External Stakeholders"] },
+  { code: "iwfsa_programme_sponsors", label: "IWFSA Programme Sponsors", groupNames: ["IWFSA Programme Sponsors"] },
+  { code: "honourary_members", label: "Honourary Members", groupNames: ["Honourary Members"] },
   { code: "board_of_directors", label: "Board of Directors", groupNames: ["Board of Directors"] },
+  { code: "advocacy_and_voice", label: "Advocacy and Voice", groupNames: ["Advocacy and Voice"] },
+  { code: "catalytic_strategy", label: "Catalytic Strategy", groupNames: ["Catalytic Strategy"] },
+  {
+    code: "leadership_development_committee",
+    label: "Leadership Development Committee",
+    groupNames: ["Leadership Development Committee"]
+  },
   { code: "member_affairs", label: "Member Affairs", groupNames: ["Member Affairs"] },
-  { code: "brand_and_reputation", label: "Brand and Reputation", groupNames: ["Brand and Reputation"] },
-  {
-    code: "strategic_alliances_and_advocacy",
-    label: "Strategic Alliances and Advocacy",
-    groupNames: ["Strategic Alliances and Advocacy"]
-  },
-  {
-    code: "catalytic_strategy_and_voice",
-    label: "Catalytic Strategy and Voice",
-    groupNames: ["Catalytic Strategy and Voice"]
-  },
-  { code: "leadership_development", label: "Leadership Development", groupNames: ["Leadership Development"] }
+  { code: "brand_and_reputation", label: "Brand and Reputation", groupNames: ["Brand and Reputation"] }
 ]);
 const EVENT_AUDIENCE_BY_CODE = new Map(EVENT_AUDIENCE_OPTIONS.map((item) => [item.code, item]));
 const EVENT_AUDIENCE_CODE_BY_GROUP = new Map(
@@ -46,6 +45,9 @@ const EVENT_AUDIENCE_CODE_BY_GROUP = new Map(
   )
 );
 EVENT_AUDIENCE_CODE_BY_GROUP.set("board", "board_of_directors");
+EVENT_AUDIENCE_CODE_BY_GROUP.set("strategic alliances and advocacy", "advocacy_and_voice");
+EVENT_AUDIENCE_CODE_BY_GROUP.set("catalytic strategy and voice", "catalytic_strategy");
+EVENT_AUDIENCE_CODE_BY_GROUP.set("leadership development", "leadership_development_committee");
 const IMPORT_BLOCKING_REASON_CODES = new Set(["missing_required_field", "invalid_email", "duplicate_email_in_file"]);
 const DEFAULT_ACTIVATION_POLICY = "password_change_required";
 const EVENT_DOCUMENT_TYPES = new Set(["agenda", "minutes", "attachment"]);
@@ -55,6 +57,29 @@ const EVENT_DOCUMENT_MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
 const MEMBER_PROFILE_PHOTO_MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024;
 const MEMBER_PROFILE_PHOTO_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 const BIRTHDAY_VISIBILITY_VALUES = new Set(["hidden", "members_only", "members_and_social"]);
+const PROFILE_VISIBILITY_VALUES = new Set([
+  "private",
+  "admins_only",
+  "members_only",
+  "submitted_for_public_review",
+  "public_approved"
+]);
+const MEMBER_PROFILE_VISIBILITY_FIELDS = Object.freeze([
+  "fullName",
+  "company",
+  "phone",
+  "businessTitle",
+  "iwfsaPosition",
+  "bio",
+  "linkedinUrl",
+  "professionalLinks",
+  "expertiseFreeText",
+  "photo",
+  "birthday"
+]);
+const MEMBER_PROFILE_LINK_VISIBILITY_FIELDS = new Set(["linkedinUrl", "professionalLinks"]);
+const PUBLIC_PROFILE_REVIEW_STATUSES = new Set(["pending", "approved", "rejected", "withdrawn"]);
+const DIRECTORY_ENTRY_STATUSES = new Set(["draft", "published", "archived"]);
 const MEMBER_NEWS_STATUSES = new Set(["draft", "published", "archived"]);
 const ACCOUNT_STATUS_VALUES = new Set(["active", "blocked", "deactivated", "invited", "not_invited"]);
 const MEMBERSHIP_CYCLE_STATUSES = new Set(["draft", "open", "closed", "archived"]);
@@ -499,6 +524,26 @@ function normalizeAudienceCode(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function eventAudienceOptionsForUser(user) {
+  if (ADMIN_ROLES.includes(user?.role)) {
+    return EVENT_AUDIENCE_OPTIONS;
+  }
+
+  return EVENT_AUDIENCE_OPTIONS.filter((item) => item.code === "all_members");
+}
+
+function hasAdminOnlyAudienceInput(payload, audienceCode) {
+  const code = normalizeAudienceCode(audienceCode);
+  const groupIds = Array.isArray(payload?.groupIds)
+    ? payload.groupIds.map((id) => Number(id)).filter((id) => Number.isInteger(id))
+    : [];
+  const groupNames = Array.isArray(payload?.groupNames)
+    ? payload.groupNames.map((name) => String(name || "").trim()).filter(Boolean)
+    : [];
+
+  return (code && code !== "all_members") || groupIds.length > 0 || groupNames.length > 0;
+}
+
 function mapAudienceCodeToSelection(database, audienceCode) {
   const code = normalizeAudienceCode(audienceCode);
   const option = EVENT_AUDIENCE_BY_CODE.get(code);
@@ -528,7 +573,7 @@ function mapAudienceCodeToSelection(database, audienceCode) {
 
 function deriveAudiencePresentation(audienceType, groupNames = [], invitees = []) {
   if (audienceType !== "groups") {
-    return { audienceCode: "all_members", audienceLabel: "All Members" };
+    return { audienceCode: "all_members", audienceLabel: EVENT_AUDIENCE_BY_CODE.get("all_members")?.label || "All Active IWFSA Members" };
   }
 
   const inviteeCount = Array.isArray(invitees) ? invitees.length : 0;
@@ -2173,7 +2218,8 @@ function canManageEventEditorGrants(database, user, eventId, { eventRow = null }
   return resolveEventCreatorUserId(current) === Number(user.id || 0);
 }
 
-function findUserForLogin(database, username) {
+function findUserForLogin(database, identifier) {
+  const normalizedIdentifier = String(identifier || "").trim().toLowerCase();
   return database
     .prepare(
       `
@@ -2188,11 +2234,23 @@ function findUserForLogin(database, username) {
         must_change_username AS must_change_username,
         password_hash AS passwordHash
       FROM users
-      WHERE username = ?
+      WHERE lower(username) = ?
+         OR lower(email) = ?
       LIMIT 1
     `
     )
-    .get(username);
+    .get(normalizedIdentifier, normalizedIdentifier);
+}
+
+function resolveLoginRedirectPath(user) {
+  const role = String(user?.role || "").trim().toLowerCase();
+  if (role === "chief_admin" || role === "admin") {
+    return "/admin#overview";
+  }
+  if (role === "event_editor") {
+    return "/admin#events";
+  }
+  return "/member#dashboard";
 }
 
 function toAuthUserPayload(user, membership = null) {
@@ -2369,6 +2427,49 @@ function listActiveMemberDirectory(database, { search = "", limit = 80 } = {}) {
       membershipStanding: member.membershipStanding || null,
       membershipCycleYear: Number(member.membershipYear || 0) || null
     }));
+}
+
+function loadAdminMemberDetail(database, userId) {
+  const parsedUserId = Number(userId || 0);
+  if (!Number.isInteger(parsedUserId) || parsedUserId <= 0) {
+    return null;
+  }
+  const member = listMembers(database).find((item) => Number(item.id) === parsedUserId);
+  if (!member) {
+    return null;
+  }
+  const profileRow = loadMemberProfile(database, parsedUserId);
+  const profile = profileRow
+    ? toMemberProfileResponse(profileRow)
+    : {
+        userId: parsedUserId,
+        username: String(member.username || ""),
+        email: String(member.email || ""),
+        fullName: String(member.fullName || ""),
+        company: String(member.company || ""),
+        phone: String(member.phone || ""),
+        businessTitle: "",
+        iwfsaPosition: "",
+        bio: "",
+        linkedinUrl: "",
+        professionalLinks: [],
+        expertiseFreeText: "",
+        profileVisibility: { profile: "members_only", links: "members_only" },
+        profileConfirmedAt: member.profileConfirmedAt || null,
+        photoUrl: member.photoUrl || null,
+        birthdayMonth: Number.isInteger(Number(member.birthdayMonth)) ? Number(member.birthdayMonth) : null,
+        birthdayDay: Number.isInteger(Number(member.birthdayDay)) ? Number(member.birthdayDay) : null,
+        birthdayVisibility: String(member.birthdayVisibility || "hidden"),
+        updatedAt: member.updatedAt || null
+      };
+
+  return {
+    ...member,
+    ...profile,
+    id: parsedUserId,
+    userId: parsedUserId,
+    organisation: profile.company || member.organisation || member.company || ""
+  };
 }
 
 function normalizeMembershipCycleStatus(value, fallback = "draft") {
@@ -3505,6 +3606,610 @@ function normalizeBirthdayVisibility(value, fallback = "hidden") {
   return visibility;
 }
 
+function normalizeProfileVisibilityValue(value, fallback = "private") {
+  const visibility = String(value || "").trim().toLowerCase();
+  if (!visibility) {
+    return fallback;
+  }
+  if (!PROFILE_VISIBILITY_VALUES.has(visibility)) {
+    const error = new Error(
+      "profile visibility must be private, admins_only, members_only, submitted_for_public_review, or public_approved."
+    );
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  return visibility;
+}
+
+function normalizeOptionalHttpUrl(value, fieldName) {
+  const nextValue = toNullableTrimmedString(value, { maxLength: 2048 });
+  if (!nextValue) {
+    return null;
+  }
+  let parsed;
+  try {
+    parsed = new URL(nextValue);
+  } catch {
+    const error = new Error(`${fieldName} must be a valid http or https URL.`);
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    const error = new Error(`${fieldName} must be a valid http or https URL.`);
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  return parsed.toString();
+}
+
+function parseJsonObject(value) {
+  if (!value) {
+    return null;
+  }
+  if (typeof value === "object" && !Array.isArray(value)) {
+    return value;
+  }
+  try {
+    const parsed = JSON.parse(String(value));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseJsonArray(value) {
+  if (!value) {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value;
+  }
+  try {
+    const parsed = JSON.parse(String(value));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeMemberProfileVisibility(value, fallback) {
+  const fallbackVisibility = {
+    profile: normalizeProfileVisibilityValue(fallback?.profile || "members_only", "members_only"),
+    links: normalizeProfileVisibilityValue(fallback?.links || "members_only", "members_only")
+  };
+  const candidate =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? value
+      : typeof value === "string"
+        ? parseJsonObject(value)
+        : null;
+  const normalizedProfile = normalizeProfileVisibilityValue(candidate?.profile, fallbackVisibility.profile);
+  const normalizedLinks = normalizeProfileVisibilityValue(candidate?.links, fallbackVisibility.links);
+  const fields = {};
+  for (const fieldName of MEMBER_PROFILE_VISIBILITY_FIELDS) {
+    const inheritedFieldFallback = MEMBER_PROFILE_LINK_VISIBILITY_FIELDS.has(fieldName) ? normalizedLinks : normalizedProfile;
+    const hasExplicitFieldValue =
+      candidate?.fields && Object.prototype.hasOwnProperty.call(candidate.fields, fieldName);
+    const fallbackFieldValue = hasExplicitFieldValue
+      ? normalizeProfileVisibilityValue(fallback?.fields?.[fieldName], inheritedFieldFallback)
+      : inheritedFieldFallback;
+    fields[fieldName] = normalizeProfileVisibilityValue(
+      hasExplicitFieldValue ? candidate.fields[fieldName] : undefined,
+      fallbackFieldValue
+    );
+  }
+  return {
+    profile: normalizedProfile,
+    links: normalizedLinks,
+    fields
+  };
+}
+
+function hasProfileSnapshotValue(profileSnapshot, fieldName) {
+  const snapshot = parseJsonObject(profileSnapshot) || profileSnapshot || {};
+  switch (fieldName) {
+    case "professionalLinks":
+      return Array.isArray(snapshot.professionalLinks) && snapshot.professionalLinks.length > 0;
+    case "photo":
+      return Boolean(String(snapshot.photoUrl || "").trim());
+    case "birthday":
+      return Number.isInteger(Number(snapshot.birthdayMonth)) && Number.isInteger(Number(snapshot.birthdayDay));
+    default:
+      return Boolean(String(snapshot[fieldName] || "").trim());
+  }
+}
+
+function collectSubmittedProfileVisibilityFields(visibility, profileSnapshot = null, explicitVisibility = null) {
+  const normalized = normalizeMemberProfileVisibility(visibility, {
+    profile: "members_only",
+    links: "members_only"
+  });
+  const explicitFields = parseJsonObject(explicitVisibility)?.fields;
+  const explicitFieldNames = explicitFields && typeof explicitFields === "object" ? Object.keys(explicitFields) : [];
+  if (explicitFieldNames.length > 0) {
+    return explicitFieldNames.filter(
+      (fieldName) =>
+        MEMBER_PROFILE_VISIBILITY_FIELDS.includes(fieldName) &&
+        normalizeProfileVisibilityValue(explicitFields[fieldName], "members_only") === "submitted_for_public_review" &&
+        hasProfileSnapshotValue(profileSnapshot, fieldName)
+    );
+  }
+  return MEMBER_PROFILE_VISIBILITY_FIELDS.filter(
+    (fieldName) =>
+      normalized.fields[fieldName] === "submitted_for_public_review" && hasProfileSnapshotValue(profileSnapshot, fieldName)
+  );
+}
+
+function coerceMemberEditableProfileVisibility(nextVisibility, currentVisibility, canApprovePublicVisibility = false) {
+  const normalizedCurrent = normalizeMemberProfileVisibility(currentVisibility, {
+    profile: "members_only",
+    links: "members_only"
+  });
+  const normalizedNext = normalizeMemberProfileVisibility(nextVisibility, normalizedCurrent);
+  if (canApprovePublicVisibility) {
+    return normalizedNext;
+  }
+
+  const coerced = {
+    profile:
+      normalizedNext.profile === "public_approved" && normalizedCurrent.profile !== "public_approved"
+        ? "submitted_for_public_review"
+        : normalizedNext.profile,
+    links:
+      normalizedNext.links === "public_approved" && normalizedCurrent.links !== "public_approved"
+        ? "submitted_for_public_review"
+        : normalizedNext.links,
+    fields: {}
+  };
+  for (const fieldName of MEMBER_PROFILE_VISIBILITY_FIELDS) {
+    const nextValue = normalizedNext.fields[fieldName];
+    const currentValue = normalizedCurrent.fields[fieldName];
+    coerced.fields[fieldName] =
+      nextValue === "public_approved" && currentValue !== "public_approved"
+        ? "submitted_for_public_review"
+        : nextValue;
+  }
+  return coerced;
+}
+
+function normalizePublicProfileReviewStatus(value, fallback = "pending") {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) {
+    return fallback;
+  }
+  if (!PUBLIC_PROFILE_REVIEW_STATUSES.has(normalized)) {
+    const error = new Error("review status must be pending, approved, rejected, or withdrawn.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  return normalized;
+}
+
+function normalizeDirectoryEntryStatus(value, fallback = "draft") {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) {
+    return fallback;
+  }
+  if (!DIRECTORY_ENTRY_STATUSES.has(normalized)) {
+    const error = new Error("status must be draft, published, or archived.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  return normalized;
+}
+
+function normalizeDirectoryEntryDisplayOrder(value, fallback = 0) {
+  if (value === undefined || value === null || value === "") {
+    return Number.isInteger(Number(fallback)) ? Number(fallback) : 0;
+  }
+  const numeric = Number(value);
+  if (!Number.isInteger(numeric) || numeric < 0 || numeric > 9999) {
+    const error = new Error("displayOrder must be an integer between 0 and 9999.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  return numeric;
+}
+
+function applyPublicProfileReviewDecision(currentVisibility, requestedVisibility, decision) {
+  const normalizedCurrent = normalizeMemberProfileVisibility(currentVisibility, {
+    profile: "members_only",
+    links: "members_only"
+  });
+  const normalizedRequested = normalizeMemberProfileVisibility(requestedVisibility, normalizedCurrent);
+  const nextVisibility = {
+    profile: normalizedCurrent.profile,
+    links: normalizedCurrent.links,
+    fields: { ...normalizedCurrent.fields }
+  };
+
+  if (normalizedRequested.profile === "submitted_for_public_review" && normalizedCurrent.profile === "submitted_for_public_review") {
+    nextVisibility.profile = decision === "approved" ? "public_approved" : "members_only";
+  }
+  if (normalizedRequested.links === "submitted_for_public_review" && normalizedCurrent.links === "submitted_for_public_review") {
+    nextVisibility.links = decision === "approved" ? "public_approved" : "members_only";
+  }
+
+  for (const fieldName of MEMBER_PROFILE_VISIBILITY_FIELDS) {
+    if (normalizedRequested.fields[fieldName] !== "submitted_for_public_review") {
+      continue;
+    }
+    if (normalizedCurrent.fields[fieldName] !== "submitted_for_public_review") {
+      continue;
+    }
+    nextVisibility.fields[fieldName] = decision === "approved" ? "public_approved" : "members_only";
+  }
+
+  return nextVisibility;
+}
+
+function loadPublicProfileReviewSubmission(database, userId) {
+  return database
+    .prepare(
+      `
+      SELECT
+        member_profile_public_submissions.id,
+        member_profile_public_submissions.user_id AS userId,
+        member_profile_public_submissions.status,
+        member_profile_public_submissions.requested_visibility_json AS requestedVisibilityJson,
+        member_profile_public_submissions.profile_snapshot_json AS profileSnapshotJson,
+        member_profile_public_submissions.requested_field_keys_json AS requestedFieldKeysJson,
+        member_profile_public_submissions.reviewer_note AS reviewerNote,
+        member_profile_public_submissions.submitted_at AS submittedAt,
+        member_profile_public_submissions.reviewed_at AS reviewedAt,
+        member_profile_public_submissions.updated_at AS updatedAt,
+        reviewer.username AS reviewedByUsername,
+        users.username,
+        users.email,
+        member_profiles.full_name AS fullName
+      FROM member_profile_public_submissions
+      JOIN users ON users.id = member_profile_public_submissions.user_id
+      LEFT JOIN users AS reviewer ON reviewer.id = member_profile_public_submissions.reviewed_by_user_id
+      LEFT JOIN member_profiles ON member_profiles.user_id = users.id
+      WHERE member_profile_public_submissions.user_id = ?
+      LIMIT 1
+    `
+    )
+    .get(Number(userId));
+}
+
+function toPublicProfileReviewSubmissionResponse(submissionRow) {
+  const requestedVisibility = normalizeMemberProfileVisibility(submissionRow?.requestedVisibilityJson, {
+    profile: "members_only",
+    links: "members_only"
+  });
+  const profileSnapshot = parseJsonObject(submissionRow?.profileSnapshotJson) || null;
+  const requestedFieldKeys = parseJsonArray(submissionRow?.requestedFieldKeysJson)
+    .map((fieldName) => String(fieldName || "").trim())
+    .filter((fieldName) => MEMBER_PROFILE_VISIBILITY_FIELDS.includes(fieldName));
+  return {
+    id: Number(submissionRow?.id || 0),
+    userId: Number(submissionRow?.userId || 0),
+    username: String(submissionRow?.username || ""),
+    email: String(submissionRow?.email || ""),
+    fullName: String(submissionRow?.fullName || ""),
+    status: normalizePublicProfileReviewStatus(submissionRow?.status, "pending"),
+    requestedVisibility,
+    requestedFieldKeys,
+    profileSnapshot,
+    reviewerNote: String(submissionRow?.reviewerNote || ""),
+    submittedAt: submissionRow?.submittedAt || null,
+    reviewedAt: submissionRow?.reviewedAt || null,
+    reviewedByUsername: String(submissionRow?.reviewedByUsername || ""),
+    updatedAt: submissionRow?.updatedAt || null
+  };
+}
+
+function listPublicProfileReviewSubmissions(database, { status = "pending", limit = 100 } = {}) {
+  const normalizedStatus = normalizePublicProfileReviewStatus(status, "pending");
+  const maxLimit = Math.max(1, Math.min(Number(limit || 100), 200));
+  return database
+    .prepare(
+      `
+      SELECT
+        member_profile_public_submissions.id,
+        member_profile_public_submissions.user_id AS userId,
+        member_profile_public_submissions.status,
+        member_profile_public_submissions.requested_visibility_json AS requestedVisibilityJson,
+        member_profile_public_submissions.profile_snapshot_json AS profileSnapshotJson,
+        member_profile_public_submissions.requested_field_keys_json AS requestedFieldKeysJson,
+        member_profile_public_submissions.reviewer_note AS reviewerNote,
+        member_profile_public_submissions.submitted_at AS submittedAt,
+        member_profile_public_submissions.reviewed_at AS reviewedAt,
+        member_profile_public_submissions.updated_at AS updatedAt,
+        reviewer.username AS reviewedByUsername,
+        users.username,
+        users.email,
+        member_profiles.full_name AS fullName
+      FROM member_profile_public_submissions
+      JOIN users ON users.id = member_profile_public_submissions.user_id
+      LEFT JOIN users AS reviewer ON reviewer.id = member_profile_public_submissions.reviewed_by_user_id
+      LEFT JOIN member_profiles ON member_profiles.user_id = users.id
+      WHERE member_profile_public_submissions.status = ?
+      ORDER BY datetime(member_profile_public_submissions.submitted_at) DESC, member_profile_public_submissions.id DESC
+      LIMIT ?
+    `
+    )
+    .all(normalizedStatus, maxLimit)
+    .map((row) => toPublicProfileReviewSubmissionResponse(row));
+}
+
+function upsertPublicProfileReviewSubmission(database, { userId, requestedVisibility, profileSnapshot, explicitVisibility = null }) {
+  const requestedFieldKeys = collectSubmittedProfileVisibilityFields(requestedVisibility, profileSnapshot, explicitVisibility);
+  if (requestedFieldKeys.length === 0) {
+    database
+      .prepare(
+        `
+        UPDATE member_profile_public_submissions
+        SET status = 'withdrawn',
+            reviewed_by_user_id = NULL,
+            reviewer_note = NULL,
+            reviewed_at = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = ? AND status = 'pending'
+      `
+      )
+      .run(Number(userId));
+    return null;
+  }
+
+  database
+    .prepare(
+      `
+      INSERT INTO member_profile_public_submissions (
+        user_id,
+        status,
+        requested_visibility_json,
+        profile_snapshot_json,
+        requested_field_keys_json,
+        submitted_at,
+        created_at,
+        updated_at
+      ) VALUES (?, 'pending', ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ON CONFLICT(user_id) DO UPDATE SET
+        status = 'pending',
+        requested_visibility_json = excluded.requested_visibility_json,
+        profile_snapshot_json = excluded.profile_snapshot_json,
+        requested_field_keys_json = excluded.requested_field_keys_json,
+        reviewer_note = NULL,
+        reviewed_by_user_id = NULL,
+        reviewed_at = NULL,
+        submitted_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+    `
+    )
+    .run(Number(userId), JSON.stringify(requestedVisibility), JSON.stringify(profileSnapshot), JSON.stringify(requestedFieldKeys));
+
+  return loadPublicProfileReviewSubmission(database, userId);
+}
+
+function normalizeHonoraryMemberPayload(payload, existing = null) {
+  const fullName =
+    payload?.fullName !== undefined
+      ? toNullableTrimmedString(payload.fullName, { maxLength: 160 })
+      : toNullableTrimmedString(existing?.fullName, { maxLength: 160 });
+  if (!fullName) {
+    const error = new Error("Full name is required.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  return {
+    fullName,
+    title:
+      payload?.title !== undefined
+        ? toNullableTrimmedString(payload.title, { maxLength: 160 })
+        : toNullableTrimmedString(existing?.title, { maxLength: 160 }),
+    organisation:
+      payload?.organisation !== undefined
+        ? toNullableTrimmedString(payload.organisation, { maxLength: 180 })
+        : toNullableTrimmedString(existing?.organisation, { maxLength: 180 }),
+    citation:
+      payload?.citation !== undefined
+        ? toNullableTrimmedString(payload.citation, { maxLength: 320 })
+        : toNullableTrimmedString(existing?.citation, { maxLength: 320 }),
+    bio:
+      payload?.bio !== undefined
+        ? toNullableTrimmedString(payload.bio, { maxLength: 2000 })
+        : toNullableTrimmedString(existing?.bio, { maxLength: 2000 }),
+    linkedinUrl:
+      payload?.linkedinUrl !== undefined
+        ? normalizeOptionalHttpUrl(payload.linkedinUrl, "linkedinUrl")
+        : normalizeOptionalHttpUrl(existing?.linkedinUrl, "linkedinUrl"),
+    photoUrl:
+      payload?.photoUrl !== undefined
+        ? normalizeOptionalHttpUrl(payload.photoUrl, "photoUrl")
+        : normalizeOptionalHttpUrl(existing?.photoUrl, "photoUrl"),
+    status:
+      payload?.status !== undefined
+        ? normalizeDirectoryEntryStatus(payload.status, existing?.status || "draft")
+        : normalizeDirectoryEntryStatus(existing?.status || "draft", "draft"),
+    displayOrder: normalizeDirectoryEntryDisplayOrder(payload?.displayOrder, existing?.displayOrder || 0)
+  };
+}
+
+function normalizeMemorialEntryPayload(payload, existing = null) {
+  const fullName =
+    payload?.fullName !== undefined
+      ? toNullableTrimmedString(payload.fullName, { maxLength: 160 })
+      : toNullableTrimmedString(existing?.fullName, { maxLength: 160 });
+  if (!fullName) {
+    const error = new Error("Full name is required.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  return {
+    fullName,
+    title:
+      payload?.title !== undefined
+        ? toNullableTrimmedString(payload.title, { maxLength: 160 })
+        : toNullableTrimmedString(existing?.title, { maxLength: 160 }),
+    organisation:
+      payload?.organisation !== undefined
+        ? toNullableTrimmedString(payload.organisation, { maxLength: 180 })
+        : toNullableTrimmedString(existing?.organisation, { maxLength: 180 }),
+    dateOfPassing:
+      payload?.dateOfPassing !== undefined
+        ? toNullableTrimmedString(payload.dateOfPassing, { maxLength: 32 })
+        : toNullableTrimmedString(existing?.dateOfPassing, { maxLength: 32 }),
+    tributeText:
+      payload?.tributeText !== undefined
+        ? toNullableTrimmedString(payload.tributeText, { maxLength: 4000 })
+        : toNullableTrimmedString(existing?.tributeText, { maxLength: 4000 }),
+    bio:
+      payload?.bio !== undefined
+        ? toNullableTrimmedString(payload.bio, { maxLength: 2000 })
+        : toNullableTrimmedString(existing?.bio, { maxLength: 2000 }),
+    photoUrl:
+      payload?.photoUrl !== undefined
+        ? normalizeOptionalHttpUrl(payload.photoUrl, "photoUrl")
+        : normalizeOptionalHttpUrl(existing?.photoUrl, "photoUrl"),
+    status:
+      payload?.status !== undefined
+        ? normalizeDirectoryEntryStatus(payload.status, existing?.status || "draft")
+        : normalizeDirectoryEntryStatus(existing?.status || "draft", "draft"),
+    displayOrder: normalizeDirectoryEntryDisplayOrder(payload?.displayOrder, existing?.displayOrder || 0)
+  };
+}
+
+function listHonoraryMembers(database, { status = null } = {}) {
+  let sql = `
+    SELECT
+      id,
+      full_name AS fullName,
+      honorary_title AS title,
+      organisation,
+      citation,
+      biography AS bio,
+      linkedin_url AS linkedinUrl,
+      photo_url AS photoUrl,
+      status,
+      display_order AS displayOrder,
+      created_at AS createdAt,
+      updated_at AS updatedAt
+    FROM honorary_member_entries
+  `;
+  const params = [];
+  if (status) {
+    sql += " WHERE status = ?";
+    params.push(normalizeDirectoryEntryStatus(status));
+  }
+  sql += " ORDER BY display_order ASC, datetime(updated_at) DESC, id DESC";
+  return database.prepare(sql).all(...params);
+}
+
+function loadHonoraryMember(database, id) {
+  return database
+    .prepare(
+      `
+      SELECT
+        id,
+        full_name AS fullName,
+        honorary_title AS title,
+        organisation,
+        citation,
+        biography AS bio,
+        linkedin_url AS linkedinUrl,
+        photo_url AS photoUrl,
+        status,
+        display_order AS displayOrder,
+        created_at AS createdAt,
+        updated_at AS updatedAt
+      FROM honorary_member_entries
+      WHERE id = ?
+      LIMIT 1
+    `
+    )
+    .get(Number(id));
+}
+
+function listMemorialEntries(database, { status = null } = {}) {
+  let sql = `
+    SELECT
+      id,
+      full_name AS fullName,
+      memorial_title AS title,
+      organisation,
+      date_of_passing AS dateOfPassing,
+      tribute_text AS tributeText,
+      biography AS bio,
+      photo_url AS photoUrl,
+      status,
+      display_order AS displayOrder,
+      created_at AS createdAt,
+      updated_at AS updatedAt
+    FROM memorial_entries
+  `;
+  const params = [];
+  if (status) {
+    sql += " WHERE status = ?";
+    params.push(normalizeDirectoryEntryStatus(status));
+  }
+  sql += " ORDER BY display_order ASC, datetime(updated_at) DESC, id DESC";
+  return database.prepare(sql).all(...params);
+}
+
+function loadMemorialEntry(database, id) {
+  return database
+    .prepare(
+      `
+      SELECT
+        id,
+        full_name AS fullName,
+        memorial_title AS title,
+        organisation,
+        date_of_passing AS dateOfPassing,
+        tribute_text AS tributeText,
+        biography AS bio,
+        photo_url AS photoUrl,
+        status,
+        display_order AS displayOrder,
+        created_at AS createdAt,
+        updated_at AS updatedAt
+      FROM memorial_entries
+      WHERE id = ?
+      LIMIT 1
+    `
+    )
+    .get(Number(id));
+}
+
+function normalizeProfessionalLinks(value, fallback = []) {
+  const source = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? parseJsonArray(value)
+      : Array.isArray(fallback)
+        ? fallback
+        : [];
+  const normalized = [];
+  for (const item of source.slice(0, 8)) {
+    const rawUrl = item?.url ?? item?.href;
+    const rawLabel = item?.label ?? item?.platform ?? item?.title;
+    const rawDescription = item?.description;
+    if ((rawUrl === undefined || rawUrl === null || rawUrl === "") && (rawLabel === undefined || rawLabel === null || rawLabel === "")) {
+      continue;
+    }
+    const url = normalizeOptionalHttpUrl(rawUrl, "professionalLinks.url");
+    if (!url) {
+      continue;
+    }
+    normalized.push({
+      label: toNullableTrimmedString(rawLabel, { maxLength: 80 }) || `Link ${normalized.length + 1}`,
+      url,
+      description: toNullableTrimmedString(rawDescription, { maxLength: 160 }) || null
+    });
+  }
+  return normalized;
+}
+
 function mapInvitationStatus(signupStatus) {
   if (signupStatus === "confirmed") {
     return "confirmed";
@@ -3529,6 +4234,14 @@ function loadMemberProfile(database, userId) {
         member_profiles.full_name AS fullName,
         member_profiles.company AS company,
         member_profiles.phone AS phone,
+        member_profiles.business_title AS businessTitle,
+        member_profiles.iwfsa_position AS iwfsaPosition,
+        member_profiles.bio AS bio,
+        member_profiles.linkedin_url AS linkedinUrl,
+        member_profiles.professional_links_json AS professionalLinksJson,
+        member_profiles.expertise_free_text AS expertiseFreeText,
+        member_profiles.profile_visibility_json AS profileVisibilityJson,
+        member_profiles.profile_confirmed_at AS profileConfirmedAt,
         member_profiles.photo_url AS photoUrl,
         member_profiles.birthday_month AS birthdayMonth,
         member_profiles.birthday_day AS birthdayDay,
@@ -3544,6 +4257,10 @@ function loadMemberProfile(database, userId) {
 }
 
 function toMemberProfileResponse(profileRow) {
+  const profileVisibility = normalizeMemberProfileVisibility(profileRow?.profileVisibilityJson, {
+    profile: "members_only",
+    links: "members_only"
+  });
   return {
     userId: Number(profileRow?.userId || 0),
     username: String(profileRow?.username || ""),
@@ -3551,6 +4268,14 @@ function toMemberProfileResponse(profileRow) {
     fullName: String(profileRow?.fullName || ""),
     company: String(profileRow?.company || ""),
     phone: String(profileRow?.phone || ""),
+    businessTitle: String(profileRow?.businessTitle || ""),
+    iwfsaPosition: String(profileRow?.iwfsaPosition || ""),
+    bio: String(profileRow?.bio || ""),
+    linkedinUrl: String(profileRow?.linkedinUrl || ""),
+    professionalLinks: normalizeProfessionalLinks(profileRow?.professionalLinksJson),
+    expertiseFreeText: String(profileRow?.expertiseFreeText || ""),
+    profileVisibility,
+    profileConfirmedAt: profileRow?.profileConfirmedAt || null,
     photoUrl: profileRow?.photoUrl || null,
     birthdayMonth: Number.isInteger(Number(profileRow?.birthdayMonth)) ? Number(profileRow.birthdayMonth) : null,
     birthdayDay: Number.isInteger(Number(profileRow?.birthdayDay)) ? Number(profileRow.birthdayDay) : null,
@@ -3568,6 +4293,14 @@ function upsertMemberProfile(database, userId, profile) {
         full_name,
         company,
         phone,
+        business_title,
+        iwfsa_position,
+        bio,
+        linkedin_url,
+        professional_links_json,
+        expertise_free_text,
+        profile_visibility_json,
+        profile_confirmed_at,
         photo_url,
         birthday_month,
         birthday_day,
@@ -3576,11 +4309,19 @@ function upsertMemberProfile(database, userId, profile) {
         created_at,
         updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       ON CONFLICT(user_id) DO UPDATE SET
         full_name = excluded.full_name,
         company = excluded.company,
         phone = excluded.phone,
+        business_title = excluded.business_title,
+        iwfsa_position = excluded.iwfsa_position,
+        bio = excluded.bio,
+        linkedin_url = excluded.linkedin_url,
+        professional_links_json = excluded.professional_links_json,
+        expertise_free_text = excluded.expertise_free_text,
+        profile_visibility_json = excluded.profile_visibility_json,
+        profile_confirmed_at = excluded.profile_confirmed_at,
         photo_url = excluded.photo_url,
         birthday_month = excluded.birthday_month,
         birthday_day = excluded.birthday_day,
@@ -3594,6 +4335,14 @@ function upsertMemberProfile(database, userId, profile) {
       profile.fullName,
       profile.company,
       profile.phone,
+      profile.businessTitle,
+      profile.iwfsaPosition,
+      profile.bio,
+      profile.linkedinUrl,
+      profile.professionalLinksJson,
+      profile.expertiseFreeText,
+      profile.profileVisibilityJson,
+      profile.profileConfirmedAt,
       profile.photoUrl,
       profile.birthdayMonth,
       profile.birthdayDay,
@@ -3870,7 +4619,7 @@ function ensureSeedMembers(database) {
       company: "Maseko & Co.",
       phone: "+27841234567",
       roles: ["Full Member"],
-      groups: ["Strategic Alliances and Advocacy"]
+      groups: ["Advocacy and Voice"]
     },
     {
       username: "naledi",
@@ -3879,7 +4628,7 @@ function ensureSeedMembers(database) {
       company: "Khumalo Legal",
       phone: "+27851234567",
       roles: ["Associate Member"],
-      groups: ["Leadership Development"]
+      groups: ["Leadership Development Committee"]
     },
     {
       username: "ava",
@@ -3888,7 +4637,7 @@ function ensureSeedMembers(database) {
       company: "Naidoo Partners",
       phone: "+27861234567",
       roles: ["Full Member"],
-      groups: ["Catalytic Strategy and Voice"]
+      groups: ["Catalytic Strategy"]
     }
   ];
   const seedUsernames = seedMembers.map((member) => member.username);
@@ -7484,6 +8233,34 @@ export async function startApiServer(config) {
           payload.phone !== undefined
             ? toNullableTrimmedString(payload.phone, { maxLength: 48 })
             : toNullableTrimmedString(current.phone, { maxLength: 48 });
+        const businessTitle =
+          payload.businessTitle !== undefined
+            ? toNullableTrimmedString(payload.businessTitle, { maxLength: 120 })
+            : toNullableTrimmedString(current.businessTitle, { maxLength: 120 });
+        const iwfsaPosition =
+          payload.iwfsaPosition !== undefined
+            ? toNullableTrimmedString(payload.iwfsaPosition, { maxLength: 160 })
+            : toNullableTrimmedString(current.iwfsaPosition, { maxLength: 160 });
+        const bio =
+          payload.bio !== undefined
+            ? toNullableTrimmedString(payload.bio, { maxLength: 300 })
+            : toNullableTrimmedString(current.bio, { maxLength: 300 });
+        const linkedinUrl =
+          payload.linkedinUrl !== undefined
+            ? normalizeOptionalHttpUrl(payload.linkedinUrl, "linkedinUrl")
+            : normalizeOptionalHttpUrl(current.linkedinUrl, "linkedinUrl");
+        const expertiseFreeText =
+          payload.expertiseFreeText !== undefined
+            ? toNullableTrimmedString(payload.expertiseFreeText, { maxLength: 300 })
+            : toNullableTrimmedString(current.expertiseFreeText, { maxLength: 300 });
+        const professionalLinks =
+          payload.professionalLinks !== undefined
+            ? normalizeProfessionalLinks(payload.professionalLinks, current.professionalLinks)
+            : normalizeProfessionalLinks(current.professionalLinks, []);
+        const profileVisibility =
+          payload.profileVisibility !== undefined
+            ? coerceMemberEditableProfileVisibility(payload.profileVisibility, current.profileVisibility, isAdminRole(auth.user.role))
+            : normalizeMemberProfileVisibility(current.profileVisibility, current.profileVisibility);
 
         const birthdayVisibility =
           payload.birthdayVisibility !== undefined
@@ -7540,11 +8317,42 @@ export async function startApiServer(config) {
           fullName,
           company,
           phone,
+          businessTitle,
+          iwfsaPosition,
+          bio,
+          linkedinUrl,
+          professionalLinksJson: JSON.stringify(professionalLinks),
+          expertiseFreeText,
+          profileVisibilityJson: JSON.stringify(profileVisibility),
+          profileConfirmedAt: current.profileConfirmedAt || new Date().toISOString(),
           photoUrl: current.photoUrl,
           birthdayMonth,
           birthdayDay,
           birthdayVisibility,
           birthdayConsentConfirmedAt
+        });
+
+        const profileSnapshot = {
+          userId: auth.user.id,
+          fullName,
+          company,
+          phone,
+          businessTitle,
+          iwfsaPosition,
+          bio,
+          linkedinUrl,
+          professionalLinks,
+          expertiseFreeText,
+          photoUrl: current.photoUrl,
+          birthdayMonth,
+          birthdayDay,
+          birthdayVisibility
+        };
+        const submission = upsertPublicProfileReviewSubmission(database, {
+          userId: auth.user.id,
+          requestedVisibility: profileVisibility,
+          profileSnapshot,
+          explicitVisibility: payload.profileVisibility
         });
 
         database
@@ -7561,6 +8369,13 @@ export async function startApiServer(config) {
               fullName,
               hasCompany: Boolean(company),
               hasPhone: Boolean(phone),
+              hasBusinessTitle: Boolean(businessTitle),
+              hasIwfsaPosition: Boolean(iwfsaPosition),
+              hasBio: Boolean(bio),
+              hasLinkedinUrl: Boolean(linkedinUrl),
+              professionalLinksCount: professionalLinks.length,
+              profileVisibility,
+              publicReviewSubmissionStatus: submission?.status || null,
               birthdayMonth,
               birthdayDay,
               birthdayVisibility
@@ -7577,6 +8392,434 @@ export async function startApiServer(config) {
           corsHeaders
         );
       }
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/admin/member-profile-reviews") {
+      const auth = requireAuth(database, request, response, corsHeaders);
+      if (!auth) {
+        return;
+      }
+      if (!requireRole(auth.user, ADMIN_ROLES, response, corsHeaders)) {
+        return;
+      }
+
+      try {
+        const status = normalizePublicProfileReviewStatus(requestUrl.searchParams.get("status") || "pending", "pending");
+        const limit = Number(requestUrl.searchParams.get("limit") || 100);
+        const items = listPublicProfileReviewSubmissions(database, { status, limit });
+        writeJson(response, 200, { items, status }, corsHeaders);
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 400),
+          { error: error.code || "validation_error", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (
+      request.method === "POST" &&
+      requestUrl.pathname.startsWith("/api/admin/member-profile-reviews/") &&
+      requestUrl.pathname.endsWith("/decision")
+    ) {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, ADMIN_ROLES, response, corsHeaders)) {
+          return;
+        }
+
+        const parts = requestUrl.pathname.split("/");
+        const userId = Number(parts[4]);
+        if (!Number.isInteger(userId) || userId <= 0) {
+          writeJson(response, 400, { error: "validation_error", message: "User id is required." }, corsHeaders);
+          return;
+        }
+
+        const submission = loadPublicProfileReviewSubmission(database, userId);
+        if (!submission) {
+          writeJson(response, 404, { error: "not_found", message: "Public profile review submission not found." }, corsHeaders);
+          return;
+        }
+
+        const payload = await readJsonBody(request);
+        const decision = String(payload.decision || "").trim().toLowerCase();
+        if (decision !== "approved" && decision !== "rejected") {
+          writeJson(response, 400, { error: "validation_error", message: "Decision must be approved or rejected." }, corsHeaders);
+          return;
+        }
+        const reviewerNote = toNullableTrimmedString(payload.reviewerNote, { maxLength: 1000 }) || null;
+        const profileRow = loadMemberProfile(database, userId);
+        if (!profileRow) {
+          writeJson(response, 404, { error: "not_found", message: "Member profile not found." }, corsHeaders);
+          return;
+        }
+
+        const currentProfile = toMemberProfileResponse(profileRow);
+        const nextVisibility = applyPublicProfileReviewDecision(
+          currentProfile.profileVisibility,
+          submission.requestedVisibilityJson,
+          decision
+        );
+
+        upsertMemberProfile(database, userId, {
+          fullName: currentProfile.fullName || null,
+          company: currentProfile.company || null,
+          phone: currentProfile.phone || null,
+          businessTitle: currentProfile.businessTitle || null,
+          iwfsaPosition: currentProfile.iwfsaPosition || null,
+          bio: currentProfile.bio || null,
+          linkedinUrl: currentProfile.linkedinUrl || null,
+          professionalLinksJson: JSON.stringify(currentProfile.professionalLinks || []),
+          expertiseFreeText: currentProfile.expertiseFreeText || null,
+          profileVisibilityJson: JSON.stringify(nextVisibility),
+          profileConfirmedAt: currentProfile.profileConfirmedAt,
+          photoUrl: currentProfile.photoUrl,
+          birthdayMonth: currentProfile.birthdayMonth,
+          birthdayDay: currentProfile.birthdayDay,
+          birthdayVisibility: currentProfile.birthdayVisibility,
+          birthdayConsentConfirmedAt:
+            currentProfile.birthdayMonth !== null &&
+            currentProfile.birthdayDay !== null &&
+            currentProfile.birthdayVisibility !== "hidden"
+              ? new Date().toISOString()
+              : null
+        });
+
+        database
+          .prepare(
+            `
+            UPDATE member_profile_public_submissions
+            SET status = ?,
+                reviewer_note = ?,
+                reviewed_by_user_id = ?,
+                reviewed_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ?
+          `
+          )
+          .run(decision, reviewerNote, auth.user.id, userId);
+
+        database
+          .prepare(
+            `
+            INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+            VALUES (?, 'member_profile_public_reviewed', 'user', ?, ?)
+          `
+          )
+          .run(
+            auth.user.id,
+            String(userId),
+            JSON.stringify({
+              decision,
+              reviewerNote,
+              requestedFieldKeys: parseJsonArray(submission.requestedFieldKeysJson)
+            })
+          );
+
+        const refreshed = loadPublicProfileReviewSubmission(database, userId);
+        writeJson(response, 200, { reviewed: true, item: toPublicProfileReviewSubmissionResponse(refreshed) }, corsHeaders);
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 400),
+          { error: error.code || "invalid_json", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/admin/honorary-members") {
+      const auth = requireAuth(database, request, response, corsHeaders);
+      if (!auth) {
+        return;
+      }
+      if (!requireRole(auth.user, ADMIN_ROLES, response, corsHeaders)) {
+        return;
+      }
+
+      const status = requestUrl.searchParams.get("status");
+      const items = listHonoraryMembers(database, { status: status ? String(status) : null });
+      writeJson(response, 200, { items }, corsHeaders);
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/admin/honorary-members") {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, ADMIN_ROLES, response, corsHeaders)) {
+          return;
+        }
+        const payload = normalizeHonoraryMemberPayload(await readJsonBody(request));
+        const result = database
+          .prepare(
+            `
+            INSERT INTO honorary_member_entries (
+              full_name,
+              honorary_title,
+              organisation,
+              citation,
+              biography,
+              linkedin_url,
+              photo_url,
+              status,
+              display_order,
+              created_by_user_id,
+              updated_by_user_id,
+              created_at,
+              updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          `
+          )
+          .run(
+            payload.fullName,
+            payload.title,
+            payload.organisation,
+            payload.citation,
+            payload.bio,
+            payload.linkedinUrl,
+            payload.photoUrl,
+            payload.status,
+            payload.displayOrder,
+            auth.user.id,
+            auth.user.id
+          );
+        const item = loadHonoraryMember(database, result.lastInsertRowid);
+        writeJson(response, 201, { item }, corsHeaders);
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 400),
+          { error: error.code || "invalid_json", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "PATCH" && requestUrl.pathname.startsWith("/api/admin/honorary-members/")) {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, ADMIN_ROLES, response, corsHeaders)) {
+          return;
+        }
+        const id = Number(requestUrl.pathname.split("/")[4]);
+        const existing = loadHonoraryMember(database, id);
+        if (!existing) {
+          writeJson(response, 404, { error: "not_found", message: "Honorary member entry not found." }, corsHeaders);
+          return;
+        }
+        const payload = normalizeHonoraryMemberPayload(await readJsonBody(request), existing);
+        database
+          .prepare(
+            `
+            UPDATE honorary_member_entries
+            SET full_name = ?,
+                honorary_title = ?,
+                organisation = ?,
+                citation = ?,
+                biography = ?,
+                linkedin_url = ?,
+                photo_url = ?,
+                status = ?,
+                display_order = ?,
+                updated_by_user_id = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `
+          )
+          .run(
+            payload.fullName,
+            payload.title,
+            payload.organisation,
+            payload.citation,
+            payload.bio,
+            payload.linkedinUrl,
+            payload.photoUrl,
+            payload.status,
+            payload.displayOrder,
+            auth.user.id,
+            id
+          );
+        writeJson(response, 200, { item: loadHonoraryMember(database, id) }, corsHeaders);
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 400),
+          { error: error.code || "invalid_json", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "DELETE" && requestUrl.pathname.startsWith("/api/admin/honorary-members/")) {
+      const auth = requireAuth(database, request, response, corsHeaders);
+      if (!auth) {
+        return;
+      }
+      if (!requireRole(auth.user, ADMIN_ROLES, response, corsHeaders)) {
+        return;
+      }
+      const id = Number(requestUrl.pathname.split("/")[4]);
+      database.prepare("DELETE FROM honorary_member_entries WHERE id = ?").run(id);
+      writeJson(response, 200, { removed: true }, corsHeaders);
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/admin/memorials") {
+      const auth = requireAuth(database, request, response, corsHeaders);
+      if (!auth) {
+        return;
+      }
+      if (!requireRole(auth.user, ADMIN_ROLES, response, corsHeaders)) {
+        return;
+      }
+
+      const status = requestUrl.searchParams.get("status");
+      const items = listMemorialEntries(database, { status: status ? String(status) : null });
+      writeJson(response, 200, { items }, corsHeaders);
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/admin/memorials") {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, ADMIN_ROLES, response, corsHeaders)) {
+          return;
+        }
+        const payload = normalizeMemorialEntryPayload(await readJsonBody(request));
+        const result = database
+          .prepare(
+            `
+            INSERT INTO memorial_entries (
+              full_name,
+              memorial_title,
+              organisation,
+              date_of_passing,
+              tribute_text,
+              biography,
+              photo_url,
+              status,
+              display_order,
+              created_by_user_id,
+              updated_by_user_id,
+              created_at,
+              updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          `
+          )
+          .run(
+            payload.fullName,
+            payload.title,
+            payload.organisation,
+            payload.dateOfPassing,
+            payload.tributeText,
+            payload.bio,
+            payload.photoUrl,
+            payload.status,
+            payload.displayOrder,
+            auth.user.id,
+            auth.user.id
+          );
+        const item = loadMemorialEntry(database, result.lastInsertRowid);
+        writeJson(response, 201, { item }, corsHeaders);
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 400),
+          { error: error.code || "invalid_json", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "PATCH" && requestUrl.pathname.startsWith("/api/admin/memorials/")) {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, ADMIN_ROLES, response, corsHeaders)) {
+          return;
+        }
+        const id = Number(requestUrl.pathname.split("/")[4]);
+        const existing = loadMemorialEntry(database, id);
+        if (!existing) {
+          writeJson(response, 404, { error: "not_found", message: "Memorial entry not found." }, corsHeaders);
+          return;
+        }
+        const payload = normalizeMemorialEntryPayload(await readJsonBody(request), existing);
+        database
+          .prepare(
+            `
+            UPDATE memorial_entries
+            SET full_name = ?,
+                memorial_title = ?,
+                organisation = ?,
+                date_of_passing = ?,
+                tribute_text = ?,
+                biography = ?,
+                photo_url = ?,
+                status = ?,
+                display_order = ?,
+                updated_by_user_id = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `
+          )
+          .run(
+            payload.fullName,
+            payload.title,
+            payload.organisation,
+            payload.dateOfPassing,
+            payload.tributeText,
+            payload.bio,
+            payload.photoUrl,
+            payload.status,
+            payload.displayOrder,
+            auth.user.id,
+            id
+          );
+        writeJson(response, 200, { item: loadMemorialEntry(database, id) }, corsHeaders);
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 400),
+          { error: error.code || "invalid_json", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "DELETE" && requestUrl.pathname.startsWith("/api/admin/memorials/")) {
+      const auth = requireAuth(database, request, response, corsHeaders);
+      if (!auth) {
+        return;
+      }
+      if (!requireRole(auth.user, ADMIN_ROLES, response, corsHeaders)) {
+        return;
+      }
+      const id = Number(requestUrl.pathname.split("/")[4]);
+      database.prepare("DELETE FROM memorial_entries WHERE id = ?").run(id);
+      writeJson(response, 200, { removed: true }, corsHeaders);
       return;
     }
 
@@ -7630,6 +8873,14 @@ export async function startApiServer(config) {
         fullName: toNullableTrimmedString(current.fullName, { maxLength: 160 }) || auth.user.username,
         company: toNullableTrimmedString(current.company, { maxLength: 180 }),
         phone: toNullableTrimmedString(current.phone, { maxLength: 48 }),
+        businessTitle: toNullableTrimmedString(current.businessTitle, { maxLength: 120 }),
+        iwfsaPosition: toNullableTrimmedString(current.iwfsaPosition, { maxLength: 160 }),
+        bio: toNullableTrimmedString(current.bio, { maxLength: 300 }),
+        linkedinUrl: normalizeOptionalHttpUrl(current.linkedinUrl, "linkedinUrl"),
+        professionalLinksJson: JSON.stringify(normalizeProfessionalLinks(current.professionalLinks, [])),
+        expertiseFreeText: toNullableTrimmedString(current.expertiseFreeText, { maxLength: 300 }),
+        profileVisibilityJson: JSON.stringify(normalizeMemberProfileVisibility(current.profileVisibility, current.profileVisibility)),
+        profileConfirmedAt: current.profileConfirmedAt,
         photoUrl,
         birthdayMonth: current.birthdayMonth,
         birthdayDay: current.birthdayDay,
@@ -7673,6 +8924,14 @@ export async function startApiServer(config) {
         fullName: toNullableTrimmedString(current.fullName, { maxLength: 160 }) || auth.user.username,
         company: toNullableTrimmedString(current.company, { maxLength: 180 }),
         phone: toNullableTrimmedString(current.phone, { maxLength: 48 }),
+        businessTitle: toNullableTrimmedString(current.businessTitle, { maxLength: 120 }),
+        iwfsaPosition: toNullableTrimmedString(current.iwfsaPosition, { maxLength: 160 }),
+        bio: toNullableTrimmedString(current.bio, { maxLength: 300 }),
+        linkedinUrl: normalizeOptionalHttpUrl(current.linkedinUrl, "linkedinUrl"),
+        professionalLinksJson: JSON.stringify(normalizeProfessionalLinks(current.professionalLinks, [])),
+        expertiseFreeText: toNullableTrimmedString(current.expertiseFreeText, { maxLength: 300 }),
+        profileVisibilityJson: JSON.stringify(normalizeMemberProfileVisibility(current.profileVisibility, current.profileVisibility)),
+        profileConfirmedAt: current.profileConfirmedAt,
         photoUrl: null,
         birthdayMonth: current.birthdayMonth,
         birthdayDay: current.birthdayDay,
@@ -7735,7 +8994,7 @@ export async function startApiServer(config) {
           registrationClosesAt: item.countdownEndsAt || item.registrationClosesAt || null,
           invitationStatus: mapInvitationStatus(item.mySignupStatus),
           mySignupStatus: item.mySignupStatus,
-          audienceLabel: item.audienceLabel || "All Members"
+          audienceLabel: item.audienceLabel || EVENT_AUDIENCE_BY_CODE.get("all_members")?.label || "All Active IWFSA Members"
         }));
 
       const awaitingResponseCount = invites.filter((item) => item.invitationStatus === "awaiting_response").length;
@@ -9599,7 +10858,7 @@ export async function startApiServer(config) {
         response,
         200,
         {
-          items: EVENT_AUDIENCE_OPTIONS.map((item) => ({ code: item.code, label: item.label }))
+          items: eventAudienceOptionsForUser(auth.user).map((item) => ({ code: item.code, label: item.label }))
         },
         corsHeaders
       );
@@ -10206,6 +11465,19 @@ export async function startApiServer(config) {
         const hasGroupNames = groupNamesInput.length > 0;
         const inviteeIdsInput =
           payload.inviteeUserIds !== undefined ? payload.inviteeUserIds : payload.audienceUserIds;
+        const audienceCode = normalizeAudienceCode(payload.audienceCode);
+        if (!ADMIN_ROLES.includes(auth.user.role) && hasAdminOnlyAudienceInput(payload, audienceCode)) {
+          writeJson(
+            response,
+            403,
+            {
+              error: "forbidden",
+              message: "Member-created events can only use All Active IWFSA Members or individual invitees."
+            },
+            corsHeaders
+          );
+          return;
+        }
         if (hasGroupNames) {
           const groupMap = ensureGroupIds(database, groupNamesInput);
           groupIds = groupNamesInput
@@ -10213,7 +11485,6 @@ export async function startApiServer(config) {
             .filter((id) => Number.isInteger(id));
           audienceType = "groups";
         }
-        const audienceCode = normalizeAudienceCode(payload.audienceCode);
         if (audienceCode && !hasGroupNames) {
           const mappedAudience = mapAudienceCodeToSelection(database, audienceCode);
           if (!mappedAudience) {
@@ -11404,6 +12675,19 @@ export async function startApiServer(config) {
           ? payload.groupNames.map((name) => String(name || "").trim()).filter(Boolean)
           : [];
         const hasGroupNames = groupNamesInput.length > 0;
+        const audienceCode = payload.audienceCode !== undefined ? normalizeAudienceCode(payload.audienceCode) : "";
+        if (!ADMIN_ROLES.includes(auth.user.role) && hasAdminOnlyAudienceInput(payload, audienceCode)) {
+          writeJson(
+            response,
+            403,
+            {
+              error: "forbidden",
+              message: "Member-created events can only use All Active IWFSA Members or individual invitees."
+            },
+            corsHeaders
+          );
+          return;
+        }
         if (hasGroupNames) {
           const groupMap = ensureGroupIds(database, groupNamesInput);
           nextGroupIds = groupNamesInput
@@ -11411,7 +12695,6 @@ export async function startApiServer(config) {
             .filter((id) => Number.isInteger(id));
           nextAudienceType = "groups";
         }
-        const audienceCode = payload.audienceCode !== undefined ? normalizeAudienceCode(payload.audienceCode) : "";
         if (audienceCode && !hasGroupNames) {
           const mappedAudience = mapAudienceCodeToSelection(database, audienceCode);
           if (!mappedAudience) {
@@ -12820,6 +14103,182 @@ export async function startApiServer(config) {
       return;
     }
 
+    const memberDetailPathMatch = requestUrl.pathname.match(/^\/api\/members\/(\d+)$/);
+    if (memberDetailPathMatch) {
+      const userId = Number(memberDetailPathMatch[1]);
+      if (!Number.isInteger(userId) || userId <= 0) {
+        writeJson(response, 400, { error: "validation_error", message: "User id is required." }, corsHeaders);
+        return;
+      }
+
+      if (request.method === "GET") {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, ["admin", "chief_admin"], response, corsHeaders)) {
+          return;
+        }
+        const item = loadAdminMemberDetail(database, userId);
+        if (!item) {
+          writeJson(response, 404, { error: "not_found", message: "Member profile not found." }, corsHeaders);
+          return;
+        }
+        writeJson(response, 200, { item }, corsHeaders);
+        return;
+      }
+
+      if (request.method === "PATCH") {
+        try {
+          const auth = requireAuth(database, request, response, corsHeaders);
+          if (!auth) {
+            return;
+          }
+          if (!requireRole(auth.user, ["admin", "chief_admin"], response, corsHeaders)) {
+            return;
+          }
+
+          const current = loadAdminMemberDetail(database, userId);
+          if (!current) {
+            writeJson(response, 404, { error: "not_found", message: "Member profile not found." }, corsHeaders);
+            return;
+          }
+
+          const payload = await readJsonBody(request);
+          const fullName =
+            payload.fullName !== undefined
+              ? toNullableTrimmedString(payload.fullName, { maxLength: 160 })
+              : toNullableTrimmedString(current.fullName, { maxLength: 160 });
+          if (!fullName) {
+            writeJson(response, 400, { error: "validation_error", message: "Full name is required." }, corsHeaders);
+            return;
+          }
+
+          const emailRaw = payload.email !== undefined ? String(payload.email || "") : String(current.email || "");
+          const email = emailRaw.trim().toLowerCase();
+          if (!email || !isValidEmail(email)) {
+            writeJson(response, 400, { error: "validation_error", message: "Valid email is required." }, corsHeaders);
+            return;
+          }
+
+          const emailConflict = database
+            .prepare("SELECT id FROM users WHERE LOWER(email) = ? AND id <> ? LIMIT 1")
+            .get(email, userId);
+          if (emailConflict) {
+            writeJson(response, 409, { error: "conflict", message: "Email already exists." }, corsHeaders);
+            return;
+          }
+
+          const company =
+            payload.company !== undefined
+              ? toNullableTrimmedString(payload.company, { maxLength: 180 })
+              : toNullableTrimmedString(current.company, { maxLength: 180 });
+          const phone =
+            payload.phone !== undefined
+              ? toNullableTrimmedString(payload.phone, { maxLength: 48 })
+              : toNullableTrimmedString(current.phone, { maxLength: 48 });
+          const businessTitle =
+            payload.businessTitle !== undefined
+              ? toNullableTrimmedString(payload.businessTitle, { maxLength: 120 })
+              : toNullableTrimmedString(current.businessTitle, { maxLength: 120 });
+          const iwfsaPosition =
+            payload.iwfsaPosition !== undefined
+              ? toNullableTrimmedString(payload.iwfsaPosition, { maxLength: 160 })
+              : toNullableTrimmedString(current.iwfsaPosition, { maxLength: 160 });
+          const bio =
+            payload.bio !== undefined
+              ? toNullableTrimmedString(payload.bio, { maxLength: 300 })
+              : toNullableTrimmedString(current.bio, { maxLength: 300 });
+          const linkedinUrl =
+            payload.linkedinUrl !== undefined
+              ? normalizeOptionalHttpUrl(payload.linkedinUrl, "linkedinUrl")
+              : normalizeOptionalHttpUrl(current.linkedinUrl, "linkedinUrl");
+          const expertiseFreeText =
+            payload.expertiseFreeText !== undefined
+              ? toNullableTrimmedString(payload.expertiseFreeText, { maxLength: 300 })
+              : toNullableTrimmedString(current.expertiseFreeText, { maxLength: 300 });
+          const groupsInput =
+            payload.groups !== undefined
+              ? Array.isArray(payload.groups)
+                ? payload.groups
+                : String(payload.groups || "").split(",")
+              : current.groups || [];
+          const normalizedGroups = normalizeUniqueList(groupsInput);
+          const groupIdsByName = ensureGroupIds(database, normalizedGroups);
+          const groupIds = normalizedGroups
+            .map((name) => Number(groupIdsByName.get(name) || 0))
+            .filter((id) => Number.isInteger(id) && id > 0);
+
+          runTransaction(database, () => {
+            database
+              .prepare(
+                `
+                UPDATE users
+                SET email = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+              `
+              )
+              .run(email, userId);
+
+            upsertMemberProfile(database, userId, {
+              fullName,
+              company,
+              phone,
+              businessTitle,
+              iwfsaPosition,
+              bio,
+              linkedinUrl,
+              professionalLinksJson: JSON.stringify(current.professionalLinks || []),
+              expertiseFreeText,
+              profileVisibilityJson: JSON.stringify(current.profileVisibility || { profile: "members_only", links: "members_only" }),
+              profileConfirmedAt: current.profileConfirmedAt || new Date().toISOString(),
+              photoUrl: current.photoUrl,
+              birthdayMonth: current.birthdayMonth,
+              birthdayDay: current.birthdayDay,
+              birthdayVisibility: current.birthdayVisibility || "hidden",
+              birthdayConsentConfirmedAt:
+                current.birthdayMonth !== null &&
+                current.birthdayDay !== null &&
+                current.birthdayVisibility !== "hidden"
+                  ? new Date().toISOString()
+                  : null
+            });
+
+            setGroupMemberships(database, userId, groupIds);
+
+            database
+              .prepare(
+                `
+                INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+                VALUES (?, 'admin_member_profile_updated', 'user', ?, ?)
+              `
+              )
+              .run(
+                auth.user.id,
+                String(userId),
+                JSON.stringify({
+                  email,
+                  fullName,
+                  hasCompany: Boolean(company),
+                  hasPhone: Boolean(phone),
+                  groups: normalizedGroups
+                })
+              );
+          });
+
+          writeJson(response, 200, { updated: true, item: loadAdminMemberDetail(database, userId) }, corsHeaders);
+        } catch (error) {
+          writeJson(
+            response,
+            Number(error.httpStatus || 400),
+            { error: error.code || 'validation_error', message: String(error.message || error) },
+            corsHeaders
+          );
+        }
+        return;
+      }
+    }
+
     if (request.method === "POST" && requestUrl.pathname === "/api/members") {
       try {
         const auth = requireAuth(database, request, response, corsHeaders);
@@ -12919,6 +14378,7 @@ export async function startApiServer(config) {
         // Queue and send invite immediately for the newly added member
         const inviteResult = queueMemberInvites(database, [userId], auth.user.id, { expiryHours: 72 });
 
+        let inviteEmailSent = false;
         if (inviteResult.queued.length > 0) {
           const firstName = getFirstName(fullName, username);
           const queued = inviteResult.queued[0];
@@ -12930,12 +14390,16 @@ export async function startApiServer(config) {
             inviteUrl,
             supportEmail: "support@iwfsa.local"
           });
-          sendTransactionalEmail({
+          const emailResult = sendTransactionalEmail({
             to: queued.email,
             subject: emailPayload.subject,
             text: emailPayload.text,
             metadata: { template: "member_invite" }
           });
+          inviteEmailSent = Array.isArray(emailResult.accepted) && emailResult.accepted.includes(queued.email);
+          if (!inviteEmailSent) {
+            throw new Error("Member establishment email was not accepted for delivery.");
+          }
           recordNotificationDelivery(database, {
             userId: queued.id,
             channel: "email",
@@ -12955,13 +14419,26 @@ export async function startApiServer(config) {
           .run(
             auth.user.id,
             String(userId),
-            JSON.stringify({ email, groups: normalizedGroupNames, inviteQueued: inviteResult.queued.length })
+            JSON.stringify({
+              email,
+              groups: normalizedGroupNames,
+              inviteQueued: inviteResult.queued.length,
+              inviteEmailSent
+            })
           );
 
         writeJson(
           response,
           201,
-          { id: userId, username, email, fullName, groups: normalizedGroupNames, inviteQueued: inviteResult.queued.length },
+          {
+            id: userId,
+            username,
+            email,
+            fullName,
+            groups: normalizedGroupNames,
+            inviteQueued: inviteResult.queued.length,
+            inviteEmailSent
+          },
           corsHeaders
         );
       } catch (error) {
@@ -14597,6 +16074,7 @@ export async function startApiServer(config) {
               authenticated: true,
               token: session.token,
               expiresAt: session.expiresAt,
+              redirectPath: resolveLoginRedirectPath(targetUser),
               user: toAuthUserPayload(targetUser, targetMembership),
               impersonation: {
                 active: true,
@@ -14651,6 +16129,7 @@ export async function startApiServer(config) {
             authenticated: true,
             token: session.token,
             expiresAt: session.expiresAt,
+            redirectPath: resolveLoginRedirectPath(user),
             user: toAuthUserPayload(user, membership),
             impersonation: null
           },

@@ -1,236 +1,105 @@
 # IWFSA Copilot Instructions
 
-> Trust these instructions first. Only explore the codebase if information here is incomplete or found to be incorrect.
+Use these instructions first. Only explore the codebase if the docs here are incomplete or out of date.
 
-## 1) Project Summary
+## How To Work In This Repo
 
-IWFSA is a governance-aware web platform for the International Women's Forum South Africa. It provides three surfaces: a public marketing site, an authenticated member portal, and a restricted admin console. The project is a **modular monolith** with two Node.js services (API + Web) backed by SQLite.
+1. Start with the source of truth in this order: `docs/build-playbook.md`, `docs/roadmap.md`, `docs/product-requirements.md`, `AGENT.md`.
+2. Confirm the current checkpoint and the smallest acceptable scope before editing.
+3. Read the nearest implementation and the nearest test before changing behavior.
+4. Make the smallest complete slice that can be validated locally.
+5. Update the related docs when the change affects behavior, sequencing, security, or workflow.
+6. Keep `docs/knowledge-source/` current so an external agent can understand the project, its current state, and notable changes without reconstructing session history.
 
-- **Languages:** JavaScript (ESM `.mjs` throughout)
-- **Runtime:** Node.js 22+ (uses built-in `node:sqlite`, `node:test`, `node:http`)
-- **Database:** SQLite via `node:sqlite` (experimental — warnings are expected)
-- **Dependencies:** `busboy` (multipart uploads), `xlsx` (Excel import parsing) — no frameworks (no Express, no React)
-- **Deployment target:** Vercel (serverless entry at `api/entry.mjs`) or standalone Node host
-- **OS tooling:** PowerShell scripts for local dev (Windows-oriented)
+If those documents disagree, fix them together in the same change.
 
-## 2) Repository Layout
+## Project Shape
 
-```
-.github/
-  workflows/ci.yml        # GitHub Actions CI pipeline
-  copilot-instructions.md # THIS FILE
-apps/
-  api/
-    src/
-      index.mjs           # API entry point (loads env, runs migrations, starts server)
-      server.mjs           # All API routes and business logic (~2000+ lines)
-      env.mjs              # API config parser (reads .env / environment)
-      auth/                # Password hashing (scrypt) and bootstrap admin seeding
-      db/
-        client.mjs         # SQLite connection helper (PRAGMA foreign_keys = ON)
-        migrate.mjs        # Sequential SQL migration runner
-      integrations/        # SharePoint, Teams Graph, Calendar sync clients
-      notifications/       # Email delivery (stub in dev)
-    migrations/            # 0001–0014 numbered .sql files (applied in order)
-    test/                  # Node built-in test runner files
-  web/
-    src/
-      index.mjs            # Web entry point (loads env, starts server)
-      server.mjs           # Web routes: /, /member, /admin, /activate, /reset, /meetings/rsvp
-      templates.mjs        # HTML template functions (server-rendered)
-      env.mjs              # Web config parser
-    public/                # Static assets (styles.css, iwfsa-home.jpg)
-    test/
-  common/
-    load-env.mjs           # Simple .env file loader (no dotenv dependency)
-api/
-  entry.mjs               # Vercel serverless entry (co-starts API + Web on demand)
-scripts/
-  build-all.mjs           # Build: copies src+migrations+public into dist/
-  dev-all.ps1             # Start both services (runs migrate first, writes PIDs)
-  dev-stop.ps1            # Stop tracked dev processes
-  dev-clean.ps1           # Wipe DB + runtime, re-migrate, restart services
-  lint.mjs                # Placeholder for future richer lint checks
-  typecheck.mjs           # Validates .env.example keys and migration schema
-  member_import_dry_run.py # Python spreadsheet validator (standalone, not part of Node build)
-data/                     # SQLite database directory (gitignored, created by migrate)
-docs/                     # Product requirements, architecture, playbook, ADRs, integration docs
-```
+IWFSA is a governance-aware web platform for the International Women's Forum South Africa.
 
-### Key configuration files
-| File | Purpose |
-|------|---------|
-| `package.json` | Scripts, engines (`>=22.0.0`), two dependencies |
-| `vercel.json` | Vercel rewrite rules and function config |
-| `.gitignore` | Ignores `node_modules/`, `dist/`, `data/`, `.env`, `.env.*`, `.runtime/` |
-| `.env.example` | **Required by typecheck** but gitignored by `.env.*` pattern — see setup step below |
-| `AGENT.md` | Build working agreement (checkpoint protocol, RBAC rules, session protocol) |
-| `CONTRIBUTING.md` | PR workflow, change-alignment gate, quality expectations |
+- Public surface: mission, brand, contact, and external storytelling.
+- Member surface: authenticated event participation and member services.
+- Admin surface: restricted operations for governance, imports, notifications, and audit.
 
-## 3) Environment Setup
+The codebase is a modular monolith with two Node.js services backed by SQLite.
 
-### Prerequisites
-- Node.js 22+ (the project uses `node:sqlite` which is built-in from Node 22)
-- npm (comes with Node)
-- PowerShell 5.1+ (for `dev:all`, `dev:stop`, `dev:clean` scripts — Windows)
+- Runtime: Node.js 22+
+- Language: JavaScript only, ESM `.mjs`
+- Server stack: `node:http`, `node:test`, `node:sqlite`
+- No frameworks: no Express, no React, no TypeScript
+- Local dev on Windows uses PowerShell scripts
 
-### First-time setup
-```bash
-npm install
-```
+## Repository Conventions
 
-### Create `.env.example` (required for typecheck to pass)
-The `.env.example` file is gitignored by the `.env.*` glob but is required by `scripts/typecheck.mjs`. If it does not exist, create it with these required keys:
-```
-API_HOST=127.0.0.1
-API_PORT=4000
-DATABASE_PATH=./data/iwfsa.db
-APP_BASE_URL=http://127.0.0.1:3000
-WEB_HOST=127.0.0.1
-WEB_PORT=3000
-API_BASE_URL=http://127.0.0.1:4000
-```
+- Keep route and business logic in the existing Node service modules instead of introducing new frameworks.
+- Treat `apps/api/src/server.mjs` and `apps/web/src/server.mjs` as the main control points for behavior.
+- Keep migrations sequential and additive in `apps/api/migrations/`.
+- Preserve the RBAC model: `chief_admin`, `admin`, `event_editor`, `member`.
+- Keep feature flags for optional integrations such as SharePoint, Teams Graph, and calendar sync.
+- Treat member data, tokens, and import files as sensitive information.
 
-### Create `.env` for local development
-Copy the same values from `.env.example` to `.env`. The `load-env.mjs` loader reads `.env` at runtime; it does **not** use the `dotenv` package.
+## Change Discipline
 
-## 4) Build, Test, and Validation Commands
+- Prefer the narrowest possible edit that fixes the actual behavior.
+- If a change could affect scope, security, permissions, or deployment order, classify it before implementing it.
+- Log breaking changes in `docs/change-alignment-log.md` and update the linked docs in the same change.
+- Do not create parallel implementations for the same workflow or data shape.
+- Reuse the canonical fixtures and established import paths instead of introducing duplicates.
 
-Always run commands from the repository root.
+## Validation Order
 
-### Lint (syntax check all source files)
-```bash
-npm run lint
-```
-Uses `node --check` on every `.mjs` file. No external linter (no ESLint/Prettier config). If you add a new `.mjs` file, you must add it to the appropriate `lint:api` or `lint:web` script in `package.json`.
+Use this order unless a narrower check is clearly better:
 
-### Typecheck (config contract validation)
-```bash
-npm run typecheck
-```
-Validates that `.env.example` contains all required keys and that the baseline migration creates the expected tables. **Fails if `.env.example` is missing.**
-
-### Migrate (create/update database)
-```bash
-npm run migrate
-```
-Applies sequential SQL migrations from `apps/api/migrations/` and seeds the bootstrap admin (`akeida` / `1possibility`). Creates `data/iwfsa.db` if it does not exist. Safe to run repeatedly (idempotent). The `(node:XXXX) ExperimentalWarning: SQLite is an experimental feature` warning is expected and harmless.
-
-### Test
-```bash
-npm run test
-```
-Uses Node's built-in test runner with `--test-isolation=none`. Tests create temporary databases in `os.tmpdir()`, start real HTTP servers on port 0, and clean up after themselves. Tests run in about 30–60 seconds. The SQLite experimental warning is expected.
-
-### Build
-```bash
-npm run build
-```
-Copies source, migrations, and public assets into `dist/` and writes `dist/BUILD_INFO.json`.
-
-### Full CI pipeline (what GitHub Actions runs)
-```bash
-npm run ci
-```
-Runs `lint → typecheck → test → build` in sequence. This is the same pipeline defined in `.github/workflows/ci.yml`. **Always run this before pushing to validate your changes.**
-
-### Local dev servers (Windows PowerShell)
-```bash
-npm run dev:all      # Runs migrate, then starts API (port 4000) + Web (port 3000) in background
-npm run dev:stop     # Stops tracked dev processes
-npm run dev:clean    # Wipes database, re-migrates, restarts both services
-```
-
-### Command order
-1. `npm install` (once, or after dependency changes)
-2. `npm run migrate` (creates database if needed)
-3. `npm run lint` (fast syntax validation)
-4. `npm run typecheck` (config contract check — needs `.env.example`)
-5. `npm run test` (full test suite)
-6. `npm run build` (generate dist/ artifacts)
-
-## 5) CI Pipeline (GitHub Actions)
-
-Defined in `.github/workflows/ci.yml`. Runs on every push and pull request:
-1. Checkout → Setup Node 22.x with npm cache → `npm ci`
-2. `npm run lint`
-3. `npm run typecheck`
+1. `npm run lint`
+2. `npm run typecheck`
+3. Focused tests for the touched area
 4. `npm run test`
 5. `npm run build`
 
-All four steps must pass for a PR to be accepted.
+When you add a new `.mjs` source file, add it to the relevant lint script in `package.json`.
 
-## 6) Architecture and Code Conventions
+## Local Development Notes
 
-- **No frameworks.** HTTP servers use `node:http` directly. Templates are plain JS functions returning HTML strings.
-- **ESM only.** All files use `.mjs` extension and `import`/`export` syntax. The project has `"type": "module"` in `package.json`.
-- **Single-file server pattern.** `apps/api/src/server.mjs` contains all API route handling and business logic in one large file. New routes are added inside the `startApiServer` function.
-- **SQLite via `node:sqlite`.** Use `DatabaseSync` from `node:sqlite`. Always enable `PRAGMA foreign_keys = ON` (handled by `openDatabase` in `db/client.mjs`).
-- **Migrations are sequential SQL files.** Named `NNNN_description.sql` in `apps/api/migrations/`. The migrator applies them in filesystem sort order and tracks applied migrations in a `_migrations` table.
-- **RBAC roles:** `chief_admin`, `admin`, `event_editor`, `member`. Check roles in route handlers. Admin-only routes must verify `role in ['admin', 'chief_admin']`.
-- **Feature flags:** SharePoint, Teams Graph, and Calendar Sync are controlled by `FEATURE_SHAREPOINT_DOCUMENTS`, `FEATURE_TEAMS_GRAPH_AUTOMATION`, and `FEATURE_CALENDAR_OAUTH_SYNC` environment variables.
-- **No TypeScript.** No `.ts` files, no `tsconfig.json`. The typecheck script validates config contracts only.
-- **Tests** use `node:test` and `node:assert/strict`. Test files are in `apps/*/test/*.test.mjs`. Tests create isolated temp databases and ephemeral HTTP servers.
+- `npm run migrate` creates or updates the SQLite database and is safe to rerun.
+- `npm run dev:all` starts the API and web servers together after migration.
+- `npm run dev:stop` and `npm run dev:clean` are PowerShell-oriented helpers.
+- SQLite experimental warnings during migrate or test are expected in Node 22+.
+- If `.env.example` is missing, create it with the keys required by `scripts/typecheck.mjs` before running typecheck.
 
-## 7) Planning and Governance
+## Security And Privacy
 
-### Source of truth (in priority order)
-1. `docs/build-playbook.md` — execution details and checkpoint status table
-2. `docs/roadmap.md` — phase and checkpoint sequencing
-3. `docs/product-requirements.md` — functional and non-functional requirements
-4. `AGENT.md` — build working agreement
+- Never print or hardcode real credentials, tokens, or join links.
+- Never store plaintext passwords or raw auth tokens.
+- Keep invite, reset, RSVP, and approval links short-lived and single-use where possible.
+- Follow data minimization and consent-aware handling for personal information.
+- Keep low-level diagnostics in backend logs or audit tables, not in default UI surfaces.
 
-If these documents disagree, update them together in the same change.
+## Documentation Hygiene
 
-### Active delivery sequence
-- Checkpoints execute sequentially from `0.1` onward per `docs/roadmap.md`.
-- Keep exactly one checkpoint marked `In Progress` in `docs/build-playbook.md`.
-- Finish the current checkpoint before starting the next.
+When a change affects behavior, update the matching documentation at the same time.
 
-### Change alignment gate
-Classify every scope change before implementation:
-- **Enhancement (non-breaking):** verify MVP scope, feature flags, RBAC, consent, API compatibility, and reliability are preserved.
-- **Breaking change:** log in `docs/change-alignment-log.md` with impact and mitigation before merging.
-
-### Documentation hygiene
-When changing requirements or execution order, update all of:
-- `docs/build-playbook.md`, `docs/roadmap.md`, `AGENT.md`, `README.md`
+- `docs/build-playbook.md`
+- `docs/roadmap.md`
+- `docs/product-requirements.md`
+- `AGENT.md`
+- `README.md`
 - `CONTRIBUTING.md` when contributor workflow changes
-- Feature-specific docs touched by the change
+- `docs/knowledge-source/change-log.md` for material changes
+- `docs/knowledge-source/current-state.md` when baseline or next-step direction changes
 
-### User Dictionary standard
-Entries in `docs/User-dictionary.md` must be at a 7th-grade reading level. Short sentences, plain language, real-world analogies.
+Use `docs/knowledge-source/project-representation.md` as the stable project brief for external orientation and handover.
 
-## 8) Security and Privacy Rules
+Keep user-facing glossary content in `docs/User-dictionary.md` short, plain, and readable at about a 7th-grade level.
 
-- Never expose real credentials in public/admin UI templates or test assertions.
-- Never store or log plaintext passwords/tokens. Use `hashPassword`/`verifyPassword` from `apps/api/src/auth/passwords.mjs`.
-- Treat member spreadsheets and import data as PII.
-- Invite/reset/RSVP tokens must be short-lived and single-use.
-- POPIA-aligned: data minimization, explicit consent gates, retention-aware audit.
-- Approval links, join URLs, and calendar subscription tokens are sensitive — do not log broadly.
+## UX Guardrails
 
-## 9) Carry-Forward Focus Rules
+- Preserve the top-level surfaces: `/`, `/member`, and `/admin`.
+- Favor module-level deep links and clear navigation over long scroll-heavy pages.
+- Keep admin reporting member-centric and operational rather than overly technical.
+- Public pages must not leak internal member activity.
 
-### Membership data
-- `membership_set_json` on import batches is canonical for membership-set behavior.
-- Do not introduce duplicate membership staging pathways.
-- Use the one canonical fixture in `docs/imports/`.
+## When Unsure
 
-### Navigation UX
-- Preserve top-level surfaces: `/` (public), `/member` (portal), `/admin` (console).
-- Use module-level deep links (`#events`, `#imports`, `#notifications`, etc.).
-- Avoid monolithic scroll-heavy pages.
-
-### Notifications UX
-- Delivery report is member-centric. Queue status is a health summary card.
-- Technical diagnostics stay in backend logs/audit, not default admin UI.
-
-## 10) Known Issues and Workarounds
-
-- **SQLite ExperimentalWarning:** `(node:XXXX) ExperimentalWarning: SQLite is an experimental feature` appears during migrate and test. This is expected behavior in Node 22+ and is harmless.
-- **`.env.example` not in git:** The file is excluded by `.env.*` in `.gitignore` but is required by `npm run typecheck`. If typecheck fails with ".env.example is missing", create the file as shown in section 3.
-- **`dev:all`/`dev:stop`/`dev:clean` are PowerShell-only.** On non-Windows systems, start services manually: `npm run migrate && npm run dev:api & npm run dev:web`.
-- **Port conflicts:** API defaults to 4000, Web to 3000. If ports are in use, change values in `.env`.
-- **No hot reload.** Restart `dev:api` / `dev:web` after code changes.
-- **New source files must be added to lint scripts.** The lint commands enumerate every `.mjs` file explicitly. If you create a new file, add a `node --check` entry to the relevant `lint:api` or `lint:web` script in `package.json`.
+- Read a nearby implementation and a nearby test before guessing.
+- Prefer existing patterns over new abstractions.
+- Ask for clarification only when the repo docs and nearby code still do not resolve the decision.

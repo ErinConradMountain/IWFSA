@@ -79,13 +79,13 @@ Membership and onboarding note:
 
 ### Security requirements (minimum)
 - Do not store member passwords in the database in plaintext.
-- Do not log generated passwords or include them in application logs/traces.
-- Use a *temporary* password and force a password change at first sign-in.
-- Prefer a short-lived onboarding link/token and expire it after first use.
+- Do not log raw invite tokens, reset tokens, or member passwords in application logs/traces.
+- Use a short-lived onboarding activation link/token and expire it after first use.
+- Require the member to set a password during activation before portal access is granted.
 
-### Email template: Onboarding credentials (admin-triggered)
+### Email template: Onboarding activation (admin-triggered)
 
-**Subject:** IWFSA Member Portal \u2013 Your login details
+**Subject:** IWFSA Member Portal \u2013 Activate your account
 
 **Body (plain text):**
 
@@ -99,15 +99,15 @@ Access to the member platform is controlled by IWFSA administration. Annual memb
 
 Website: {{portalUrl}}
 Username: {{username}}
-Temporary password: {{temporaryPassword}}
+Activation link (expires): {{activationUrl}}
 
-Access requirement: To access the portal, you must change the temporary password. Depending on portal policy, you may also be asked to personalise your username (recommended when generated/default usernames are used). Until activation is completed, your member profile remains on our database for administration purposes, but you will not be able to log in using temporary credentials.
+Access requirement: To access the portal, you must complete account activation using the secure link above and choose your password. Depending on portal policy, you may also be asked to personalise your username. Until activation is completed, your member profile remains on our database for administration purposes, but you will not be able to sign in.
 
-Please sign in as soon as possible and complete the activation step. Once updated, keep your password private and do not share your login details with anyone.
+Please open the activation link as soon as possible and complete the setup step. Once updated, keep your password private and do not share your login details with anyone.
 
 You will also be able to update your profile image, contact details, biography, professional links, IWFSA position, and areas of expertise after signing in.
 
-POPIA notice: The IWFSA Member Portal is managed in accordance with the Protection of Personal Information Act (POPIA). Your login credentials are treated as confidential and will not be disclosed to third parties. Only you will have access to your username and password, and you are encouraged to change your temporary password on first login.
+POPIA notice: The IWFSA Member Portal is managed in accordance with the Protection of Personal Information Act (POPIA). Your login credentials are treated as confidential and will not be disclosed to third parties. Only you will have access to your username and password.
 
 If you did not expect this email, or if you believe your account has been compromised, please contact us at {{supportEmail}}.
 
@@ -117,7 +117,7 @@ IWF Administrator
 
 ### WhatsApp template: Onboarding prompt
 
-Hello {{firstName}}, your IWFSA Member Portal profile is ready. Please use your onboarding link to confirm your profile, set your username/password, and complete your member details: {{activationUrl}}
+Hello {{firstName}}, your IWFSA Member Portal profile is ready. Please use your activation link to set your password, confirm your profile, and complete your member details: {{activationUrl}}
 
 ### Email template: Dues standing / access warning
 
@@ -151,6 +151,8 @@ A password reset was initiated for your IWFSA Member Portal account.
 
 Username: {{username}}
 Reset link (expires): {{resetUrl}}
+
+Please use the secure link above to choose a new password. The link can only be used once.
 
 If you did not request this change, please contact us at {{supportEmail}}.
 

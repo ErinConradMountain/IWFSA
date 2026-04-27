@@ -89,11 +89,19 @@ The IWFSA web app is delivered as a standalone web platform and supports:
 - Login entry point
 
 ### Auth & Membership
-- Members log in with username + password
+- Members, event editors, admins, and chief admins use one unified sign-in entry point.
+- The system authenticates the user once, then routes the user to the correct workspace by role.
+- Members sign in with username or email plus password after activation is complete.
 - Admin-managed membership (no public signup unless explicitly added later)
 - Membership fees are annual and due by **31 March** each membership year.
 - Only members marked by Admin as active and in good standing may appear in the Members section or use the member portal.
 - Admin may block or deactivate a member immediately when dues are not up to date.
+
+Unified sign-in routing rules:
+- `chief_admin` -> Admin Console
+- `admin` -> Admin Console
+- `event_editor` -> Admin Console or the relevant event-management module
+- `member` -> Member Portal
 
 #### Member provisioning (Admin)
 - Initially, administrators will provision the member database by uploading an Excel spreadsheet.
@@ -109,16 +117,16 @@ The IWFSA web app is delivered as a standalone web platform and supports:
 
 #### Initial invite + first-time sign-in
 - After import, admins can send an invitation email to a member or a selected set of members.
-- The initial invitation provides preset login details (username and a temporary password) plus a secure link to complete onboarding.
+- The initial invitation provides the member's username plus a secure activation link to complete onboarding.
 - Active imported members should receive both email and WhatsApp onboarding notifications where contact details are available.
-- On first successful sign-in, the member must be prompted to change their password (and optionally their username) from the preset values.
-- Temporary passwords must be short-lived (expiry) and single-use where possible; they must never be retrievable by admins once generated.
+- On activation, the member must set a password and may optionally personalise the username when policy requires it.
+- Invite tokens must be short-lived, single-use, and never retrievable by admins once generated.
 - Onboarding must require the member to confirm their profile and complete required profile fields before the profile is considered complete.
 
 #### Admin-initiated credential reset (private)
 - Administrators can trigger a credential reset for an individual member or a batch selection.
 - Reset delivery is private to the member (email to the member address on file). Admins cannot view the member’s new password.
-- The reset flow should generate a secure, short-lived, single-use link and/or a temporary password and force change on next sign-in.
+- The reset flow should generate a secure, short-lived, single-use link that allows the member to choose a new password.
 
 #### External directories (Admin)
 - Administrators can maintain separate, non-login directories for external listings such as:
@@ -206,6 +214,59 @@ The IWFSA web app is delivered as a standalone web platform and supports:
 	- add sector or area of expertise
 - The biography field should be limited to approximately 300 characters for consistency and readability.
 - Members should be informed that their image, contact details, and bio can be updated at any time by signing in.
+
+Member-controlled profile visibility requirements:
+- Profile information is private by default until the member actively changes visibility.
+- Members must be able to control whether profile fields are:
+	- private,
+	- visible to admins,
+	- visible to members,
+	- submitted for public review,
+	- publicly approved.
+- Public display of member-created profile information requires explicit member action plus admin approval.
+- Public-facing profile highlights must never expose private fields or internal-only activity.
+
+Supported member-controlled profile areas should expand to include:
+- display name,
+- title,
+- organisation,
+- short biography,
+- public biography,
+- member biography,
+- professional sector,
+- expertise,
+- interests,
+- optional contact details,
+- profile image,
+- professional and social links.
+
+Social and external link requirements:
+- Members may add manual links such as LinkedIn, Instagram, Facebook, X, YouTube, websites, publications, podcasts, articles, and other approved references.
+- Each link must store:
+	- platform,
+	- URL,
+	- short description,
+	- visibility,
+	- public-review status.
+- External links are hidden by default until the member chooses otherwise.
+- External links must be validated before storage or display.
+
+Conference sharing and memory requirements:
+- Members should be able to contribute member-only conference reflections and follow-up notes.
+- Contributions may include text, lessons learned, useful links, external media references, session references, speaker references, and follow-up actions.
+- Conference contributions remain member-only by default.
+- Any later public storytelling use requires member consent and admin approval.
+
+Public storytelling governance:
+- Admins act as stewards of public presentation rather than silent owners of member identity.
+- The system should support a review flow for member-submitted public profile content.
+- Sensitive public-profile changes and approvals must be audit logged.
+
+Honorary members and memorial requirements:
+- The public surface should support an admin-managed Honorary Members section.
+- The public surface should support an admin-managed Memorial section for members who have passed away.
+- Honorary and memorial entries must be curated, dignified, and governed by admins or chief admins only.
+- Public display of honorary and memorial entries must follow governance and appropriateness checks before publication.
 
 ### Member Categories and Structures
 - Default category: `Active Member`

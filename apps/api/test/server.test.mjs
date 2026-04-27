@@ -348,6 +348,258 @@ async function createRunningServer(options = {}) {
   };
 }
 
+test("member profile API saves extended professional details and visibility", async () => {
+  const { server, workingDirectory, databasePath, memberId } = await createRunningServer();
+
+  try {
+    const loginResponse = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const loginPayload = await loginResponse.json();
+    assert.equal(loginResponse.status, 200);
+
+    const updateResponse = await fetch(`http://${server.host}:${server.port}/api/member/profile`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${loginPayload.token}`
+      },
+      body: JSON.stringify({
+        fullName: "Lerato Mokoena",
+        company: "IWFSA",
+        phone: "+27825550000",
+        businessTitle: "Executive Director",
+        iwfsaPosition: "Member Affairs Committee",
+        bio: "Governance leader focused on member dignity and institutional memory.",
+        linkedinUrl: "https://www.linkedin.com/in/lerato-mokoena",
+        expertiseFreeText: "Governance, strategy, member engagement",
+        professionalLinks: [
+          {
+            label: "Podcast",
+            url: "https://example.com/podcast",
+            description: "Recent leadership conversation"
+          }
+        ],
+        profileVisibility: {
+          profile: "members_only",
+          links: "submitted_for_public_review"
+        },
+        birthdayVisibility: "members_only",
+        birthdayMonth: 5,
+        birthdayDay: 15
+      })
+    });
+    const updatePayload = await updateResponse.json();
+
+    assert.equal(updateResponse.status, 200);
+    assert.equal(updatePayload.item.businessTitle, "Executive Director");
+    assert.equal(updatePayload.item.iwfsaPosition, "Member Affairs Committee");
+    assert.equal(updatePayload.item.bio, "Governance leader focused on member dignity and institutional memory.");
+    assert.equal(updatePayload.item.linkedinUrl, "https://www.linkedin.com/in/lerato-mokoena");
+    assert.equal(updatePayload.item.expertiseFreeText, "Governance, strategy, member engagement");
+    assert.equal(updatePayload.item.profileVisibility.profile, "members_only");
+    assert.equal(updatePayload.item.profileVisibility.links, "submitted_for_public_review");
+    assert.equal(updatePayload.item.profileVisibility.fields.fullName, "members_only");
+    assert.equal(updatePayload.item.profileVisibility.fields.linkedinUrl, "submitted_for_public_review");
+    assert.equal(updatePayload.item.profileVisibility.fields.professionalLinks, "submitted_for_public_review");
+    assert.equal(updatePayload.item.professionalLinks.length, 1);
+    assert.equal(updatePayload.item.professionalLinks[0].label, "Podcast");
+    assert.equal(updatePayload.item.professionalLinks[0].url, "https://example.com/podcast");
+    assert.ok(updatePayload.item.profileConfirmedAt);
+
+    const database = openDatabase(databasePath);
+    try {
+      const profile = database
+        .prepare(
+          `
+          SELECT
+            business_title AS businessTitle,
+            iwfsa_position AS iwfsaPosition,
+            bio,
+            linkedin_url AS linkedinUrl,
+            expertise_free_text AS expertiseFreeText,
+            professional_links_json AS professionalLinksJson,
+            profile_visibility_json AS profileVisibilityJson,
+            profile_confirmed_at AS profileConfirmedAt
+          FROM member_profiles
+          WHERE user_id = ?
+          LIMIT 1
+        `
+        )
+        .get(memberId);
+
+      assert.equal(profile.businessTitle, "Executive Director");
+      assert.equal(profile.iwfsaPosition, "Member Affairs Committee");
+      assert.equal(profile.bio, "Governance leader focused on member dignity and institutional memory.");
+      assert.equal(profile.linkedinUrl, "https://www.linkedin.com/in/lerato-mokoena");
+      assert.equal(profile.expertiseFreeText, "Governance, strategy, member engagement");
+      const storedVisibility = JSON.parse(profile.profileVisibilityJson);
+      assert.equal(storedVisibility.profile, "members_only");
+      assert.equal(storedVisibility.links, "submitted_for_public_review");
+      assert.equal(storedVisibility.fields.fullName, "members_only");
+      assert.equal(storedVisibility.fields.linkedinUrl, "submitted_for_public_review");
+      assert.equal(storedVisibility.fields.professionalLinks, "submitted_for_public_review");
+      assert.deepEqual(JSON.parse(profile.professionalLinksJson), [
+        {
+          label: "Podcast",
+          url: "https://example.com/podcast",
+          description: "Recent leadership conversation"
+        }
+      ]);
+      assert.ok(profile.profileConfirmedAt);
+    } finally {
+      database.close();
+    }
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("admin APIs manage public profile review, honorary members, and memorial entries", async () => {
+  const { server, workingDirectory, databasePath, memberId } = await createRunningServer();
+
+  try {
+    const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const memberPayload = await memberLogin.json();
+    assert.equal(memberLogin.status, 200);
+
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "admin1", password: "adminpass" })
+    });
+    const adminPayload = await adminLogin.json();
+    assert.equal(adminLogin.status, 200);
+
+    const profileUpdateResponse = await fetch(`http://${server.host}:${server.port}/api/member/profile`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${memberPayload.token}`
+      },
+      body: JSON.stringify({
+        fullName: "Member One",
+        company: "IWFSA Test Company",
+        linkedinUrl: "https://www.linkedin.com/in/member-one",
+        professionalLinks: [{ label: "Portfolio", url: "https://example.com/member-one" }],
+        profileVisibility: {
+          profile: "submitted_for_public_review",
+          links: "submitted_for_public_review",
+          fields: {
+            fullName: "submitted_for_public_review",
+            bio: "members_only",
+            linkedinUrl: "submitted_for_public_review",
+            professionalLinks: "submitted_for_public_review"
+          }
+        }
+      })
+    });
+    const profileUpdatePayload = await profileUpdateResponse.json();
+    assert.equal(profileUpdateResponse.status, 200);
+    assert.equal(profileUpdatePayload.item.profileVisibility.fields.fullName, "submitted_for_public_review");
+    assert.equal(profileUpdatePayload.item.profileVisibility.fields.linkedinUrl, "submitted_for_public_review");
+
+    const reviewListResponse = await fetch(`http://${server.host}:${server.port}/api/admin/member-profile-reviews?status=pending`, {
+      headers: { Authorization: `Bearer ${adminPayload.token}` }
+    });
+    const reviewListPayload = await reviewListResponse.json();
+    assert.equal(reviewListResponse.status, 200);
+    assert.equal(reviewListPayload.items.length, 1);
+    assert.equal(reviewListPayload.items[0].userId, memberId);
+    assert.deepEqual(reviewListPayload.items[0].requestedFieldKeys.sort(), ["fullName", "linkedinUrl", "professionalLinks"].sort());
+
+    const approveResponse = await fetch(
+      `http://${server.host}:${server.port}/api/admin/member-profile-reviews/${memberId}/decision`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${adminPayload.token}`
+        },
+        body: JSON.stringify({ decision: "approved", reviewerNote: "Approved for the public directory." })
+      }
+    );
+    const approvePayload = await approveResponse.json();
+    assert.equal(approveResponse.status, 200);
+    assert.equal(approvePayload.item.status, "approved");
+
+    const database = openDatabase(databasePath);
+    const profileVisibilityRow = database
+      .prepare("SELECT profile_visibility_json AS profileVisibilityJson FROM member_profiles WHERE user_id = ?")
+      .get(memberId);
+    const storedVisibility = JSON.parse(profileVisibilityRow.profileVisibilityJson);
+    assert.equal(storedVisibility.fields.fullName, "public_approved");
+    assert.equal(storedVisibility.fields.linkedinUrl, "public_approved");
+    assert.equal(storedVisibility.fields.professionalLinks, "public_approved");
+    database.close();
+
+    const honoraryCreateResponse = await fetch(`http://${server.host}:${server.port}/api/admin/honorary-members`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({
+        fullName: "Dr Honour Test",
+        title: "Honorary Member",
+        organisation: "IWFSA",
+        citation: "Recognised for long-standing contribution.",
+        bio: "Served the organisation for many years.",
+        status: "published",
+        displayOrder: 1
+      })
+    });
+    const honoraryCreatePayload = await honoraryCreateResponse.json();
+    assert.equal(honoraryCreateResponse.status, 201);
+    assert.equal(honoraryCreatePayload.item.fullName, "Dr Honour Test");
+
+    const honoraryListResponse = await fetch(`http://${server.host}:${server.port}/api/admin/honorary-members`, {
+      headers: { Authorization: `Bearer ${adminPayload.token}` }
+    });
+    const honoraryListPayload = await honoraryListResponse.json();
+    assert.equal(honoraryListResponse.status, 200);
+    assert.equal(honoraryListPayload.items.length, 1);
+
+    const memorialCreateResponse = await fetch(`http://${server.host}:${server.port}/api/admin/memorials`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({
+        fullName: "Ms Memorial Test",
+        title: "In Memoriam",
+        organisation: "IWFSA",
+        dateOfPassing: "2026-04-20",
+        tributeText: "Her leadership and care shaped the community.",
+        bio: "A respected member and mentor.",
+        status: "published",
+        displayOrder: 2
+      })
+    });
+    const memorialCreatePayload = await memorialCreateResponse.json();
+    assert.equal(memorialCreateResponse.status, 201);
+    assert.equal(memorialCreatePayload.item.fullName, "Ms Memorial Test");
+
+    const memorialListResponse = await fetch(`http://${server.host}:${server.port}/api/admin/memorials`, {
+      headers: { Authorization: `Bearer ${adminPayload.token}` }
+    });
+    const memorialListPayload = await memorialListResponse.json();
+    assert.equal(memorialListResponse.status, 200);
+    assert.equal(memorialListPayload.items.length, 1);
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
 test("GET /health returns API status", async () => {
   const { server, workingDirectory } = await createRunningServer();
 
@@ -447,6 +699,50 @@ test("POST /api/auth/login authenticates bootstrap admin", async () => {
     assert.equal(typeof payload.token, "string");
     assert.equal(payload.user.username, "akeida");
     assert.equal(payload.user.role, "chief_admin");
+    assert.equal(payload.redirectPath, "/admin#overview");
+
+    const emailResponse = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        username: BOOTSTRAP_ADMIN.email,
+        password: BOOTSTRAP_ADMIN.password
+      })
+    });
+    const emailPayload = await emailResponse.json();
+
+    assert.equal(emailResponse.status, 200);
+    assert.equal(emailPayload.user.username, "akeida");
+    assert.equal(emailPayload.redirectPath, "/admin#overview");
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("POST /api/auth/login returns a member workspace redirect", async () => {
+  const { server, workingDirectory } = await createRunningServer();
+
+  try {
+    const response = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        username: "member1",
+        password: "memberpass"
+      })
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.authenticated, true);
+    assert.equal(payload.user.username, "member1");
+    assert.equal(payload.user.role, "member");
+    assert.equal(payload.redirectPath, "/member#dashboard");
   } finally {
     await server.close();
     rmSync(workingDirectory, { recursive: true, force: true });
@@ -497,6 +793,7 @@ test("POST /api/auth/login allows admin to impersonate a member", async () => {
     assert.equal(payload.authenticated, true);
     assert.equal(payload.user.username, "member1");
     assert.equal(payload.user.role, "member");
+    assert.equal(payload.redirectPath, "/member#dashboard");
     assert.equal(payload.impersonation?.active, true);
     assert.equal(payload.impersonation?.adminUser?.username, "admin1");
 
@@ -649,7 +946,108 @@ test("GET /api/members requires admin role", async () => {
   }
 });
 
-test("POST /api/members stores group memberships and records audit logs", async () => {
+test("GET and PATCH /api/members/:id let admins edit member records", async () => {
+  const { server, workingDirectory, databasePath } = await createRunningServer();
+
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
+    });
+    const adminPayload = await adminLogin.json();
+    assert.equal(adminLogin.status, 200);
+
+    const membersResponse = await fetch(`http://${server.host}:${server.port}/api/members`, {
+      headers: { Authorization: `Bearer ${adminPayload.token}` }
+    });
+    const membersPayload = await membersResponse.json();
+    assert.equal(membersResponse.status, 200);
+
+    const member = membersPayload.items.find((item) => item.username === "member1");
+    assert.ok(member, "expected seeded member to exist in directory");
+
+    const detailResponse = await fetch(`http://${server.host}:${server.port}/api/members/${member.id}`, {
+      headers: { Authorization: `Bearer ${adminPayload.token}` }
+    });
+    const detailPayload = await detailResponse.json();
+
+    assert.equal(detailResponse.status, 200);
+    assert.equal(detailPayload.item.username, "member1");
+    assert.equal(detailPayload.item.id, member.id);
+
+    const patchResponse = await fetch(`http://${server.host}:${server.port}/api/members/${member.id}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({
+        fullName: "Member One Updated",
+        email: "member1.updated@iwfsa.local",
+        company: "IWFSA Cape Town",
+        phone: "0821234567",
+        businessTitle: "Director",
+        iwfsaPosition: "Committee Lead",
+        linkedinUrl: "https://www.linkedin.com/in/member-one",
+        expertiseFreeText: "Mentoring, finance",
+        bio: "Updated member biography",
+        groups: ["Cape Town Circle", "Board of Directors"]
+      })
+    });
+    const patchPayload = await patchResponse.json();
+
+    assert.equal(patchResponse.status, 200);
+    assert.equal(patchPayload.updated, true);
+    assert.equal(patchPayload.item.fullName, "Member One Updated");
+    assert.equal(patchPayload.item.email, "member1.updated@iwfsa.local");
+    assert.equal(patchPayload.item.company, "IWFSA Cape Town");
+    assert.equal(patchPayload.item.phone, "0821234567");
+    assert.equal(patchPayload.item.businessTitle, "Director");
+    assert.equal(patchPayload.item.iwfsaPosition, "Committee Lead");
+    assert.equal(patchPayload.item.linkedinUrl, "https://www.linkedin.com/in/member-one");
+    assert.equal(patchPayload.item.expertiseFreeText, "Mentoring, finance");
+    assert.equal(patchPayload.item.bio, "Updated member biography");
+    assert.deepEqual([...patchPayload.item.groups].sort(), ["Board of Directors", "Cape Town Circle"]);
+
+    const refreshedResponse = await fetch(`http://${server.host}:${server.port}/api/members/${member.id}`, {
+      headers: { Authorization: `Bearer ${adminPayload.token}` }
+    });
+    const refreshedPayload = await refreshedResponse.json();
+
+    assert.equal(refreshedResponse.status, 200);
+    assert.equal(refreshedPayload.item.email, "member1.updated@iwfsa.local");
+    assert.deepEqual([...refreshedPayload.item.groups].sort(), ["Board of Directors", "Cape Town Circle"]);
+
+    const database = openDatabase(databasePath);
+    try {
+      const auditRow = database
+        .prepare(
+          `
+          SELECT actor_user_id AS actorUserId, metadata_json AS metadataJson
+          FROM audit_logs
+          WHERE action_type = 'admin_member_profile_updated' AND target_id = ?
+          ORDER BY id DESC
+          LIMIT 1
+        `
+        )
+        .get(String(member.id));
+      assert.ok(auditRow);
+      assert.equal(Number(auditRow.actorUserId), adminPayload.user.id);
+      const metadata = JSON.parse(auditRow.metadataJson || "{}");
+      assert.equal(metadata.email, "member1.updated@iwfsa.local");
+      assert.deepEqual([...metadata.groups].sort(), ["Board of Directors", "Cape Town Circle"]);
+    } finally {
+      database.close();
+    }
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("POST /api/members stores group memberships, emails invite, and records audit logs", async () => {
+  globalThis[EMAIL_OUTBOX_GLOBAL_KEY] = [];
   const { server, workingDirectory, databasePath } = await createRunningServer();
 
   try {
@@ -676,6 +1074,21 @@ test("POST /api/members stores group memberships and records audit logs", async 
 
     assert.equal(createResponse.status, 201);
     assert.deepEqual(createPayload.groups, ["Board of Directors", "Leadership Development"]);
+    assert.equal(createPayload.inviteQueued, 1);
+    assert.equal(createPayload.inviteEmailSent, true);
+
+    const outbox = globalThis[EMAIL_OUTBOX_GLOBAL_KEY];
+    assert.ok(Array.isArray(outbox));
+    const inviteEmail = outbox.find(
+      (entry) => entry.to === "grouped.member@iwfsa.local" && entry.metadata?.template === "member_invite"
+    );
+    assert.ok(inviteEmail, "admin-created member should receive an establishment email");
+    assert.match(inviteEmail.subject, /IWFSA Member Portal/);
+    assert.match(inviteEmail.text, /Your IWFSA Member Portal account has been created\./);
+    assert.match(inviteEmail.text, new RegExp(`Username:\\s+${createPayload.username}`));
+    const inviteToken = extractTokenFromText(inviteEmail.text, "activate");
+    assert.ok(inviteToken, "establishment email should include an activation token");
+    assert.ok(inviteEmail.text.includes(`http://127.0.0.1:3000/activate?token=${inviteToken}`));
 
     const listResponse = await fetch(`http://${server.host}:${server.port}/api/members`, {
       headers: { Authorization: `Bearer ${adminPayload.token}` }
@@ -705,6 +1118,8 @@ test("POST /api/members stores group memberships and records audit logs", async 
       const creationMetadata = JSON.parse(creationAudit.metadataJson || "{}");
       assert.equal(creationMetadata.email, "grouped.member@iwfsa.local");
       assert.deepEqual(creationMetadata.groups, ["Board of Directors", "Leadership Development"]);
+      assert.equal(creationMetadata.inviteQueued, 1);
+      assert.equal(creationMetadata.inviteEmailSent, true);
 
       const inviteAudit = database
         .prepare(
@@ -719,12 +1134,28 @@ test("POST /api/members stores group memberships and records audit logs", async 
         .get(String(createPayload.id));
       assert.ok(inviteAudit);
       assert.equal(Number(inviteAudit.actorUserId), adminPayload.user.id);
+
+      const deliveryRow = database
+        .prepare(
+          `
+          SELECT status, idempotency_key AS idempotencyKey
+          FROM notification_deliveries
+          WHERE user_id = ? AND event_type = 'member_invite' AND channel = 'email'
+          ORDER BY id DESC
+          LIMIT 1
+        `
+        )
+        .get(createPayload.id);
+      assert.ok(deliveryRow);
+      assert.equal(deliveryRow.status, "sent");
+      assert.equal(String(deliveryRow.idempotencyKey || "").includes(inviteToken), false);
     } finally {
       database.close();
     }
   } finally {
     await server.close();
     rmSync(workingDirectory, { recursive: true, force: true });
+    delete globalThis[EMAIL_OUTBOX_GLOBAL_KEY];
   }
 });
 
@@ -1168,13 +1599,16 @@ test("GET /api/admin/event-audiences returns required audience options for admin
     assert.equal(response.status, 200);
     const labels = (payload.items || []).map((item) => item.label);
     assert.deepEqual(labels, [
-      "All Members",
+      "All Active IWFSA Members",
+      "External Stakeholders",
+      "IWFSA Programme Sponsors",
+      "Honourary Members",
       "Board of Directors",
+      "Advocacy and Voice",
+      "Catalytic Strategy",
+      "Leadership Development Committee",
       "Member Affairs",
-      "Brand and Reputation",
-      "Strategic Alliances and Advocacy",
-      "Catalytic Strategy and Voice",
-      "Leadership Development"
+      "Brand and Reputation"
     ]);
 
     const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
@@ -1191,7 +1625,7 @@ test("GET /api/admin/event-audiences returns required audience options for admin
 
     assert.equal(memberResponse.status, 200);
     const memberLabels = (memberAudiencePayload.items || []).map((item) => item.label);
-    assert.deepEqual(memberLabels, labels);
+    assert.deepEqual(memberLabels, ["All Active IWFSA Members"]);
   } finally {
     await server.close();
     rmSync(workingDirectory, { recursive: true, force: true });
@@ -1239,12 +1673,32 @@ test("Member can create/edit/publish own draft event and cannot edit another mem
         endAt: isoDaysFromNow(4, 2),
         venueType: "physical",
         capacity: 12,
-        audienceCode: "member_affairs"
+        audienceCode: "all_members"
       })
     });
     const createPayload = await createResponse.json();
     assert.equal(createResponse.status, 201);
     assert.equal(createPayload.status, "draft");
+
+    const memberAdminAudienceResponse = await fetch(`http://${server.host}:${server.port}/api/events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${memberPayload.token}`
+      },
+      body: JSON.stringify({
+        title: "Member Admin Audience Event",
+        description: "Should not be allowed for a member.",
+        startAt: isoDaysFromNow(4),
+        endAt: isoDaysFromNow(4, 2),
+        venueType: "physical",
+        capacity: 12,
+        audienceCode: "board_of_directors"
+      })
+    });
+    const memberAdminAudiencePayload = await memberAdminAudienceResponse.json();
+    assert.equal(memberAdminAudienceResponse.status, 403);
+    assert.match(memberAdminAudiencePayload.message, /All Active IWFSA Members/);
 
     const memberEventsResponse = await fetch(`http://${server.host}:${server.port}/api/admin/events`, {
       headers: { Authorization: `Bearer ${memberPayload.token}` }

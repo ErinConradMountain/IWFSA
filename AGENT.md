@@ -8,8 +8,13 @@ Use documents in this order when there is ambiguity:
 2. `docs/roadmap.md` (phase and checkpoint sequencing)
 3. `docs/product-requirements.md` (functional/non-functional requirements)
 4. `.github/copilot-instructions.md` (custom assistant behavior for this repo)
+5. `docs/knowledge-source/current-state.md` (external orientation and current summarized baseline)
 
 If two documents disagree, update them in the same change before implementation continues.
+
+External-party rule:
+- `docs/knowledge-source/` must stay updated as the external reference layer for project identity, current state, and notable changes.
+- Use it to brief another agent or stakeholder before they read deeper implementation documents.
 
 ## 2) Current Active Plan (2026-02-08)
 Execution restarts from the beginning of the plan:
@@ -28,6 +33,10 @@ For every checkpoint, delivery must include:
 - Validation steps and expected outcomes
 - Exit criteria
 - Handover note (done, blocked, next)
+
+Documentation and knowledge-source commitment:
+- Material project changes must update the relevant canonical docs and the external summaries in `docs/knowledge-source/`.
+- At minimum, update `docs/knowledge-source/change-log.md` and `docs/knowledge-source/current-state.md` whenever scope, workflow, architecture, requirements, or active direction materially changes.
 
 Progress rules:
 - Finish the current checkpoint before starting the next.
@@ -92,12 +101,14 @@ At session start:
 1. Confirm active checkpoint from `docs/build-playbook.md`.
 2. Restate non-goals and scope boundaries.
 3. Implement the smallest complete, testable slice.
+4. Read `docs/knowledge-source/current-state.md` when session continuity or external handover context matters.
 
 At session end:
 1. Record completed work.
 2. Record validation results.
 3. Record blockers/risks.
 4. Set next step tied to checkpoint exit criteria.
+5. Update `docs/knowledge-source/change-log.md` and `docs/knowledge-source/current-state.md` if the session produced a material change.
 
 If blocked by external dependencies (for example M365 tenant approvals), continue with approved fallback paths.
 

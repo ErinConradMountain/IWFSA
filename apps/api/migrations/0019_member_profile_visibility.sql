@@ -1,0 +1,1 @@
+ALTER TABLE member_profiles ADD COLUMN profile_visibility_json TEXT;

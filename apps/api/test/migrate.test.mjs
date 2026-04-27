@@ -34,7 +34,9 @@ test("runMigrations applies baseline exactly once", () => {
       "0015_member_news.sql",
       "0016_member_news_pinning.sql",
       "0017_event_invitees.sql",
-      "0018_membership_fees_data_model.sql"
+      "0018_membership_fees_data_model.sql",
+      "0019_member_profile_visibility.sql",
+      "0020_member_profile_reviews_and_legacy_honours.sql"
     ]);
     assert.equal(firstRun.bootstrapAdminCreated, true);
     assert.equal(firstRun.bootstrapAdminUsername, "akeida");
@@ -47,7 +49,7 @@ test("runMigrations applies baseline exactly once", () => {
     try {
       const tables = database
         .prepare(
-          "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('users', 'events', 'signups', 'audit_logs', 'sessions', 'event_editor_grants', 'event_invitees', 'member_import_batches', 'member_import_rows', 'member_roles', 'member_role_assignments', 'member_invite_tokens', 'password_reset_tokens', 'event_registration_overrides', 'registration_drafts', 'registration_reminder_preferences', 'registration_reminder_sends', 'event_alerts', 'notification_queue', 'notifications', 'notification_deliveries', 'event_revisions', 'event_revision_rollbacks', 'meeting_rsvp_tokens', 'meeting_planning_messages', 'event_internal_comments', 'event_documents', 'event_online_meetings', 'calendar_sync_connections', 'calendar_sync_oauth_states', 'calendar_sync_mappings', 'calendar_sync_failures', 'sms_notification_preferences', 'sms_delivery_logs', 'event_attendance', 'social_moderators', 'social_celebration_posts', 'member_news_posts', 'membership_categories', 'member_category_assignments', 'membership_cycles', 'member_fee_accounts', 'member_fee_transactions', 'member_standing_audit')"
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('users', 'events', 'signups', 'audit_logs', 'sessions', 'event_editor_grants', 'event_invitees', 'member_import_batches', 'member_import_rows', 'member_roles', 'member_role_assignments', 'member_invite_tokens', 'password_reset_tokens', 'event_registration_overrides', 'registration_drafts', 'registration_reminder_preferences', 'registration_reminder_sends', 'event_alerts', 'notification_queue', 'notifications', 'notification_deliveries', 'event_revisions', 'event_revision_rollbacks', 'meeting_rsvp_tokens', 'meeting_planning_messages', 'event_internal_comments', 'event_documents', 'event_online_meetings', 'calendar_sync_connections', 'calendar_sync_oauth_states', 'calendar_sync_mappings', 'calendar_sync_failures', 'sms_notification_preferences', 'sms_delivery_logs', 'event_attendance', 'social_moderators', 'social_celebration_posts', 'member_news_posts', 'membership_categories', 'member_category_assignments', 'membership_cycles', 'member_fee_accounts', 'member_fee_transactions', 'member_standing_audit', 'member_profile_public_submissions', 'honorary_member_entries', 'memorial_entries')"
         )
         .all()
         .map((row) => row.name)
@@ -70,6 +72,7 @@ test("runMigrations applies baseline exactly once", () => {
         "event_revision_rollbacks",
         "event_revisions",
         "events",
+        "honorary_member_entries",
         "meeting_planning_messages",
         "meeting_rsvp_tokens",
         "member_category_assignments",
@@ -79,11 +82,13 @@ test("runMigrations applies baseline exactly once", () => {
         "member_import_rows",
         "member_invite_tokens",
         "member_news_posts",
+        "member_profile_public_submissions",
         "member_role_assignments",
         "member_roles",
         "member_standing_audit",
         "membership_categories",
         "membership_cycles",
+        "memorial_entries",
         "notification_deliveries",
         "notification_queue",
         "notifications",

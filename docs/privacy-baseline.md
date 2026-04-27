@@ -13,6 +13,10 @@ Status: Accepted baseline for restart-run checkpoint `0.2` (2026-02-08).
 | --- | --- | --- | --- |
 | Account identity | username, email, password hash, status | authenticate members/admins and enforce access policy | API auth, admin |
 | Member profile | full name, organisation, phone, photo URL, birthday month/day, birthday visibility | member operations, directory use, consent-gated member services | member portal, admin |
+| Extended profile identity | title, public biography, member biography, expertise, interests, visibility settings | member-controlled identity sharing and admin-governed public storytelling | member portal, admin |
+| External profile links | platform, URL, description, visibility, review status | member-controlled professional linking and approved public sharing | member portal, admin |
+| Conference memory contributions | reflections, session references, external links, suggested follow-up | institutional memory and member-only conference reflection | member portal, admin review |
+| Honorary and memorial records | tribute text, recognition or memorial details, display status, ordering, image URL | institutional remembrance and approved public storytelling | public, admin |
 | Roles and groups | role assignments, group memberships, event editor grants | RBAC, audience gating, delegated edit permissions | admin, API authz |
 | Event records | title, schedule, venue, host/chair, capacity, audience, status | event lifecycle, member participation, governance continuity | member portal, admin |
 | Participation records | signup/waitlist/cancel status, timestamps | capacity management, waitlist promotion, attendance reporting basis | member portal, admin |
@@ -35,11 +39,18 @@ Data minimization rule:
 | Sister-organisation celebration posts (optional) | permission/usage confirmation for name/logo/tagging | keep permission evidence where required |
 | Operational event notifications (registrants) | operational/transactional basis | not treated as marketing broadcast |
 | Marketing/non-operational campaigns (optional) | explicit opt-in | keep channel-specific preference evidence |
+| Member-submitted public profile display | explicit member action plus admin approval | private by default; approval required before public display |
+| Public use of conference contribution | explicit member consent plus admin approval | internal conference discussions remain member-only unless approved |
+| Public social/external links on profile surfaces | explicit member visibility choice plus admin approval where displayed publicly | never auto-publish external links |
+| Honorary and memorial entries | admin governance approval | only publish wording and media that are confirmed and appropriate |
 
 Consent enforcement rules:
 - no social publication path without explicit consent check at publish time,
 - consent revocation must block future publication,
-- consent-sensitive decisions must be audit logged.
+- consent-sensitive decisions must be audit logged,
+- member profile fields are private by default until visibility is deliberately changed,
+- external links must not be published automatically,
+- conference threads remain member-only unless explicitly approved for public storytelling.
 
 ## 3) Retention Baseline
 
@@ -66,3 +77,4 @@ Retention controls:
 - `docs/architecture.md` must reflect the same privacy-by-design and retention assumptions.
 - `docs/notifications.md` and `docs/admin-runbook.md` must reflect operational vs marketing communication handling.
 - Security principles in `SECURITY.md` must remain consistent with this baseline.
+- `docs/data-model.md` and `docs/rbac-permissions.md` must reflect profile-visibility, approval, and stewardship rules for public storytelling.

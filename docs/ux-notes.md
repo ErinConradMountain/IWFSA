@@ -18,17 +18,38 @@
 	- Dashboard (welcome + key next actions)
 	- Events (list + filters)
 	- Birthdays & Notifications (sidebar and notification center)
-	- Profile (basic profile view/edit when enabled)
+	- Profile (member-controlled profile view/edit)
+	- Social Links
+	- Conference Contributions
+	- Shared Profile Preview
 - Use anchors or tabs (for example `/member#events`, `/member#notifications`) so admins and members can jump directly to a module from the Public page or docs.
+
+### Member profile experience
+- Tone should be calm, dignified, professional, and simple for non-technical users.
+- Explain clearly that members control what other members can see.
+- Explain clearly that public display requires both member choice and admin approval.
+- Visibility controls should feel understandable, not technical or punitive.
+- A preview should help a member understand the difference between member-visible and public-approved content.
 
 ### Admin Console UX
 - **Modular Layout**: Top-level tabs for high-level tasks (Directory, Imports, Event Hub, Notifications) to mimic the Member Modular approach.
+- Add or prepare admin modules for:
+	- Public Profile Review
+	- Conference Memory Review
+	- Honorary Members
+	- Memorials
 - **Help Banners**:
 	- **Problem**: Admin interfaces (especially imports/queues) are complex for infrequent users, but repetitive/noisy for power users.
 	- **Solution**: Show blue/gray information banners by default at the top of complex modules.
 	- **Interaction**: Provide a clear "X" (dismiss) button on each banner.
 	- **Persistence**: Store the dismissed state in `localStorage` so the user doesn't see it again on that device.
 - **Event Hub Card Layout**: Use a card-based grid (similar to Member events) but denser, focusing on "Status" (Draft/Published) and "Audience" controls.
+
+### Public storytelling and remembrance
+- Public storytelling must feel curated, respectful, and never like accidental leakage from the member portal.
+- Honorary Members and Memorial sections should feel ceremonial, warm, and distinctly South African.
+- Use restrained South African visual cues rather than novelty treatments.
+- Memorial content should feel like an institutional remembrance wall, not a raw database list.
 
 ### Events Page: Right Sidebar
 The member event listing view includes a right-side panel for member-only “at a glance” content.
@@ -126,16 +147,16 @@ Validation/preview UI:
 - Bulk actions:
 	- Send invites
 	- Resend invites
-	- Re-issue temporary credentials (generates new temporary password, sends email)
+	- Re-issue activation link (revokes the earlier invite token and sends a fresh email)
 
 Onboarding expectations:
-- Invite email includes preset username + temporary password plus a secure link.
-- First-time sign-in forces password change; optionally also offer username change.
+- Invite email includes the member's username plus a secure activation link.
+- Activation requires the member to choose a password before first sign-in; optionally also offer username personalisation.
 
 #### Credential reset (admin-triggered)
 - Triggered from member row action or bulk selection.
 - Admin sees only that a reset was initiated and delivered/failed; admin never sees the new password.
-- Member receives a private email containing a secure, short-lived reset link (and/or temporary password), then must set a new secret.
+- Member receives a private email containing a secure, short-lived reset link, then chooses a new password.
 
 #### External directories (outside listings)
 Support managing non-login lists for communications/celebrations and general directory needs.

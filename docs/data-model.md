@@ -14,16 +14,27 @@ This is a draft, implementation-agnostic data model.
 ### MemberProfile
 - userId (FK)
 - fullName
+- displayName
 - company
+- title
 - businessTitle
 - businessDetails
 - iwfsaPosition
 - bio (target max 300 chars)
+- publicBio
+- memberBio
 - linkedinUrl
 - professionalLinksJson
+- socialLinksJson
 - contactDetailsJson
 - expertiseTagsJson
 - expertiseFreeText
+- interestsJson
+- profileVisibilityJson
+- publicProfileStatus (draft|submitted|approved|rejected|archived)
+- publicProfileSubmittedAt
+- publicProfileReviewedAt
+- publicProfileReviewedByUserId
 - profileConfirmedAt
 - photoUrl
 - birthdayMonth (1-12)
@@ -31,6 +42,68 @@ This is a draft, implementation-agnostic data model.
 - birthdayVisibility (hidden|membersOnly|membersAndSocial)
 - birthdayConsentConfirmedAt (nullable; when consent was captured)
 - groupMemberships (via join table)
+
+### MemberSocialLink
+- id
+- userId (FK)
+- platform
+- label
+- url
+- description
+- visibility (private|admins_only|members_only|submitted_for_public_review|public_approved)
+- reviewStatus (draft|submitted|approved|rejected|archived)
+- displayOrder
+- createdAt
+- updatedAt
+
+### ConferenceContribution
+- id
+- userId (FK)
+- eventId (nullable FK)
+- title (nullable)
+- reflectionText
+- lessonLearned
+- externalLinksJson
+- externalMediaJson
+- sessionReference
+- speakerReference
+- followUpAction
+- visibility (members_only|submitted_for_public_review|public_approved|archived)
+- consentForPublicUse (boolean)
+- reviewedByUserId (nullable FK)
+- reviewedAt (nullable)
+- createdAt
+- updatedAt
+
+### HonoraryMemberEntry
+- id
+- fullName
+- title
+- biography
+- recognitionReason
+- recognitionYear
+- imageUrl
+- publicDisplayStatus (draft|approved|hidden|archived)
+- displayOrder
+- createdByUserId (FK)
+- updatedByUserId (FK)
+- createdAt
+- updatedAt
+
+### MemorialEntry
+- id
+- fullName
+- tributeText
+- contributionText
+- datesText
+- imageUrl
+- familyApprovedWording
+- publicDisplayStatus (draft|approved|hidden|archived)
+- displayOrder
+- createdByUserId (FK)
+- updatedByUserId (FK)
+- createdAt
+- updatedAt
 
 ### MembershipCategory
 - id
@@ -291,6 +364,7 @@ Represents a first-time onboarding invite for a member account.
 - userId (FK)
 - createdByUserId (FK)
 - tokenHash (store hash only; never store raw token)
+- usernameSnapshot
 - expiresAt
 - sentAt (nullable)
 - usedAt (nullable)
@@ -311,6 +385,10 @@ Represents an admin-triggered reset (private to the member).
 - status (queued|sent|bounced|expired|used|revoked)
 - deliveryProviderMessageId (nullable)
 - createdAt
+
+Authentication note:
+- The shared sign-in flow uses the member's current username or email plus password.
+- First-time onboarding is completed through `AccountInvite` token usage and password setup during activation.
 
 ### Notification
 - id
@@ -421,8 +499,8 @@ Tracks per-platform publish attempts and responses.
 
 Credential handling notes:
 - Passwords are stored only as secure hashes (never plaintext).
-- If the product chooses to email a temporary password, it must be generated at send time, stored only as a hash, and forced to change on next sign-in.
-- Admins must never be able to view a member’s current or temporary password after generation.
+- Invite and reset flows must use short-lived, single-use tokens stored only as hashes.
+- Admins must never be able to view a member's current password or any raw activation/reset token.
 - Document links should be short-lived/signed where possible to prevent forwarding/leakage.
 - Birthday (month/day) and member photos are personal data; public social posting must be gated by explicit consent (birthdayVisibility = membersAndSocial).
 

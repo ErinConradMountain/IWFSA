@@ -637,6 +637,11 @@ Planned enhancements:
 - Reporting/exports
 - Operational intelligence dashboards (attendance trends, capacity vs demand, leadership pipeline signals, conference readiness)
 - Optional social celebration automation
+- Unified sign-in and member profile foundation
+- Social links and profile visibility controls
+- Conference sharing and memory foundation
+- Public storytelling review workflow
+- Honorary members and memorial sections
 
 Each enhancement follows the same checkpoint model and must not regress MVP behavior.
 
@@ -672,8 +677,8 @@ Suggested status values:
 - Blocked
 - Done
 
-Status Table Last Updated: 2026-02-15
-Current Checkpoint: 4.1 - Enhancements Wave (Done)
+Status Table Last Updated: 2026-04-27
+Current Checkpoint: 4.6 - Unified Sign-In and Member Profile Foundation (In Progress)
 
 | Checkpoint | Status | Notes |
 | --- | --- | --- |
@@ -698,3 +703,8 @@ Current Checkpoint: 4.1 - Enhancements Wave (Done)
 | 3.2 Teams Graph Automation | Done | Added feature-flagged Microsoft Graph automation for online meetings: publish creates Teams meetings, updates patch existing meetings, manual join-link fallback remains active, and meeting metadata is persisted in `event_online_meetings`. |
 | 3.3 Calendar Sync | Done | Added feature-flagged OAuth sync foundations for Google/Outlook: connect/disconnect endpoints, insert/update/cancel propagation on registration and event lifecycle changes, mapping persistence, and failure tracking with member-visible in-app alerts. |
 | 4.1 Enhancements Wave | Done | Delivered member SMS opt-in controls with limits/quiet-hours safety, admin reporting/export dashboard, publish-gated event minutes/agenda access policy for invited+attended members, organisation-wide celebration thread with moderator delete controls, and clear member/admin navigation for these features. |
+| 4.6 Unified Sign-In and Member Profile Foundation | In Progress | Documented the 2026-04-27 member-controlled profile wave across requirements, privacy, RBAC, UX, data-model, and roadmap docs. Unified sign-in was already present in the web/API flow; the active profile slice now includes richer profile fields, field-level visibility controls, and the supporting member/admin UI foundation. |
+| 4.7 Social Links and Profile Visibility Controls | In Progress | Manual professional links and field-level profile visibility are now persisted and editable; further public rendering and moderation refinements remain. |
+| 4.8 Conference Sharing and Memory Foundation | Not Started | Member-only conference reflections and approved storytelling workflow remain to be implemented. |
+| 4.9 Public Storytelling Review Workflow | In Progress | Admin review and approval workflow is now in place for member public-profile field requests; broader storytelling and publishing flows remain. |
+| 4.10 Honorary Members and Memorial Sections | In Progress | Admin-governed honorary member and memorial records now have storage and initial admin-console management; public presentation surfaces remain to be implemented. |

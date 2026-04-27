@@ -12,10 +12,15 @@ import { startWebServer } from "../apps/web/src/server.mjs";
 const DISABLED_INTERVAL_MS = 2_147_483_647;
 let servicesPromise;
 
-function getPublicBaseUrl() {
+export function getPublicBaseUrl() {
   const configuredBaseUrl = String(process.env.APP_BASE_URL || "").trim().replace(/\/+$/, "");
   if (configuredBaseUrl) {
     return configuredBaseUrl;
+  }
+
+  const productionUrl = String(process.env.VERCEL_PROJECT_PRODUCTION_URL || "").trim().replace(/\/+$/, "");
+  if (process.env.VERCEL_ENV === "production" && productionUrl) {
+    return productionUrl.startsWith("http") ? productionUrl : `https://${productionUrl}`;
   }
 
   const deploymentUrl = String(process.env.VERCEL_URL || "").trim();
