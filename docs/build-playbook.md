@@ -637,6 +637,11 @@ Planned enhancements:
 - Reporting/exports
 - Operational intelligence dashboards (attendance trends, capacity vs demand, leadership pipeline signals, conference readiness)
 - Optional social celebration automation
+- Unified sign-in and member profile foundation
+- Social links and profile visibility controls
+- Conference sharing and memory foundation
+- Public storytelling review workflow
+- Honorary members and memorial sections
 
 Each enhancement follows the same checkpoint model and must not regress MVP behavior.
 
@@ -672,8 +677,8 @@ Suggested status values:
 - Blocked
 - Done
 
-Status Table Last Updated: 2026-02-15
-Current Checkpoint: 4.1 - Enhancements Wave (Done)
+Status Table Last Updated: 2026-04-27
+Current Checkpoint: 4.6 - Unified Sign-In and Member Profile Foundation (In Progress)
 
 | Checkpoint | Status | Notes |
 | --- | --- | --- |
@@ -691,10 +696,15 @@ Current Checkpoint: 4.1 - Enhancements Wave (Done)
 | 1.9 Admin Console UX and Event Hub Layout | Done | Implemented persisent help banners with dismissal state (localStorage), verified Event Hub card layout, and confirmed access to Business Audience options. Validated via automated tests. |
 | 2.1 Planning and Knowledge Base Reset | Done | Updated docs (product requirements, runbook, ux-notes) to reflect current Admin UX and restart status. |
 | 2.2 Membership Data Consistency Hardening | Done | Canonical `membership_set_json` is enforced for active import workflows while retaining a one-time legacy read fallback to keep historical batches readable. Removed duplicate `members-fixture.csv`. |
-| 2.3 Navigation and UX v2 (Public / Member / Admin) | Done | Implemented modular navigation (hash-based routing) for Member Portal and Admin Console, preventing scroll fatigue. |
+| 2.3 Navigation and UX v2 (Public / Member / Admin) | Done | Implemented modular navigation (hash-based routing) for Member Portal and Admin Console, preventing scroll fatigue, and added an admin-only public homepage hero-image control with linked-image and direct-upload options. |
 | 2.4 Notifications UX Simplification (Delivery Report and Queue Status) | Done | Consolidated Delivery Report with member-centric data (name/org) and Queue Status (health summary + global counts) to reduce admin cognitive load. |
 | 2.5 Regression and Release Readiness | Done | Quality gates revalidated on 2026-02-14 (`npm run ci` + focused API/Web regression) with typecheck, tests, and build green. |
 | 3.1 SharePoint Document Flow | Done | Implemented event document flow with SharePoint-backed metadata persistence (`event_documents`), app-mediated upload/download endpoints, availability windows (immediate/after_event/scheduled), RBAC + audience enforcement on document access, and checkpoint validation tests for authorized download, availability gating, and restricted-audience denial. |
 | 3.2 Teams Graph Automation | Done | Added feature-flagged Microsoft Graph automation for online meetings: publish creates Teams meetings, updates patch existing meetings, manual join-link fallback remains active, and meeting metadata is persisted in `event_online_meetings`. |
 | 3.3 Calendar Sync | Done | Added feature-flagged OAuth sync foundations for Google/Outlook: connect/disconnect endpoints, insert/update/cancel propagation on registration and event lifecycle changes, mapping persistence, and failure tracking with member-visible in-app alerts. |
 | 4.1 Enhancements Wave | Done | Delivered member SMS opt-in controls with limits/quiet-hours safety, admin reporting/export dashboard, publish-gated event minutes/agenda access policy for invited+attended members, organisation-wide celebration thread with moderator delete controls, and clear member/admin navigation for these features. |
+| 4.6 Unified Sign-In and Member Profile Foundation | In Progress | Documented the 2026-04-27 member-controlled profile wave across requirements, privacy, RBAC, UX, data-model, and roadmap docs. Unified sign-in was already present in the web/API flow; the active profile slice now includes richer profile fields, directory-detail metadata, linked-media/contact-preference storage, and the supporting member/admin UI foundation. |
+| 4.7 Social Links and Profile Visibility Controls | In Progress | Manual professional links and field-level profile visibility are now persisted and editable, the read-only member directory/profile experience now uses those settings to shape privacy-aware output, and newly submitted linked gallery media stays hidden until admin review is approved. Remaining work is concentrated in richer moderation tooling and stricter media-validation refinements. |
+| 4.8 Conference Sharing and Memory Foundation | Not Started | Member-only conference reflections and approved storytelling workflow remain to be implemented. |
+| 4.9 Public Storytelling Review Workflow | In Progress | Admin review and approval workflow is now in place for member public-profile field requests; broader storytelling and publishing flows remain. |
+| 4.10 Honorary Members and Memorial Sections | In Progress | Admin-governed honorary member and memorial records now have storage and initial admin-console management; public presentation surfaces remain to be implemented. |

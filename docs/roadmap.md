@@ -9,10 +9,11 @@ This roadmap is executed with `docs/build-playbook.md`.
 - Keep unfinished items from the previous cycle integrated in the same checkpoint order.
 - Keep exactly one checkpoint marked `In Progress` in the playbook status table.
 
-## Current Restart Baseline (2026-02-15)
+## Current Restart Baseline (2026-04-27)
 - Checkpoints `2.1` through `2.5` are complete and validated.
 - Checkpoint `3.1` is complete with SharePoint document-flow foundations: persisted SharePoint identifiers, app-mediated upload/download APIs, availability windows, and RBAC/audience-gated access controls.
-- Active checkpoint is now `3.2` (Teams Graph Automation), remaining feature-flagged until tenant readiness and security approvals are confirmed.
+- Checkpoints `3.2` and `3.3` are complete as optional integration foundations.
+- Active checkpoint is now `4.6` (Unified sign-in and member profile foundation).
 - Prior cycle outputs remain retained and revalidated through the restart run sequence.
 
 ## Phase 0 - Blueprint and Decision Lock (Done)
@@ -71,15 +72,21 @@ Checkpoints:
 Exit criteria:
 - Integration controls and operational safety checks are validated.
 
-## Phase 4 - Enhancements (Backlog)
+## Phase 4 - Enhancements (Active)
 Goal:
 - Extend value only after core and integration checkpoints are stable.
 
 Checkpoints:
 1. `4.1` Web push / SMS opt-in.
-2. `4.2` Reporting and exports.
-3. `4.3` Operational intelligence dashboards.
-4. `4.4` Optional social celebration workflow.
+2. `4.2` Membership & fees governance workspace.
+3. `4.3` Reporting and exports.
+4. `4.4` Operational intelligence dashboards.
+5. `4.5` Optional social celebration workflow.
+6. `4.6` Unified sign-in and member profile foundation.
+7. `4.7` Social links and profile visibility controls.
+8. `4.8` Conference sharing and memory foundation.
+9. `4.9` Public storytelling review workflow.
+10. `4.10` Honorary members and memorial sections.
 
 Exit criteria:
 - Enhancements do not regress MVP reliability, security, or governance controls.

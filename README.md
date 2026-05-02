@@ -25,10 +25,13 @@ Default deployment model:
 - Authenticated member event directory with waitlist and calendar support
 - Birthday visibility and celebration tooling with consent-aware handling
 - Admin member import from Excel plus invite and credential-reset flows
+- Admin-controlled annual membership fees and good-standing access governance
 - Event publishing, collaboration, notification delivery, and reporting
 
 ## Documentation Index
 - Product requirements: `docs/product-requirements.md`
+- Membership fees and good-standing implementation plan: `docs/membership-fees-plan.md`
+- External knowledge source and handover summaries: `docs/knowledge-source/README.md`
 - Architecture overview: `docs/architecture.md`
 - Web deployment model: `docs/web-deployment-model.md`
 - Security and privacy baseline: `docs/privacy-baseline.md`
@@ -47,7 +50,7 @@ Default deployment model:
 ## Current Status
 - Runtime baseline, database migrations, tests, and build pipeline are already in place.
 - The web UI is now aligned to a web-first delivery model with responsive public, member, and admin surfaces.
-- Current checkpoint in the build status table: `4.1 - Enhancements Wave`
+- Current checkpoint in the build status table: `4.6 - Unified Sign-In and Member Profile Foundation`
 
 ## Local Development
 1. `npm run migrate`

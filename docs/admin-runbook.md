@@ -3,10 +3,11 @@
 This runbook describes day-to-day operations for the IWFSA application.
 
 ## 0) Using the Admin Console
-- **Navigation**: Use the top-level tabs to switch between public site, Member Portal, and Admin Console. Inside the Admin Console, use the sub-navigation links to jump between modules (Directory, Imports, Event Hub, Notifications).
+- **Navigation**: Use the top-level tabs to switch between public site, Member Portal, and Admin Console after signing in through the shared `Sign in` entry point. Inside the Admin Console, use the sub-navigation links to jump between modules (Directory, Membership & Fees, Imports, Event Hub, Notifications, Public Profile Review, Honorary Members, Memorials).
 - **Event Hub**: Use this dashboard to see all upcoming events (published and draft) and access planning tools.
 - **Help Banners**: Most admin screens have a help banner at the top explaining key tasks. You can click the **"X"** to dismiss these instructions. They will stay hidden on your device unless you clear your browser data.
 - **Queue Status**: Check the "Notification Queue Status" card on the main admin dashboard for a quick health check of the email system (`Healthy`, `Degraded`, etc.).
+- **Public Page Hero**: Use the Overview card called **Public Page Hero** to change the homepage lead image. Only Admin and ChiefAdmin can update it.
 
 ## Roles referenced
 - **ChiefAdmin**: platform owner and escalation path (Akeida Bradley)
@@ -56,8 +57,27 @@ This runbook describes day-to-day operations for the IWFSA application.
 
 ## 3) Managing members
 ### Add or update member records (Admin)
-- Maintain member profile data (name, company, photo) and membership status.
+- Maintain member profile data (name, company, photo, biography, links, expertise, role details) and membership status.
 - Assign group/committee memberships.
+
+### Annual membership and fees control
+1. Open Admin -> Membership & Fees.
+2. Confirm the active membership cycle and due date of **31 March**.
+3. Review dashboard KPIs:
+   - active members
+   - good standing
+   - outstanding
+   - blocked
+   - deactivated
+   - onboarding incomplete
+4. Review members flagged after the due date.
+5. For any member whose dues are not up to date, Admin may:
+   - mark paid / partially paid / waived
+   - block access immediately
+   - deactivate the member immediately
+   - restore access when the record is corrected
+6. Record the reason/note for each standing or access change.
+7. Confirm audit history is present for the action.
 
 ### Initial provisioning (Excel import) + onboarding invites
 1. Go to Admin → Members → Import from Excel.
@@ -68,18 +88,66 @@ This runbook describes day-to-day operations for the IWFSA application.
 4. Run the import and review the summary report (created/updated/skipped/failed).
 5. Send onboarding invites:
    - From Admin → Members → Invites/Onboarding, select members and click “Send invites”.
-   - The invite email includes preset login details (temporary) and a secure onboarding link.
+   - The invite email includes the member's username and a secure activation link.
+   - The member completes activation by following the link and setting a password.
+   - Where mobile numbers are available and the channel is configured, send a WhatsApp onboarding prompt as well.
 6. Confirm invite delivery status and follow up on bounces.
+
+### Member profile requirements
+Members should be asked to complete or update:
+- profile confirmation
+- image
+- biography (target max 300 characters)
+- LinkedIn and professional links
+- contact details
+- current IWFSA position
+- company / business details
+- business role / title
+- expertise / sector selections
+
+Admin may edit or add to the same information when needed.
 
 ### Credential reset (Admin-triggered)
 - Use when a member needs to reset their login credentials.
 - From Admin → Members, select the member(s) → “Trigger credential reset”.
-- The system sends a private email to the member with a secure, short-lived reset link (and/or temporary password).
+- The system sends a private email to the member with a secure, short-lived reset link.
 - Admins cannot view the member’s password.
+
+### Public profile review queue
+1. Open Admin → Public Profile Review.
+2. Review submitted profile elements, including public biography, display details, and links marked for public consideration.
+3. Compare the submitted public preview against the member-visible profile to confirm nothing private is being exposed.
+4. Approve, reject, request revision, or archive the submission.
+5. Confirm the review action is reflected in the queue and captured in audit history.
+
+## 4) Managing the public homepage hero image
+1. Open Admin → Overview → Public Page Hero.
+2. Choose one of these options:
+   - paste a stable `https` image link, then select **Save linked image**
+   - choose a JPG, PNG, or WebP file and select **Upload to site**
+3. Add alt text that describes the scene and purpose of the image.
+4. Choose the crop focus that best keeps the main subject visible on the homepage.
+5. Use the preview to confirm the image still works inside the wide homepage frame before leaving the page.
+6. If the image does not fit well, switch to a wider landscape image or move the crop focus.
+7. Use **Use default image** to restore the original homepage image.
+
+Recommended image guidance:
+- Aim for a landscape image at about `1600 x 900` or larger.
+- Keep the main subject near the upper middle of the image because the public page uses a 16:9 cover crop.
+- Avoid images with small text or busy edges because they crop poorly on smaller screens.
+- Keep uploaded files under `5 MB`.
+
+### Honorary members and memorial management
+1. Open Admin → Honorary Members or Admin → Memorials.
+2. Create or edit entries with the approved portrait/image, biography or tribute text, and display ordering.
+3. Keep unpublished drafts hidden until wording, imagery, and governance approvals are complete.
+4. Publish only entries that are appropriate for the public site and aligned with IWFSA's respectful presentation standards.
+5. If an entry needs to be withdrawn or revised, change it to hidden or archived and record the reason in the admin note or audit trail.
 
 ### Disable an account
 - Suspend login and remove elevated permissions.
 - Member should no longer access internal listings.
+- A blocked or deactivated member should no longer appear in the member directory used by members.
 
 ## 4) Events: capacity, waitlist, and eligibility
 ### Capacity rules
@@ -138,6 +206,17 @@ This runbook describes day-to-day operations for the IWFSA application.
 - Track bounces/complaints and update member contact details.
 - Avoid repeated sends: system must use idempotency keys.
 
+### Membership activity alerts
+- Review admin alerts for:
+   - profile confirmations
+   - profile edits
+   - public profile submissions and review outcomes
+   - image/bio/contact changes
+   - onboarding delivery failures
+   - members still incomplete after invitation
+   - members flagged after 31 March
+   - standing/access changes
+
 ## 8) Incident checklist (quick)
 - Wrong audience visibility: unpublish → fix audience/groups → republish.
 - Teams join link wrong: replace link → notify registrants.
@@ -151,6 +230,8 @@ The system must record:
 - Event edits and rollbacks
 - Notification sends for cancellations/postponements
 - Document upload/removal actions
+- Public profile review decisions
+- Honorary and memorial publication changes
 
 ## 9.1 Privacy and retention baseline
 - Follow `docs/privacy-baseline.md` for:

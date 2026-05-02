@@ -13,10 +13,15 @@
 - Access login
 
 ### Member
-- View internal event listing and details (eligible events only)
+- Use one shared sign-in entry point and be routed automatically to the correct workspace by role
+- View internal event listing and details (eligible events only, and only while active and in good standing)
 - Register/cancel registration
 - View waitlist status
-- Manage own profile basics
+- Manage own profile basics and extended professional profile fields
+- Control visibility of own eligible profile fields
+- Add and manage own professional/social links with visibility settings
+- Submit selected profile elements for public review
+- Post member-only conference reflections and external references
 - Create, edit, and publish own meetings
 - Delete own draft meetings
 - Assign/revoke event-scoped editor rights for meetings they created
@@ -25,16 +30,28 @@
 - Use internal collaboration workspace (draft notes + internal comments) on meetings they can edit (not member-visible)
 
 ### EventEditor (event-scoped)
+- Use one shared sign-in entry point and be routed automatically to the correct workspace by role
 - Create/edit/publish meetings for assigned events/series
 - Edit event content and logistics within assigned event scope
 - Manage planning updates and attendee communications for assigned meetings
 - Use internal collaboration workspace (draft notes + internal comments) on assigned meetings (not member-visible)
+- May support conference or event-content stewardship where admins explicitly permit it
 
 ### Admin
+- Use one shared sign-in entry point and be routed automatically to the correct workspace by role
 - CRUD members
+- Determine annual membership standing and payment compliance
+- Block or deactivate members immediately when dues are not up to date
 - Bulk import members (Excel)
 - Send/resend onboarding invites
+- Send email and WhatsApp onboarding prompts where configured
 - Trigger credential resets (private delivery to member)
+- Edit/add member profile information on behalf of members
+- Review member-submitted public profile content
+- Approve, hide, revise, archive, or reject public profile submissions
+- Manage Honorary Members entries
+- Manage Memorial entries
+- Review and steward conference-memory content selected for public storytelling
 - CRUD all events/series (including member-authored events)
 - Assign/revoke EventEditor rights per event
 - Manage and override any meeting details/communications lifecycle
@@ -47,6 +64,7 @@
 ### ChiefAdmin
 - All Admin rights
 - Manage Admin users and system-wide settings
+- Full governance oversight for profile visibility, public storytelling, honorary, and memorial policy
 - Approve and publish birthday social posts to public channels
 - Approve automated daily birthday posts (recommended)
 - Pre-approve celebration posts in advance (recommended)
@@ -54,7 +72,11 @@
 
 ## Notes
 - All permission changes are audit logged.
+- Standing changes, access blocks/restores, and annual fee decisions are audit logged.
 - Meeting creation/publish, RSVP confirmations, and editor grant changes are audit logged.
+- Public-profile approvals, visibility changes with governance effect, honorary-entry changes, and memorial-entry changes must be audit logged.
 - Closed group events require group membership checks.
 - Social posting is marketing/promotional content and requires explicit member consent and strong audit logging.
 - Pre-approvals must be audit logged and must be revocable.
+- Membership category/committee classification does not itself grant portal access; portal access depends on active status plus good standing.
+- Admins steward public presentation, but member-created profile identity remains member-controlled unless the content is moved into admin-governed public surfaces.

@@ -8,19 +8,170 @@ This is a draft, implementation-agnostic data model.
 - username
 - email
 - passwordHash
-- status (active/suspended)
+- accountStatus (active/blocked/deactivated/invited/notInvited)
 - createdAt
 
 ### MemberProfile
 - userId (FK)
 - fullName
+- displayName
 - company
+- title
+- businessTitle
+- businessDetails
+- iwfsaPosition
+- bio (target max 300 chars)
+- publicBio
+- memberBio
+- linkedinUrl
+- professionalLinksJson
+- socialLinksJson
+- contactDetailsJson
+- expertiseTagsJson
+- expertiseFreeText
+- interestsJson
+- profileVisibilityJson
+- publicProfileStatus (draft|submitted|approved|rejected|archived)
+- publicProfileSubmittedAt
+- publicProfileReviewedAt
+- publicProfileReviewedByUserId
+- profileConfirmedAt
 - photoUrl
 - birthdayMonth (1-12)
 - birthdayDay (1-31)
 - birthdayVisibility (hidden|membersOnly|membersAndSocial)
 - birthdayConsentConfirmedAt (nullable; when consent was captured)
 - groupMemberships (via join table)
+
+### MemberSocialLink
+- id
+- userId (FK)
+- platform
+- label
+- url
+- description
+- visibility (private|admins_only|members_only|submitted_for_public_review|public_approved)
+- reviewStatus (draft|submitted|approved|rejected|archived)
+- displayOrder
+- createdAt
+- updatedAt
+
+### ConferenceContribution
+- id
+- userId (FK)
+- eventId (nullable FK)
+- title (nullable)
+- reflectionText
+- lessonLearned
+- externalLinksJson
+- externalMediaJson
+- sessionReference
+- speakerReference
+- followUpAction
+- visibility (members_only|submitted_for_public_review|public_approved|archived)
+- consentForPublicUse (boolean)
+- reviewedByUserId (nullable FK)
+- reviewedAt (nullable)
+- createdAt
+- updatedAt
+
+### HonoraryMemberEntry
+- id
+- fullName
+- title
+- biography
+- recognitionReason
+- recognitionYear
+- imageUrl
+- publicDisplayStatus (draft|approved|hidden|archived)
+- displayOrder
+- createdByUserId (FK)
+- updatedByUserId (FK)
+- createdAt
+- updatedAt
+
+### MemorialEntry
+- id
+- fullName
+- tributeText
+- contributionText
+- datesText
+- imageUrl
+- familyApprovedWording
+- publicDisplayStatus (draft|approved|hidden|archived)
+- displayOrder
+- createdByUserId (FK)
+- updatedByUserId (FK)
+- createdAt
+- updatedAt
+
+### MembershipCategory
+- id
+- name
+- isDefault
+- isActive
+
+### MemberCategoryAssignment
+- id
+- userId (FK)
+- membershipCategoryId (FK)
+- startsAt (nullable)
+- endsAt (nullable)
+- createdAt
+- updatedAt
+
+### MembershipCycle
+Represents one annual membership cycle.
+
+- id
+- membershipYear
+- dueDate (default: 31 March for the relevant year)
+- status (draft|open|closed|archived)
+- createdAt
+- updatedAt
+
+### MemberFeeAccount
+Tracks a member's standing for a membership cycle.
+
+- id
+- userId (FK)
+- membershipCycleId (FK)
+- amountDue
+- amountPaid
+- balance
+- paymentStatus (paid|outstanding|partial|waived|pendingReview)
+- standingStatus (goodStanding|outstanding|partial|waived|pendingReview|blocked|deactivated)
+- accessStatus (enabled|blocked|deactivated)
+- lastPaymentAt (nullable)
+- reviewedByUserId (nullable FK)
+- reviewedAt (nullable)
+- adminNote (nullable)
+- createdAt
+- updatedAt
+
+### MemberFeeTransaction
+- id
+- memberFeeAccountId (FK)
+- transactionType (payment|waiver|credit|adjustment|reversal)
+- amount
+- referenceText (nullable)
+- notes (nullable)
+- recordedByUserId (FK)
+- recordedAt
+
+### MemberStandingAudit
+- id
+- userId (FK)
+- membershipCycleId (FK)
+- previousPaymentStatus
+- nextPaymentStatus
+- previousStandingStatus
+- nextStandingStatus
+- previousAccessStatus
+- nextAccessStatus
+- reason
+- actorUserId (FK)
+- createdAt
 
 ### GlobalMemberProfile
 Represents an IWF Global member that is *not* an IWFSA member account.
@@ -213,6 +364,7 @@ Represents a first-time onboarding invite for a member account.
 - userId (FK)
 - createdByUserId (FK)
 - tokenHash (store hash only; never store raw token)
+- usernameSnapshot
 - expiresAt
 - sentAt (nullable)
 - usedAt (nullable)
@@ -233,6 +385,10 @@ Represents an admin-triggered reset (private to the member).
 - status (queued|sent|bounced|expired|used|revoked)
 - deliveryProviderMessageId (nullable)
 - createdAt
+
+Authentication note:
+- The shared sign-in flow uses the member's current username or email plus password.
+- First-time onboarding is completed through `AccountInvite` token usage and password setup during activation.
 
 ### Notification
 - id
@@ -334,14 +490,17 @@ Tracks per-platform publish attempts and responses.
 - Signup unique constraint: (eventId, userId)
 - Capacity enforcement must be atomic to avoid oversubscription
 - onlineJoinUrl should be access-controlled and not broadly logged
+- Visible member-directory records must satisfy: `accountStatus = active` and current-cycle `standingStatus = goodStanding`
+- Membership categories / committee labels must stay separate from fee standing and access status
 
 ## Notes
 - EventDocument downloads should be authorized (member must be eligible to view the event).
+- Admin is the final authority on standing and access changes, even when the system automatically flags arrears after 31 March.
 
 Credential handling notes:
 - Passwords are stored only as secure hashes (never plaintext).
-- If the product chooses to email a temporary password, it must be generated at send time, stored only as a hash, and forced to change on next sign-in.
-- Admins must never be able to view a member’s current or temporary password after generation.
+- Invite and reset flows must use short-lived, single-use tokens stored only as hashes.
+- Admins must never be able to view a member's current password or any raw activation/reset token.
 - Document links should be short-lived/signed where possible to prevent forwarding/leakage.
 - Birthday (month/day) and member photos are personal data; public social posting must be gated by explicit consent (birthdayVisibility = membersAndSocial).
 

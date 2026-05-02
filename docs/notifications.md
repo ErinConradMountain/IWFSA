@@ -2,6 +2,7 @@
 
 ## Goals
 - Members who signed up must be notified automatically when events are postponed, rescheduled, or cancelled.
+- Membership operations must notify members and admins about onboarding, annual dues status, and profile activity.
 
 ## Queue status (plain language)
 - Think of the notification queue as a simple health indicator, not a technical log. The admin console shows a compact status card that answers:
@@ -31,6 +32,7 @@
 ## MVP Channels
 1. In-app notifications (notification center)
 2. Transactional email (delivery receipts and bounce handling)
+3. WhatsApp notifications for onboarding and membership operations where configured
 
 ## Triggers
 - Event status changes: published → postponed/rescheduled/cancelled
@@ -41,7 +43,14 @@
 - Waitlist promotion (waitlisted → confirmed)
 - New event document published (optional): agenda/minutes/materials become available
 - Member onboarding invite sent (admin-triggered; transactional)
+- Member onboarding WhatsApp prompt sent (admin-triggered; operational/transactional)
 - Credential reset initiated (admin-triggered; transactional)
+- Membership dues reminder sent
+- Member blocked/deactivated due to fee standing
+- Member access restored
+- Member profile confirmed
+- Member profile image/bio/contact/professional details updated
+- Member flagged as outstanding after 31 March
 - Invite/credential email bounce detected (operational; admin-facing)
 - Birthday posts pending approval (daily, when automation enabled)
 - Birthday post approval reminder (optional; before cutoff)
@@ -52,6 +61,9 @@
 - Store an immutable send log (provider message id, status).
 
 Note: admin approval emails for birthday posts are operational messages to admins; member-facing birthday social posts are marketing and must be consent-gated.
+
+Membership and onboarding note:
+- Dues reminders, onboarding prompts, access-status messages, and profile-completion requests are operational/transactional service messages, not marketing.
 
 ## Optional Future Channels
 - Web push (opt-in)
@@ -67,13 +79,13 @@ Note: admin approval emails for birthday posts are operational messages to admin
 
 ### Security requirements (minimum)
 - Do not store member passwords in the database in plaintext.
-- Do not log generated passwords or include them in application logs/traces.
-- Use a *temporary* password and force a password change at first sign-in.
-- Prefer a short-lived onboarding link/token and expire it after first use.
+- Do not log raw invite tokens, reset tokens, or member passwords in application logs/traces.
+- Use a short-lived onboarding activation link/token and expire it after first use.
+- Require the member to set a password during activation before portal access is granted.
 
-### Email template: Onboarding credentials (admin-triggered)
+### Email template: Onboarding activation (admin-triggered)
 
-**Subject:** IWFSA Member Portal \u2013 Your login details
+**Subject:** IWFSA Member Portal \u2013 Activate your account
 
 **Body (plain text):**
 
@@ -83,17 +95,45 @@ Your IWFSA Member Portal account has been created.
 
 The Member Portal is the official place to view upcoming IWFSA events, manage registrations, receive event updates/notifications, and access member-only information.
 
+Access to the member platform is controlled by IWFSA administration. Annual membership fees are due by 31 March each year, and only members who are active and in good standing may continue to use the member area.
+
 Website: {{portalUrl}}
 Username: {{username}}
-Temporary password: {{temporaryPassword}}
+Activation link (expires): {{activationUrl}}
 
-Access requirement: To access the portal, you must change the temporary password. Depending on portal policy, you may also be asked to personalise your username (recommended when generated/default usernames are used). Until activation is completed, your member profile remains on our database for administration purposes, but you will not be able to log in using temporary credentials.
+Access requirement: To access the portal, you must complete account activation using the secure link above and choose your password. Depending on portal policy, you may also be asked to personalise your username. Until activation is completed, your member profile remains on our database for administration purposes, but you will not be able to sign in.
 
-Please sign in as soon as possible and complete the activation step. Once updated, keep your password private and do not share your login details with anyone.
+Please open the activation link as soon as possible and complete the setup step. Once updated, keep your password private and do not share your login details with anyone.
 
-POPIA notice: The IWFSA Member Portal is managed in accordance with the Protection of Personal Information Act (POPIA). Your login credentials are treated as confidential and will not be disclosed to third parties. Only you will have access to your username and password, and you are encouraged to change your temporary password on first login.
+You will also be able to update your profile image, contact details, biography, professional links, IWFSA position, and areas of expertise after signing in.
+
+POPIA notice: The IWFSA Member Portal is managed in accordance with the Protection of Personal Information Act (POPIA). Your login credentials are treated as confidential and will not be disclosed to third parties. Only you will have access to your username and password.
 
 If you did not expect this email, or if you believe your account has been compromised, please contact us at {{supportEmail}}.
+
+Kind regards,
+Akeida Bradley
+IWF Administrator
+
+### WhatsApp template: Onboarding prompt
+
+Hello {{firstName}}, your IWFSA Member Portal profile is ready. Please use your activation link to set your password, confirm your profile, and complete your member details: {{activationUrl}}
+
+### Email template: Dues standing / access warning
+
+**Subject:** IWFSA Member Portal - Membership standing review
+
+**Body (plain text):**
+
+Hello {{firstName}},
+
+This is a reminder that IWFSA annual membership fees are due by 31 March.
+
+Our records currently show your membership as: {{standingStatus}}.
+
+If your dues are not brought up to date, your access to the Member Portal may be blocked or deactivated by the IWFSA administrator.
+
+If you believe this status is incorrect, please contact {{supportEmail}}.
 
 Kind regards,
 Akeida Bradley
@@ -111,6 +151,8 @@ A password reset was initiated for your IWFSA Member Portal account.
 
 Username: {{username}}
 Reset link (expires): {{resetUrl}}
+
+Please use the secure link above to choose a new password. The link can only be used once.
 
 If you did not request this change, please contact us at {{supportEmail}}.
 

@@ -7,6 +7,7 @@ Scope:
 - System validates and produces a dry-run report
 - Admin applies import (create-only or create+update)
 - System stores a unified membership-set snapshot (with import actions) and can queue onboarding invites
+- Annual active-member import feeds the membership-fees governance workflow for the current cycle
 
 ## 1) Access and security
 - Allowed roles: `Admin`, `ChiefAdmin`
@@ -28,6 +29,10 @@ Expected headers (row 1):
 - `Organisation`
 - `Username`
 - `Status`
+- `Membership Category`
+- `Current IWFSA Position`
+- `Company Role`
+- `Phone`
 - `Groups`
 - `Roles`
 
@@ -38,6 +43,7 @@ Required values per data row:
 
 Optional but recommended:
 - `Phone` (or `Mobile` in older templates) for the member's primary contact number; when present, this maps into the member profile phone field and can be surfaced in admin views such as the Delivery Report.
+- `Membership Category` defaults to `Active Member` when blank.
 
 ## 3) API endpoints
 
@@ -54,6 +60,7 @@ Request (multipart form-data):
 - `username_policy`: `from_column_or_generate | generate_random` (default: `generate_random`)
 - `activation_policy`: `password_change_required | password_and_username_personalization_required` (default: `password_change_required`)
 - `invite_policy`: `none | queue_on_apply` (default: `queue_on_apply`)
+- `membership_cycle_year`: current year by default
 
 Response `200`:
 ```json
@@ -72,6 +79,8 @@ Response `200`:
   "has_blocking_issues": false
 }
 ```
+
+The dry-run response should also be able to carry membership-cycle metadata used by the Membership & Fees module, such as current cycle year and category defaults.
 
 Response `422`:
 - malformed workbook
@@ -186,6 +195,9 @@ Field mapping:
 - `First Name` + `Surname` -> member full-name profile fields
 - `Organisation` -> profile company/organisation
 - `Status` -> user status (`Active`/`Suspended`, blank uses `default_status`)
+- `Membership Category` -> member category assignment (`Active Member` when blank)
+- `Current IWFSA Position` -> profile IWFSA position
+- `Company Role` -> profile business title/role
 - `Groups` -> group memberships (comma-separated)
 - `Roles` -> org-role labels (comma-separated; create mapping rules per implementation)
 - `Username`:
@@ -197,6 +209,7 @@ Field mapping:
 - Store only password hash; never store plaintext password.
 - Invite/reset links are short-lived and single-use.
 - First successful sign-in must force password change.
+- Successful apply should support dual-channel onboarding (email plus WhatsApp where configured and available).
 - Username personalization is policy-driven:
   - required only when `activation_policy = password_and_username_personalization_required`
   - otherwise optional (recommended when generated/default usernames are used)

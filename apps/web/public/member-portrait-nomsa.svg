@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 900" role="img" aria-labelledby="title desc">
+  <title id="title">Mock portrait of Nomsa Dlamini</title>
+  <desc id="desc">Illustrated member portrait for profile gallery previews.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#f6d4bb"/>
+      <stop offset="100%" stop-color="#d88a6b"/>
+    </linearGradient>
+  </defs>
+  <rect width="720" height="900" fill="url(#bg)"/>
+  <circle cx="550" cy="190" r="140" fill="rgba(255,255,255,0.18)"/>
+  <rect x="110" y="120" width="500" height="640" rx="48" fill="rgba(255,255,255,0.28)"/>
+  <ellipse cx="360" cy="370" rx="155" ry="190" fill="#5e311d"/>
+  <ellipse cx="360" cy="395" rx="125" ry="155" fill="#b97456"/>
+  <path d="M260 590c48 42 150 42 198 0 14 70 38 104 108 138H154c64-32 93-70 106-138Z" fill="#214e5c"/>
+  <path d="M278 382c16-20 54-29 83-23 27 5 35 20 70 20 28 0 42-12 60-23 11 16 16 35 16 59 0 74-58 137-147 137s-147-63-147-137c0-13 4-24 10-33 14 10 30 12 55 0Z" fill="#c88667"/>
+  <circle cx="310" cy="400" r="11" fill="#2f2924"/>
+  <circle cx="408" cy="400" r="11" fill="#2f2924"/>
+  <path d="M316 468c28 24 60 24 88 0" fill="none" stroke="#8d4c35" stroke-linecap="round" stroke-width="12"/>
+  <rect x="162" y="94" width="396" height="72" rx="36" fill="rgba(255,255,255,0.68)"/>
+  <text x="360" y="140" fill="#7a3f24" font-family="Georgia, 'Times New Roman', serif" font-size="34" text-anchor="middle">Nomsa Dlamini</text>
+</svg>
