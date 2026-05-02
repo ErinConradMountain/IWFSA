@@ -6,6 +6,71 @@ Use it to understand what changed, when it changed, and where to read more.
 
 ## Entries
 
+### 2026-05-02 - Seeded profile preview and member gallery asset serving refined
+- Summary:
+  - Added a richer seeded member profile for live directory preview with mock portrait imagery, gallery media, leadership details, contact preferences, and external links.
+  - Added mock portrait assets for several seeded members so the browse rail and viewed-profile strip can be validated with actual imagery instead of initials only.
+  - Fixed the web server to serve any file from `apps/web/public/` at `/assets/*` rather than only a small hardcoded asset list, preventing new profile imagery from 404ing.
+- Affected areas:
+  - seeded member directory preview data
+  - read-only profile browsing and paging validation
+  - web static asset serving
+- Reference docs:
+  - `apps/api/src/server.mjs`
+  - `apps/web/src/server.mjs`
+  - `apps/web/src/templates.mjs`
+  - `apps/web/public/styles.css`
+  - `apps/web/public/member-portrait-ayanda.svg`
+  - `apps/web/test/server.test.mjs`
+
+### 2026-05-02 - Member leadership directory and richer profile settings expanded
+- Summary:
+  - Extended the member profile data model and API to store richer directory details, linked media records, and contact-preference metadata without relying on heavy local image storage.
+  - Expanded the member `Profile Settings` workspace with premium-directory fields, linked-media inputs, richer visibility controls, and a direct `View My Public Profile` path into the read-only directory surface.
+  - Upgraded the read-only member directory/profile experience so cards and profile views foreground leadership, sector, location, expertise, contributions, media links, and privacy-aware contact details.
+  - Added approval-aware linked-media behavior so newly submitted gallery items stay out of the read-only directory until admin review is completed through the existing public-profile review flow.
+- Affected areas:
+  - member directory and read-only profile browsing
+  - member profile settings and visibility controls
+  - linked media and contact-preference persistence
+  - API and web verification coverage
+- Reference docs:
+  - `apps/api/src/server.mjs`
+  - `apps/api/migrations/0020_member_profile_directory_extras.sql`
+  - `apps/api/test/server.test.mjs`
+  - `apps/web/src/templates.mjs`
+  - `apps/web/public/styles.css`
+  - `apps/web/test/server.test.mjs`
+
+### 2026-05-02 - Admin-managed public homepage hero image added
+- Summary:
+  - Added persisted site settings for the public homepage hero image so the lead public image is no longer hardcoded.
+  - Added a public read API plus admin-only save, upload, and reset routes for the homepage hero image with audit logging.
+  - Added an Admin Console Overview card that lets admins link an external image or upload one into the site, choose crop focus, review fit guidance, and preview the homepage crop.
+- Affected areas:
+  - public homepage hero image
+  - admin Overview workflow
+  - site settings storage and audit trail
+- Reference docs:
+  - `apps/api/src/server.mjs`
+  - `apps/api/migrations/0021_site_settings.sql`
+  - `apps/api/test/server.test.mjs`
+  - `apps/web/src/templates.mjs`
+  - `apps/web/test/server.test.mjs`
+
+### 2026-05-02 - Admin console navigation unified around Governance Console modules
+- Summary:
+  - Removed the separate admin hero pills for Members, Events, and Audit so the Governance Console uses one consistent module navigation set.
+  - Added an Audit button to the main admin module row and mapped it to the existing Membership & Fees workspace so audit history stays in the governance flow.
+  - Refined the admin hero guidance text to explain the consolidated navigation pattern.
+- Affected areas:
+  - admin console navigation
+  - membership and fees audit access path
+  - governance console hero guidance
+- Reference docs:
+  - `apps/web/src/templates.mjs`
+  - `apps/web/test/server.test.mjs`
+
 ### 2026-04-27 - Profile moderation handoff verified and 4.7 slice documented
 - Summary:
   - Verified the current member-profile moderation handoff on the running build by submitting profile fields for public review and confirming the admin review queue received them.

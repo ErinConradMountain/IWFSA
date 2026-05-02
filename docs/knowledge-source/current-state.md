@@ -21,6 +21,7 @@ This document summarizes the current known state of the IWFSA project for extern
 - Membership fees and good-standing governance were documented as a canonical implementation plan on 2026-04-26.
 - Member-controlled profiles, connected sharing, unified sign-in, honorary members, and memorial planning were documented on 2026-04-27.
 - The member-profile implementation wave is now in progress on 2026-04-27 with richer professional fields, field-level visibility controls, a public-profile review queue, and admin-managed honorary-member and memorial entry storage/UI foundations.
+- The member-profile wave was expanded on 2026-05-02 into a richer member leadership directory with read-only profile browsing, linked-media metadata, privacy-aware contact preferences, and a direct `View My Public Profile` path from Profile Settings.
 - The current build was published on 2026-04-27 to the stable production alias `https://iwfsa-platform.vercel.app` after full CI validation.
 - Post-deploy verification confirmed both event-creation paths are working for the checked cases: a member-created all-members event appeared in both member/admin listings, and an admin-created board-only event appeared in admin while staying hidden from the verified non-board member view.
 - The running authenticated profile flow was rechecked on 2026-04-27: member profile fields can be submitted for public review and the admin public-profile queue receives the pending request correctly.
@@ -29,6 +30,10 @@ This document summarizes the current known state of the IWFSA project for extern
 - Member/admin directory display now guards against mojibaked placeholder text in organisation/contact fields so encoded dash strings render as clean empty-state dashes instead of visible corruption.
 - The admin member module now includes a clearly named Historical Figures & Past Members section, compact member controls, and richer list filtering/sorting for status, role, group, and search.
 - Event creation now returns Event Hub and member event listings to the broad list view after save so newly entered meetings are visible immediately.
+- The admin console now uses one Governance Console module row for navigation, with Audit integrated into the same button collection and routed into the Membership & Fees governance workspace.
+- The admin Overview module now includes an admin-only Public Page Hero card that can switch the public homepage lead image between the default asset, a linked external image, or an uploaded site image, with focal-point guidance and preview.
+- The read-only member directory now presents sector, location, expertise, leadership/governance, contributions, contact preferences, and admin-approved linked media in a more premium responsive layout while keeping edits inside the member/admin profile-management flow.
+- The read-only member directory now includes a richer seeded preview member with mock portrait and gallery imagery, several photo-backed member cards in the left browse rail, and generic `/assets/*` serving so new profile media can be previewed without hardcoding each file route.
 - Custom project instructions were updated to require maintaining this knowledge-source folder as part of ongoing work.
 
 ## Active Documentation Expectations
@@ -46,7 +51,7 @@ Any material change should keep the following aligned:
 
 The next expected documentation and implementation path is:
 1. build on checkpoint `4.6` with public-profile rendering rules, richer approval states, and clearer member/admin profile review transitions,
-2. execute the documented checkpoint `4.7` slice for approved public rendering, safe social-link output, and visibility-aware public data shaping while preserving privacy-first defaults,
+2. complete the remaining checkpoint `4.7` moderation/public-rendering refinements around approved profile output, safe linked-media validation, and visibility-aware public data shaping while preserving privacy-first defaults,
 3. shape the first checkpoint `4.8` implementation slice for conference sharing and institutional-memory foundations,
 4. use the live production alias for stakeholder review and convert any accepted feedback into the next scoped enhancement slice.
 

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 900" role="img" aria-labelledby="title desc">
+  <title id="title">Mock portrait of Lerato Maseko</title>
+  <desc id="desc">Illustrated member portrait for profile gallery previews.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#e8d6f8"/>
+      <stop offset="100%" stop-color="#88a3d9"/>
+    </linearGradient>
+  </defs>
+  <rect width="720" height="900" fill="url(#bg)"/>
+  <circle cx="170" cy="170" r="120" fill="rgba(255,255,255,0.2)"/>
+  <rect x="124" y="120" width="472" height="640" rx="56" fill="rgba(255,255,255,0.24)"/>
+  <ellipse cx="360" cy="332" rx="160" ry="185" fill="#352a5e"/>
+  <ellipse cx="360" cy="372" rx="126" ry="150" fill="#c58f71"/>
+  <path d="M228 710c38-96 74-130 132-130 59 0 97 34 132 130H228Z" fill="#304356"/>
+  <circle cx="309" cy="392" r="11" fill="#2f2924"/>
+  <circle cx="409" cy="392" r="11" fill="#2f2924"/>
+  <path d="M322 458c24 16 54 16 78 0" fill="none" stroke="#8d4c35" stroke-linecap="round" stroke-width="12"/>
+  <path d="M258 348c34-30 74-40 126-40 58 0 84 8 116 28" fill="none" stroke="#2b214b" stroke-linecap="round" stroke-width="22"/>
+  <rect x="176" y="96" width="368" height="74" rx="37" fill="rgba(255,255,255,0.68)"/>
+  <text x="360" y="142" fill="#3b3165" font-family="Georgia, 'Times New Roman', serif" font-size="34" text-anchor="middle">Lerato Maseko</text>
+</svg>

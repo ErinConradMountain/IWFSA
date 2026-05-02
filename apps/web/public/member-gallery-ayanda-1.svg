@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" role="img" aria-labelledby="title desc">
+  <title id="title">Ayanda strategy retreat mock gallery image</title>
+  <desc id="desc">Mock leadership retreat scene for profile gallery previews.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#f6efe5"/>
+      <stop offset="100%" stop-color="#d6b18a"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="800" fill="url(#bg)"/>
+  <rect x="84" y="86" width="1032" height="628" rx="34" fill="rgba(255,255,255,0.56)"/>
+  <rect x="168" y="198" width="864" height="324" rx="26" fill="#fffaf4"/>
+  <rect x="250" y="250" width="240" height="182" rx="22" fill="#d5e8df"/>
+  <rect x="534" y="250" width="420" height="34" rx="17" fill="#6d655d" opacity="0.3"/>
+  <rect x="534" y="312" width="356" height="24" rx="12" fill="#6d655d" opacity="0.22"/>
+  <rect x="534" y="360" width="318" height="24" rx="12" fill="#6d655d" opacity="0.22"/>
+  <rect x="534" y="408" width="278" height="24" rx="12" fill="#6d655d" opacity="0.22"/>
+  <circle cx="372" cy="342" r="66" fill="#bf835d"/>
+  <path d="M288 452c28-54 56-84 84-84s56 30 84 84H288Z" fill="#335d4e"/>
+  <text x="600" y="618" fill="#5d5248" font-family="Georgia, 'Times New Roman', serif" font-size="42" text-anchor="middle">Leadership Retreat Facilitation</text>
+</svg>

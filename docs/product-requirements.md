@@ -86,6 +86,8 @@ The IWFSA web app is delivered as a standalone web platform and supports:
 ### Public
 - No internal event visibility
 - About/mission/contact content
+- Homepage hero image is admin-managed only, with support for either a stable external image URL or a direct site upload.
+- Homepage hero guidance must help admins choose a landscape image that fits the page crop well, including recommended size, file types, and focal-position guidance.
 - Login entry point
 
 ### Auth & Membership
@@ -144,6 +146,7 @@ Unified sign-in routing rules:
 	- Events (Event Hub)
 	- Notifications (Delivery Report + Queue Status)
 - Public/member/admin top-level navigation remains canonical: `Public` (`/`), `Member Portal` (`/member`), `Admin Console` (`/admin`).
+- The admin Overview module must include a public-page hero-image management card that is restricted to `admin` and `chief_admin` roles.
 - Member and admin modules must support deep-link entry points (for example `/member#events`, `/admin#imports`) so users can jump directly without long-page scrolling.
 - All actionable controls expose hover/focus help and ARIA labels; help/tooltips and panel configuration persist between sessions.
 - Event Hub uses a card layout with a primary floating Create New Event action, centered filters/tools (view dropdown with counts, refresh icon, reminders with badge), contextual card actions with critical Extend Deadline emphasis, bulk select actions, and an empty state prompt.

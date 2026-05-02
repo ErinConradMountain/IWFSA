@@ -1,4 +1,4 @@
-﻿const UI_BUILD = "2026-04-27.9";
+﻿const UI_BUILD = "2026-05-02.11";
 
 const CURATED_AUDIENCE_GROUPS = [
   { value: "Board of Directors", label: "IWFSA Board of Director" },
@@ -11,18 +11,13 @@ const CURATED_AUDIENCE_GROUPS = [
 
 function htmlLayout({ title, body, appBaseUrl, currentPath, pageClass = "" }) {
   const normalizedPath = currentPath || "/";
-  const navItems = [
-    { href: `${appBaseUrl}/`, label: "Public", path: "/" },
-    { href: `${appBaseUrl}/sign-in`, label: "Sign In", path: "/sign-in" },
-    { href: "https://www.iwfsa.co.za/", label: "Legacy", path: "/legacy", external: true }
-  ];
+  const navItems = [{ href: `${appBaseUrl}/sign-in`, label: "Sign In", path: "/sign-in" }];
   const navLinks = navItems
     .map((item) => {
       const isActive = normalizedPath === item.path;
-      const routeClass = item.path === "/sign-in" ? " nav-link-sign-in" : item.external ? " nav-link-legacy" : " nav-link-public";
-      return `<a class="nav-link${routeClass}${isActive ? " nav-link-active" : ""}" href="${item.href}"${
+      return `<a class="nav-link nav-link-sign-in${isActive ? " nav-link-active" : ""}" href="${item.href}"${
         isActive ? ' aria-current="page"' : ""
-      }${item.external ? ' target="_blank" rel="noopener noreferrer"' : ""}>${item.label}</a>`;
+      }>${item.label}</a>`;
     })
     .join("");
   return `<!doctype html>
@@ -78,7 +73,6 @@ export function renderPublicPage(config) {
     body: `
       <section class="panel panel-hero public-hero">
         <div class="hero-copy">
-          <img class="hero-logo-mark" src="${config.appBaseUrl}/assets/iwfsa-logo.svg?v=${UI_BUILD}" alt="" aria-hidden="true" />
           <p class="eyebrow eyebrow-contrast">Public Service | International Women's Forum South Africa</p>
           <h1 class="page-title">Leading with Purpose.</h1>
           <p class="lead public-hero-lead">
@@ -88,9 +82,13 @@ export function renderPublicPage(config) {
         <figure class="featured-signal-figure">
           <div class="featured-photo-frame">
             <img
+              id="public-hero-image"
               class="featured-hero-image"
               src="${config.appBaseUrl}/assets/iwfsa-home.jpg?v=${UI_BUILD}-public-refresh"
               alt="IWFSA leaders meeting around a conference table in Sandton while a presentation screen reads Ignite. Inspire. Impact."
+              data-default-src="${config.appBaseUrl}/assets/iwfsa-home.jpg?v=${UI_BUILD}-public-refresh"
+              data-default-alt="IWFSA leaders meeting around a conference table in Sandton while a presentation screen reads Ignite. Inspire. Impact."
+              data-default-focal-point="center top"
               loading="eager"
               decoding="async"
             />
@@ -212,6 +210,44 @@ export function renderPublicPage(config) {
             startTimer();
           })();
         </script>
+        <script>
+          (function () {
+            var heroImage = document.getElementById("public-hero-image");
+            if (!heroImage) {
+              return;
+            }
+
+            var defaultSrc = heroImage.getAttribute("data-default-src") || heroImage.getAttribute("src") || "";
+            var defaultAlt = heroImage.getAttribute("data-default-alt") || heroImage.getAttribute("alt") || "";
+            var defaultFocalPoint = heroImage.getAttribute("data-default-focal-point") || "center top";
+
+            fetch("${config.apiBaseUrl}/api/public/site-settings/public-hero")
+              .then(function (response) {
+                if (!response.ok) {
+                  throw new Error("hero_settings_unavailable");
+                }
+                return response.json();
+              })
+              .then(function (payload) {
+                var item = payload && payload.item ? payload.item : null;
+                if (!item) {
+                  return;
+                }
+                heroImage.setAttribute("alt", item.altText || defaultAlt);
+                heroImage.style.objectPosition = item.focalPointCss || defaultFocalPoint;
+                if (item.imageUrl) {
+                  heroImage.setAttribute("src", item.imageUrl);
+                } else {
+                  heroImage.setAttribute("src", defaultSrc);
+                }
+              })
+              .catch(function () {
+                heroImage.setAttribute("src", defaultSrc);
+                heroImage.setAttribute("alt", defaultAlt);
+                heroImage.style.objectPosition = defaultFocalPoint;
+              });
+          })();
+        </script>
       </section>
 
       <section class="panel" aria-labelledby="portal-nav-heading" style="margin-top: 2rem;">
@@ -290,39 +326,31 @@ export function renderSignInPage(config) {
         <div class="sign-in-stage-backdrop"></div>
         <div class="sign-in-stage-copy">
           <p class="eyebrow eyebrow-contrast">Secure Access</p>
-          <h1 id="sign-in-title" class="page-title">Sign In</h1>
-          <p class="lead">Enter your username and password in the movable sign-in box to continue.</p>
+          <h1 id="sign-in-title" class="page-title">Member Access</h1>
+          <p class="lead">Use your IWFSA credentials to continue to the member or admin workspace.</p>
         </div>
         <div id="sign-in-card" class="sign-in-card">
-          <div id="sign-in-drag-handle" class="sign-in-card-handle" role="button" tabindex="0" aria-label="Move sign in box">
-            <span class="eyebrow">Drag to move</span>
-            <span class="sign-in-card-grip" aria-hidden="true"></span>
+          <div class="sign-in-card-handle">
+            <span class="eyebrow">Portal Access</span>
           </div>
-          <div class="sign-in-card-brand" aria-hidden="true">
-            <img src="${config.appBaseUrl}/assets/iwfsa-logo.svg?v=${UI_BUILD}" alt="" />
-            <span>Member and admin access</span>
-          </div>
+          <div class="sign-in-card-brand" aria-hidden="true"><span>Member and admin credentials</span></div>
           <form id="prompt-sign-in-form" class="sign-in-card-form login-form">
             <label for="sign-in-username">Username</label>
             <input id="sign-in-username" name="username" autocomplete="username" required />
             <label for="sign-in-password">Password</label>
             <input id="sign-in-password" name="password" type="password" autocomplete="current-password" required />
             <button id="sign-in-submit" class="button-link sign-in-submit" type="submit">Sign In</button>
-            <p id="sign-in-status" class="muted" aria-live="polite">Use the form below to access your workspace.</p>
+            <p id="sign-in-status" class="muted" aria-live="polite">Ready to sign in.</p>
           </form>
         </div>
       </section>
       <script>
         (function () {
-          const signInCard = document.getElementById("sign-in-card");
-          const dragHandle = document.getElementById("sign-in-drag-handle");
           const status = document.getElementById("sign-in-status");
           const form = document.getElementById("prompt-sign-in-form");
           const usernameInput = document.getElementById("sign-in-username");
           const passwordInput = document.getElementById("sign-in-password");
           const submitButton = document.getElementById("sign-in-submit");
-          const signInStage = document.querySelector(".sign-in-stage");
-          let dragState = null;
 
           function roleDefaultPath(role) {
             const normalized = String(role || "").trim().toLowerCase();
@@ -386,57 +414,6 @@ export function renderSignInPage(config) {
             sessionStorage.setItem("iwfsa_member_role", role || "member");
           }
 
-          function setCardPosition(x, y) {
-            if (!signInCard) {
-              return;
-            }
-            signInCard.style.setProperty("--drag-x", x + "px");
-            signInCard.style.setProperty("--drag-y", y + "px");
-            signInCard.dataset.translateX = String(x);
-            signInCard.dataset.translateY = String(y);
-          }
-
-          function getBoundedPosition(x, y) {
-            const stageRect = signInStage?.getBoundingClientRect();
-            const maxX = Math.max(40, ((stageRect?.width || window.innerWidth) - signInCard.offsetWidth) / 2 - 12);
-            const maxY = Math.max(24, ((stageRect?.height || window.innerHeight) - signInCard.offsetHeight) / 2 - 12);
-            return {
-              x: Math.min(Math.max(-maxX, x), maxX),
-              y: Math.min(Math.max(-maxY, y), maxY)
-            };
-          }
-
-          function endDrag() {
-            if (!dragState) {
-              return;
-            }
-            dragState = null;
-            document.body.classList.remove("dragging-sign-in-card");
-          }
-
-          function startDrag(event) {
-            if (window.innerWidth <= 480 || !signInCard) {
-              return;
-            }
-            const currentX = Number(signInCard.dataset.translateX || 0);
-            const currentY = Number(signInCard.dataset.translateY || 0);
-            dragState = {
-              pointerId: event.pointerId,
-              offsetX: event.clientX - currentX,
-              offsetY: event.clientY - currentY
-            };
-            document.body.classList.add("dragging-sign-in-card");
-            dragHandle.setPointerCapture(event.pointerId);
-          }
-
-          function continueDrag(event) {
-            if (!dragState || !signInCard) {
-              return;
-            }
-            const next = getBoundedPosition(event.clientX - dragState.offsetX, event.clientY - dragState.offsetY);
-            setCardPosition(next.x, next.y);
-          }
-
           async function startPromptSignIn() {
             const payload = {
               username: String(usernameInput.value || "").trim(),
@@ -476,61 +453,6 @@ export function renderSignInPage(config) {
             event.preventDefault();
             void startPromptSignIn();
           });
-
-          dragHandle.addEventListener("pointerdown", (event) => {
-            startDrag(event);
-          });
-
-          document.addEventListener("pointermove", (event) => {
-            continueDrag(event);
-          });
-
-          document.addEventListener("pointerup", () => {
-            endDrag();
-          });
-
-          document.addEventListener("pointercancel", () => {
-            endDrag();
-          });
-
-          dragHandle.addEventListener("keydown", (event) => {
-            if (!signInCard) {
-              return;
-            }
-            const currentX = Number(signInCard.dataset.translateX || 0);
-            const currentY = Number(signInCard.dataset.translateY || 0);
-            const step = event.shiftKey ? 24 : 12;
-            let nextX = currentX;
-            let nextY = currentY;
-            if (event.key === "ArrowLeft") {
-              nextX -= step;
-            } else if (event.key === "ArrowRight") {
-              nextX += step;
-            } else if (event.key === "ArrowUp") {
-              nextY -= step;
-            } else if (event.key === "ArrowDown") {
-              nextY += step;
-            } else {
-              return;
-            }
-            event.preventDefault();
-            const next = getBoundedPosition(nextX, nextY);
-            setCardPosition(next.x, next.y);
-          });
-
-          window.addEventListener("resize", () => {
-            if (!signInCard) {
-              return;
-            }
-            if (window.innerWidth <= 480) {
-              setCardPosition(0, 0);
-              return;
-            }
-            const currentX = Number(signInCard.dataset.translateX || 0);
-            const currentY = Number(signInCard.dataset.translateY || 0);
-            const next = getBoundedPosition(currentX, currentY);
-            setCardPosition(next.x, next.y);
-          });
         })();
       </script>
     `
@@ -555,7 +477,6 @@ export function renderMemberPage(config) {
                </p>
              </div>
              <aside class="portal-hero-card" aria-label="Member workspace areas">
-                <img class="portal-hero-logo" src="${config.appBaseUrl}/assets/iwfsa-logo.svg?v=${UI_BUILD}" alt="" aria-hidden="true" />
                 <div class="portal-hero-card-content">
                   <p class="eyebrow">Workspace</p>
                   <strong>Members can move quickly between events, profiles, news, and celebrations.</strong>
@@ -613,6 +534,10 @@ export function renderMemberPage(config) {
               <h4>My Personal Details</h4>
               <p>Update your profile details and upload your member photo.</p>
             </button>
+            <button type="button" class="dashboard-card" onclick="window.location.assign('${config.appBaseUrl}/profiles?member=self')">
+              <h4>Profile Gallery</h4>
+              <p>Open a read-only profile gallery and move through member profiles in one place.</p>
+            </button>
             <button type="button" class="dashboard-card" onclick="window.location.hash='#birthdays'">
               <h4>Birthday Circle</h4>
               <p>Celebrate members and strengthen the organisation community.</p>
@@ -650,10 +575,10 @@ export function renderMemberPage(config) {
         <section id="module-profile" class="panel module-section">
           <div class="section-heading">
             <div>
-              <p class="eyebrow">Profile</p>
-              <h2>Edit Your Personal Details</h2>
+              <p class="eyebrow">Profile Settings</p>
+              <h2>Manage Your Member Profile</h2>
             </div>
-            <p class="muted">Only your own member account can update these details.</p>
+            <p class="muted">Maintain the read-only leadership profile other members browse, while keeping sensitive contact details under your control.</p>
           </div>
           <div class="member-layout">
             <div class="main-column">
@@ -704,6 +629,88 @@ export function renderMemberPage(config) {
                       placeholder="https://www.linkedin.com/in/your-profile"
                       disabled
                     />
+                  </div>
+                  <div>
+                    <label for="member-profile-preferred-name">Preferred name</label>
+                    <input id="member-profile-preferred-name" type="text" maxlength="80" disabled />
+                  </div>
+                  <div>
+                    <label for="member-profile-title">Title / honorific</label>
+                    <input id="member-profile-title" type="text" maxlength="80" placeholder="Dr, Adv, Prof, Ms" disabled />
+                  </div>
+                  <div class="field-span-full">
+                    <label for="member-profile-headline">Profile headline</label>
+                    <input id="member-profile-headline" type="text" maxlength="180" placeholder="Leadership, sector, and contribution summary" disabled />
+                  </div>
+                  <div>
+                    <label for="member-profile-sector">Industry / sector</label>
+                    <input id="member-profile-sector" type="text" maxlength="160" disabled />
+                  </div>
+                  <div>
+                    <label for="member-profile-current-role-title">Current role title</label>
+                    <input id="member-profile-current-role-title" type="text" maxlength="160" disabled />
+                  </div>
+                  <div>
+                    <label for="member-profile-city">City</label>
+                    <input id="member-profile-city" type="text" maxlength="120" disabled />
+                  </div>
+                  <div>
+                    <label for="member-profile-province">Province / state</label>
+                    <input id="member-profile-province" type="text" maxlength="120" disabled />
+                  </div>
+                  <div>
+                    <label for="member-profile-country">Country</label>
+                    <input id="member-profile-country" type="text" maxlength="120" disabled />
+                  </div>
+                  <div>
+                    <label for="member-profile-website">Website</label>
+                    <input id="member-profile-website" type="url" maxlength="2048" placeholder="https://..." disabled />
+                  </div>
+                  <div>
+                    <label for="member-profile-mentorship-role">Mentorship role</label>
+                    <input id="member-profile-mentorship-role" type="text" maxlength="160" placeholder="Mentor, speaker, advisor" disabled />
+                  </div>
+                  <div>
+                    <label for="member-profile-board-status">Board / governance status</label>
+                    <input id="member-profile-board-status" type="text" maxlength="120" disabled />
+                  </div>
+                  <div class="field-span-full">
+                    <label for="member-profile-featured-quote">Featured quote</label>
+                    <textarea id="member-profile-featured-quote" rows="2" maxlength="280" disabled></textarea>
+                  </div>
+                  <div class="field-span-full">
+                    <label for="member-profile-contributions">Contributions to women’s leadership</label>
+                    <textarea id="member-profile-contributions" rows="4" maxlength="1200" disabled></textarea>
+                  </div>
+                  <div class="field-span-full">
+                    <label for="member-profile-committee-involvement">Committee involvement</label>
+                    <textarea id="member-profile-committee-involvement" rows="3" placeholder="One item per line" disabled></textarea>
+                  </div>
+                  <div class="field-span-full">
+                    <label for="member-profile-programme-involvement">Leadership programme involvement</label>
+                    <textarea id="member-profile-programme-involvement" rows="3" placeholder="One item per line" disabled></textarea>
+                  </div>
+                  <div class="field-span-full">
+                    <label for="member-profile-achievements">Professional highlights and achievements</label>
+                    <textarea id="member-profile-achievements" rows="4" placeholder="One item per line" disabled></textarea>
+                  </div>
+                  <div class="field-span-full">
+                    <label for="member-profile-expertise-tags">Expertise tags</label>
+                    <textarea id="member-profile-expertise-tags" rows="3" placeholder="Comma-separated or one per line" disabled></textarea>
+                  </div>
+                  <div class="field-span-full">
+                    <label for="member-profile-speaking-topics">Speaking topics</label>
+                    <textarea id="member-profile-speaking-topics" rows="3" placeholder="Comma-separated or one per line" disabled></textarea>
+                  </div>
+                  <div class="field-span-full">
+                    <label for="member-profile-gallery-items">Media links</label>
+                    <textarea
+                      id="member-profile-gallery-items"
+                      rows="4"
+                      placeholder="One item per line: Source Label | https://image-url | Caption"
+                      disabled
+                    ></textarea>
+                    <p class="muted">Prefer Google Photos, LinkedIn, or another approved hosted image URL. The app stores the link and metadata rather than large original files.</p>
                   </div>
                   <div>
                     <label for="member-profile-visibility">Profile visibility</label>
@@ -841,6 +848,37 @@ export function renderMemberPage(config) {
                     </div>
                     <p class="muted">Use the two selectors above as defaults, then override individual fields that need a different review or audience rule.</p>
                   </div>
+                  <div class="field-span-full member-profile-privacy-grid">
+                    <label>Directory privacy controls</label>
+                    <label class="inline-checkbox" for="member-profile-show-email">
+                      <input id="member-profile-show-email" type="checkbox" disabled />
+                      Show email in the read-only member profile
+                    </label>
+                    <label class="inline-checkbox" for="member-profile-show-phone">
+                      <input id="member-profile-show-phone" type="checkbox" disabled />
+                      Show phone in the read-only member profile
+                    </label>
+                    <label class="inline-checkbox" for="member-profile-show-location">
+                      <input id="member-profile-show-location" type="checkbox" checked disabled />
+                      Show city / province / country
+                    </label>
+                    <label class="inline-checkbox" for="member-profile-show-linkedin">
+                      <input id="member-profile-show-linkedin" type="checkbox" checked disabled />
+                      Show LinkedIn and professional links
+                    </label>
+                    <label class="inline-checkbox" for="member-profile-show-gallery">
+                      <input id="member-profile-show-gallery" type="checkbox" checked disabled />
+                      Show linked media gallery to members
+                    </label>
+                    <label class="inline-checkbox" for="member-profile-show-highlights">
+                      <input id="member-profile-show-highlights" type="checkbox" checked disabled />
+                      Show professional highlights and leadership sections
+                    </label>
+                    <label class="inline-checkbox" for="member-profile-public-enabled">
+                      <input id="member-profile-public-enabled" type="checkbox" checked disabled />
+                      Enable my read-only profile in the directory
+                    </label>
+                  </div>
                   <div class="field-span-full">
                     <label for="member-profile-professional-links">Professional links</label>
                     <textarea
@@ -871,6 +909,8 @@ export function renderMemberPage(config) {
                 <div class="member-actions">
                   <button id="member-profile-save" type="submit" disabled>Save Profile</button>
                   <button id="member-profile-clear-birthday" type="button" class="ghost" disabled>Clear birthday</button>
+                  <a id="member-open-profile-gallery" class="button-link button-link-ghost" href="${config.appBaseUrl}/profiles?member=self">View My Public Profile</a>
+                  <a id="member-open-directory-gallery" class="button-link button-link-ghost" href="${config.appBaseUrl}/profiles">Browse member profiles</a>
                 </div>
                 <p id="member-profile-status" class="muted">Sign in to edit your profile details and visibility.</p>
               </form>
@@ -883,8 +923,18 @@ export function renderMemberPage(config) {
               <input id="member-photo-file" type="file" accept="image/*" disabled />
               <label for="member-photo-camera">Use camera</label>
               <input id="member-photo-camera" type="file" accept="image/*" capture="user" disabled />
+              <label for="member-photo-url">Primary photo link</label>
+              <input
+                id="member-photo-url"
+                type="url"
+                maxlength="2048"
+                placeholder="https://photos.google.com/... or LinkedIn image URL"
+                disabled
+              />
+              <p class="muted">Use an https image link from Google Photos, LinkedIn, or another hosted source to keep the platform light.</p>
               <div class="member-actions">
                 <button id="member-photo-upload" type="button" disabled>Upload photo</button>
+                <button id="member-photo-link-save" type="button" disabled>Use linked photo</button>
                 <button id="member-photo-remove" type="button" class="ghost" disabled>Remove photo</button>
               </div>
               <p id="member-photo-status" class="muted">Sign in to upload your photo.</p>
@@ -1184,10 +1234,36 @@ export function renderMemberPage(config) {
         const profileBioInput = document.getElementById("member-profile-bio");
         const profileExpertiseInput = document.getElementById("member-profile-expertise");
         const profileLinkedinUrlInput = document.getElementById("member-profile-linkedin-url");
+        const profilePreferredNameInput = document.getElementById("member-profile-preferred-name");
+        const profileTitleInput = document.getElementById("member-profile-title");
+        const profileHeadlineInput = document.getElementById("member-profile-headline");
+        const profileSectorInput = document.getElementById("member-profile-sector");
+        const profileCurrentRoleTitleInput = document.getElementById("member-profile-current-role-title");
+        const profileCityInput = document.getElementById("member-profile-city");
+        const profileProvinceInput = document.getElementById("member-profile-province");
+        const profileCountryInput = document.getElementById("member-profile-country");
+        const profileWebsiteInput = document.getElementById("member-profile-website");
+        const profileMentorshipRoleInput = document.getElementById("member-profile-mentorship-role");
+        const profileBoardStatusInput = document.getElementById("member-profile-board-status");
+        const profileFeaturedQuoteInput = document.getElementById("member-profile-featured-quote");
+        const profileContributionsInput = document.getElementById("member-profile-contributions");
+        const profileCommitteeInput = document.getElementById("member-profile-committee-involvement");
+        const profileProgrammeInput = document.getElementById("member-profile-programme-involvement");
+        const profileAchievementsInput = document.getElementById("member-profile-achievements");
+        const profileExpertiseTagsInput = document.getElementById("member-profile-expertise-tags");
+        const profileSpeakingTopicsInput = document.getElementById("member-profile-speaking-topics");
+        const profileGalleryItemsInput = document.getElementById("member-profile-gallery-items");
         const profileVisibilityInput = document.getElementById("member-profile-visibility");
         const profileLinksVisibilityInput = document.getElementById("member-profile-links-visibility");
         const profileFieldVisibilityInputs = Array.from(document.querySelectorAll("[data-profile-field-visibility]"));
         const profileProfessionalLinksInput = document.getElementById("member-profile-professional-links");
+        const profileShowEmailInput = document.getElementById("member-profile-show-email");
+        const profileShowPhoneInput = document.getElementById("member-profile-show-phone");
+        const profileShowLocationInput = document.getElementById("member-profile-show-location");
+        const profileShowLinkedinInput = document.getElementById("member-profile-show-linkedin");
+        const profileShowGalleryInput = document.getElementById("member-profile-show-gallery");
+        const profileShowHighlightsInput = document.getElementById("member-profile-show-highlights");
+        const profilePublicEnabledInput = document.getElementById("member-profile-public-enabled");
         const profileBirthdayVisibilityInput = document.getElementById("member-profile-birthday-visibility");
         const profileBirthdayMonthInput = document.getElementById("member-profile-birthday-month");
         const profileBirthdayDayInput = document.getElementById("member-profile-birthday-day");
@@ -1198,7 +1274,9 @@ export function renderMemberPage(config) {
         const memberPhotoEmpty = document.getElementById("member-photo-empty");
         const memberPhotoFileInput = document.getElementById("member-photo-file");
         const memberPhotoCameraInput = document.getElementById("member-photo-camera");
+        const memberPhotoUrlInput = document.getElementById("member-photo-url");
         const memberPhotoUploadButton = document.getElementById("member-photo-upload");
+        const memberPhotoLinkSaveButton = document.getElementById("member-photo-link-save");
         const memberPhotoRemoveButton = document.getElementById("member-photo-remove");
         const memberPhotoStatus = document.getElementById("member-photo-status");
         const celebrationForm = document.getElementById("celebration-form");
@@ -1341,6 +1419,7 @@ export function renderMemberPage(config) {
           profileSaveButton.disabled = !isSignedIn;
           profileClearBirthdayButton.disabled = !isSignedIn;
           memberPhotoUploadButton.disabled = !isSignedIn;
+          memberPhotoLinkSaveButton.disabled = !isSignedIn;
           memberPhotoRemoveButton.disabled = !isSignedIn;
 
           Array.from(smsForm?.elements || []).forEach((element) => {
@@ -1370,6 +1449,9 @@ export function renderMemberPage(config) {
           }
           if (memberPhotoCameraInput) {
             memberPhotoCameraInput.toggleAttribute("disabled", !isSignedIn);
+          }
+          if (memberPhotoUrlInput) {
+            memberPhotoUrlInput.toggleAttribute("disabled", !isSignedIn);
           }
 
           if (!isSignedIn) {
@@ -1422,7 +1504,7 @@ export function renderMemberPage(config) {
             .replaceAll(shortPrefix + String.fromCharCode(339), '"')
             .replaceAll(shortPrefix + String.fromCharCode(157), '"')
             .replaceAll(shortPrefix + String.fromCharCode(166), "...")
-            .replace(/\s+/g, " ")
+            .replace(/\\s+/g, " ")
             .trim();
         }
 
@@ -2011,8 +2093,68 @@ export function renderMemberPage(config) {
             : String(source.profile || "members_only");
         }
 
+        function formatListText(items) {
+          return Array.isArray(items) ? items.filter(Boolean).join("\\n") : "";
+        }
+
+        function parseListText(value) {
+          return String(value || "")
+            .split(/\\r?\\n|,/)
+            .map((item) => item.trim())
+            .filter(Boolean);
+        }
+
+        function formatGalleryItemsText(items) {
+          return Array.isArray(items)
+            ? items
+                .map((item) => {
+                  const parts = [item?.sourceLabel || item?.sourceType || "Image", item?.imageUrl || "", item?.caption || ""];
+                  return parts.filter(Boolean).join(" | ");
+                })
+                .filter(Boolean)
+                .join("\\n")
+            : "";
+        }
+
+        function parseGalleryItemsText(value) {
+          const lines = String(value || "")
+            .split(/\\r?\\n/)
+            .map((line) => line.trim())
+            .filter(Boolean);
+          const items = [];
+          for (const line of lines) {
+            const parts = line.split("|").map((part) => part.trim());
+            const sourceLabel = parts[0] || "Image";
+            const imageUrl = parts[1] || parts[0] || "";
+            const caption = parts.length > 2 ? parts.slice(2).join(" | ") : "";
+            if (!imageUrl) {
+              continue;
+            }
+            const normalizedSource = sourceLabel.toLowerCase().includes("linkedin")
+              ? "linkedin"
+              : sourceLabel.toLowerCase().includes("google")
+                ? "google_photos"
+                : "approved_url";
+            items.push({
+              id: "member-gallery-" + String(items.length + 1),
+              mediaType: "image",
+              imageUrl,
+              thumbnailUrl: imageUrl,
+              sourceType: normalizedSource,
+              sourceLabel,
+              caption,
+              credit: "",
+              visibility: "members_only",
+              approved: false
+            });
+          }
+          return items;
+        }
+
         function populateMemberProfile(item) {
           const profile = item || {};
+          const details = profile.directoryDetails || {};
+          const contactPreferences = profile.contactPreferences || {};
           profileUsernameInput.value = String(profile.username || memberUsername || "");
           profileEmailInput.value = String(profile.email || "");
           profileFullNameInput.value = String(profile.fullName || "");
@@ -2023,16 +2165,43 @@ export function renderMemberPage(config) {
           profileBioInput.value = String(profile.bio || "");
           profileExpertiseInput.value = String(profile.expertiseFreeText || "");
           profileLinkedinUrlInput.value = String(profile.linkedinUrl || "");
+          profilePreferredNameInput.value = String(details.preferredName || "");
+          profileTitleInput.value = String(details.title || "");
+          profileHeadlineInput.value = String(details.profileHeadline || "");
+          profileSectorInput.value = String(details.industrySector || "");
+          profileCurrentRoleTitleInput.value = String(details.currentRoleTitle || "");
+          profileCityInput.value = String(details.city || "");
+          profileProvinceInput.value = String(details.province || "");
+          profileCountryInput.value = String(details.country || "");
+          profileWebsiteInput.value = String(details.website || "");
+          profileMentorshipRoleInput.value = String(details.mentorshipRole || "");
+          profileBoardStatusInput.value = String(details.boardStatus || "");
+          profileFeaturedQuoteInput.value = String(details.featuredQuote || "");
+          profileContributionsInput.value = String(details.contributionsToWomenLeadership || "");
+          profileCommitteeInput.value = formatListText(details.committeeInvolvement || []);
+          profileProgrammeInput.value = formatListText(details.leadershipProgrammeInvolvement || []);
+          profileAchievementsInput.value = formatListText(details.achievements || []);
+          profileExpertiseTagsInput.value = formatListText(details.expertiseTags || []);
+          profileSpeakingTopicsInput.value = formatListText(details.speakingTopics || []);
+          profileGalleryItemsInput.value = formatGalleryItemsText(profile.galleryItems || []);
           profileVisibilityInput.value = String(profile.profileVisibility?.profile || "members_only");
           profileLinksVisibilityInput.value = String(profile.profileVisibility?.links || "members_only");
           profileFieldVisibilityInputs.forEach((input) => {
             const fieldName = String(input.getAttribute("data-profile-field-visibility") || "").trim();
             input.value = memberProfileFieldFallback(profile.profileVisibility, fieldName);
           });
+          profileShowEmailInput.checked = Boolean(contactPreferences.showEmail);
+          profileShowPhoneInput.checked = Boolean(contactPreferences.showPhone);
+          profileShowLocationInput.checked = contactPreferences.showLocation !== false;
+          profileShowLinkedinInput.checked = contactPreferences.showLinkedIn !== false;
+          profileShowGalleryInput.checked = contactPreferences.showGallery !== false;
+          profileShowHighlightsInput.checked = contactPreferences.showProfessionalHighlights !== false;
+          profilePublicEnabledInput.checked = contactPreferences.publicProfileEnabled !== false;
           profileProfessionalLinksInput.value = formatProfessionalLinksText(profile.professionalLinks || []);
           profileBirthdayMonthInput.value = profile.birthdayMonth ? String(profile.birthdayMonth) : "";
           profileBirthdayDayInput.value = profile.birthdayDay ? String(profile.birthdayDay) : "";
           profileBirthdayVisibilityInput.value = String(profile.birthdayVisibility || "hidden");
+          memberPhotoUrlInput.value = String(profile.photoUrl || "");
           setMemberPhotoPreview(profile.photoUrl || null);
         }
 
@@ -2051,15 +2220,42 @@ export function renderMemberPage(config) {
             profileBioInput.value = "";
             profileExpertiseInput.value = "";
             profileLinkedinUrlInput.value = "";
+            profilePreferredNameInput.value = "";
+            profileTitleInput.value = "";
+            profileHeadlineInput.value = "";
+            profileSectorInput.value = "";
+            profileCurrentRoleTitleInput.value = "";
+            profileCityInput.value = "";
+            profileProvinceInput.value = "";
+            profileCountryInput.value = "";
+            profileWebsiteInput.value = "";
+            profileMentorshipRoleInput.value = "";
+            profileBoardStatusInput.value = "";
+            profileFeaturedQuoteInput.value = "";
+            profileContributionsInput.value = "";
+            profileCommitteeInput.value = "";
+            profileProgrammeInput.value = "";
+            profileAchievementsInput.value = "";
+            profileExpertiseTagsInput.value = "";
+            profileSpeakingTopicsInput.value = "";
+            profileGalleryItemsInput.value = "";
             profileVisibilityInput.value = "members_only";
             profileLinksVisibilityInput.value = "members_only";
             profileFieldVisibilityInputs.forEach((input) => {
               input.value = "members_only";
             });
+            profileShowEmailInput.checked = false;
+            profileShowPhoneInput.checked = false;
+            profileShowLocationInput.checked = true;
+            profileShowLinkedinInput.checked = true;
+            profileShowGalleryInput.checked = true;
+            profileShowHighlightsInput.checked = true;
+            profilePublicEnabledInput.checked = true;
             profileProfessionalLinksInput.value = "";
             profileBirthdayMonthInput.value = "";
             profileBirthdayDayInput.value = "";
             profileBirthdayVisibilityInput.value = "hidden";
+            memberPhotoUrlInput.value = "";
             setMemberPhotoPreview(null);
             return;
           }
@@ -2161,7 +2357,7 @@ export function renderMemberPage(config) {
           const token = getToken();
           if (!token) {
             profileStatus.textContent = "Sign in to edit your profile details and visibility.";
-            return;
+            return false;
           }
 
           let professionalLinks;
@@ -2169,7 +2365,7 @@ export function renderMemberPage(config) {
             professionalLinks = parseProfessionalLinksText(profileProfessionalLinksInput.value);
           } catch (error) {
             profileStatus.textContent = String(error.message || error);
-            return;
+            return false;
           }
 
           const monthValue = String(profileBirthdayMonthInput.value || "").trim();
@@ -2183,6 +2379,37 @@ export function renderMemberPage(config) {
             bio: String(profileBioInput.value || "").trim(),
             expertiseFreeText: String(profileExpertiseInput.value || "").trim(),
             linkedinUrl: String(profileLinkedinUrlInput.value || "").trim(),
+            photoUrl: String(memberPhotoUrlInput.value || "").trim(),
+            directoryDetails: {
+              preferredName: String(profilePreferredNameInput.value || "").trim(),
+              title: String(profileTitleInput.value || "").trim(),
+              profileHeadline: String(profileHeadlineInput.value || "").trim(),
+              industrySector: String(profileSectorInput.value || "").trim(),
+              currentRoleTitle: String(profileCurrentRoleTitleInput.value || "").trim(),
+              city: String(profileCityInput.value || "").trim(),
+              province: String(profileProvinceInput.value || "").trim(),
+              country: String(profileCountryInput.value || "").trim(),
+              website: String(profileWebsiteInput.value || "").trim(),
+              mentorshipRole: String(profileMentorshipRoleInput.value || "").trim(),
+              boardStatus: String(profileBoardStatusInput.value || "").trim(),
+              featuredQuote: String(profileFeaturedQuoteInput.value || "").trim(),
+              contributionsToWomenLeadership: String(profileContributionsInput.value || "").trim(),
+              committeeInvolvement: parseListText(profileCommitteeInput.value),
+              leadershipProgrammeInvolvement: parseListText(profileProgrammeInput.value),
+              achievements: parseListText(profileAchievementsInput.value),
+              expertiseTags: parseListText(profileExpertiseTagsInput.value),
+              speakingTopics: parseListText(profileSpeakingTopicsInput.value)
+            },
+            galleryItems: parseGalleryItemsText(profileGalleryItemsInput.value),
+            contactPreferences: {
+              showEmail: Boolean(profileShowEmailInput.checked),
+              showPhone: Boolean(profileShowPhoneInput.checked),
+              showLocation: Boolean(profileShowLocationInput.checked),
+              showLinkedIn: Boolean(profileShowLinkedinInput.checked),
+              showGallery: Boolean(profileShowGalleryInput.checked),
+              showProfessionalHighlights: Boolean(profileShowHighlightsInput.checked),
+              publicProfileEnabled: Boolean(profilePublicEnabledInput.checked)
+            },
             professionalLinks,
             profileVisibility: {
               profile: String(profileVisibilityInput.value || "members_only").trim(),
@@ -2198,6 +2425,7 @@ export function renderMemberPage(config) {
             },
             birthdayVisibility: String(profileBirthdayVisibilityInput.value || "hidden").trim()
           };
+          memberPhotoUrlInput.value = String(payload.photoUrl || "");
 
           if (clearBirthday) {
             payload.clearBirthday = true;
@@ -2219,14 +2447,16 @@ export function renderMemberPage(config) {
             const responsePayload = await response.json();
             if (!response.ok) {
               profileStatus.textContent = responsePayload.message || "Unable to save profile.";
-              return;
+              return false;
             }
             populateMemberProfile(responsePayload.item || {});
             profileStatus.textContent = "Profile saved.";
             await loadBirthdays();
             await loadMemberHome();
+            return true;
           } catch {
             profileStatus.textContent = "Unable to reach API for profile updates.";
+            return false;
           }
         }
         function renderBirthdays(items, windowDays) {
@@ -3298,6 +3528,17 @@ export function renderMemberPage(config) {
           await uploadMemberPhoto();
         });
 
+        memberPhotoLinkSaveButton.addEventListener("click", async () => {
+          const saved = await saveMemberProfile({ clearBirthday: false });
+          if (!saved) {
+            memberPhotoStatus.textContent = "Unable to save linked profile photo.";
+            return;
+          }
+          memberPhotoStatus.textContent = memberPhotoUrlInput.value
+            ? "Linked profile photo saved."
+            : "Profile photo cleared.";
+        });
+
         memberPhotoRemoveButton.addEventListener("click", async () => {
           await removeMemberPhoto();
         });
@@ -3470,6 +3711,740 @@ export function renderMemberPage(config) {
   });
 }
 
+export function renderProfileGalleryPage(config) {
+  return htmlLayout({
+    title: "IWFSA | Member Profiles",
+    appBaseUrl: config.appBaseUrl,
+    currentPath: "/profiles",
+    pageClass: "page-profiles",
+    body: `
+      <section class="panel panel-hero profile-gallery-hero">
+        <div class="header-cluster">
+          <div>
+            <p class="eyebrow">Member Directory</p>
+            <h1 class="page-title">Premium Member Leadership Directory</h1>
+            <p class="lead">Browse read-only member profiles designed for stature, discoverability, and connection while keeping editing inside Profile Settings and governance review workflows.</p>
+            <div class="hero-actions">
+              <a id="profile-gallery-return-member" class="button-link button-link-ghost" href="${config.appBaseUrl}/member#profile">Profile Settings</a>
+              <a id="profile-gallery-return-admin" class="button-link button-link-ghost" href="${config.appBaseUrl}/admin#members">Admin Member Management</a>
+            </div>
+          </div>
+          <aside class="portal-hero-card" aria-label="Profile gallery promise">
+            <div class="portal-hero-card-content">
+              <p class="eyebrow">Read-Only Member View</p>
+              <strong>This directory supports discovery, mentorship, and connection across IWFSA while preserving privacy, selective visibility, and admin stewardship.</strong>
+              <div class="portal-hero-tags" aria-hidden="true">
+                <span>Search</span>
+                <span>Leadership</span>
+                <span>Linked Media</span>
+              </div>
+            </div>
+          </aside>
+        </div>
+        <p id="profile-gallery-status" class="muted">Checking your session and preparing the member directory.</p>
+      </section>
+
+      <section class="profile-gallery-shell" aria-label="Member profile gallery workspace">
+        <aside class="panel profile-browser-rail">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Directory</p>
+              <h2>Find members</h2>
+            </div>
+            <p class="muted">Search by name, sector, expertise, location, or leadership involvement.</p>
+          </div>
+          <div class="member-actions profile-browser-controls">
+            <div class="profile-browser-search-shell">
+              <label class="profile-browser-field" for="profile-browser-search">
+                <span>Search directory</span>
+                <input id="profile-browser-search" type="search" placeholder="Search member, expertise, role, city, or committee" autocomplete="off" aria-describedby="profile-browser-search-summary" aria-expanded="false" aria-controls="profile-browser-search-options" aria-autocomplete="list" />
+              </label>
+              <div id="profile-browser-search-options" class="profile-browser-search-options" hidden></div>
+            </div>
+            <label class="profile-browser-field" for="profile-browser-group">
+              <span>Sector</span>
+              <select id="profile-browser-group">
+                <option value="">All sectors</option>
+              </select>
+            </label>
+            <label class="profile-browser-field" for="profile-browser-standing">
+              <span>Leadership area</span>
+              <select id="profile-browser-standing">
+                <option value="">All leadership areas</option>
+              </select>
+            </label>
+          </div>
+          <p id="profile-browser-search-summary" class="muted profile-browser-search-summary">Start typing to narrow the directory or pick a suggested name, sector, city, or expertise area.</p>
+          <div id="profile-browser-list" class="profile-browser-list">
+            <p class="muted">Profiles will appear here after sign-in.</p>
+          </div>
+        </aside>
+
+        <section class="panel profile-browser-stage">
+          <div class="profile-stage-toolbar">
+            <div>
+              <p class="eyebrow">Read-Only Profile</p>
+              <p id="profile-stage-count" class="muted">0 profiles loaded</p>
+            </div>
+            <div class="member-actions member-actions-tight">
+              <button id="profile-stage-prev" type="button" class="ghost">Previous member</button>
+              <button id="profile-stage-next" type="button">Next member</button>
+            </div>
+          </div>
+          <article id="profile-stage-card" class="profile-stage-card">
+            <p class="muted">Select a member to open her profile.</p>
+          </article>
+        </section>
+      </section>
+
+      <script>
+        const galleryStatus = document.getElementById("profile-gallery-status");
+        const memberReturnLink = document.getElementById("profile-gallery-return-member");
+        const adminReturnLink = document.getElementById("profile-gallery-return-admin");
+        const browserSearchInput = document.getElementById("profile-browser-search");
+        const browserSearchOptions = document.getElementById("profile-browser-search-options");
+        const browserSearchSummary = document.getElementById("profile-browser-search-summary");
+        const browserGroupSelect = document.getElementById("profile-browser-group");
+        const browserStandingSelect = document.getElementById("profile-browser-standing");
+        const browserList = document.getElementById("profile-browser-list");
+        const stageCard = document.getElementById("profile-stage-card");
+        const stageCount = document.getElementById("profile-stage-count");
+        const stagePrevButton = document.getElementById("profile-stage-prev");
+        const stageNextButton = document.getElementById("profile-stage-next");
+        const SIGN_IN_URL = "${config.appBaseUrl}/sign-in";
+        const EDIT_PROFILE_URL = "${config.appBaseUrl}/member#profile";
+        const ADMIN_MEMBERS_URL = "${config.appBaseUrl}/admin#members";
+        let allProfiles = [];
+        let filteredProfiles = [];
+        let selectedProfileId = 0;
+        let viewedProfileIds = [];
+        let searchSuggestionProfiles = [];
+        let activeSearchSuggestionIndex = -1;
+
+        function getSession() {
+          const adminToken = sessionStorage.getItem("iwfsa_admin_token");
+          if (adminToken) {
+            return {
+              token: adminToken,
+              username: String(sessionStorage.getItem("iwfsa_admin_username") || "").trim(),
+              role: String(sessionStorage.getItem("iwfsa_admin_role") || "admin").trim().toLowerCase()
+            };
+          }
+          return {
+            token: sessionStorage.getItem("iwfsa_token"),
+            username: String(sessionStorage.getItem("iwfsa_member_username") || "").trim(),
+            role: String(sessionStorage.getItem("iwfsa_member_role") || "member").trim().toLowerCase()
+          };
+        }
+
+        function getToken() {
+          return getSession().token;
+        }
+
+        function getStoredUsername() {
+          return getSession().username;
+        }
+
+        function getStoredRole() {
+          return getSession().role;
+        }
+
+        function clearStoredSession() {
+          sessionStorage.removeItem("iwfsa_token");
+          sessionStorage.removeItem("iwfsa_member_username");
+          sessionStorage.removeItem("iwfsa_member_role");
+          sessionStorage.removeItem("iwfsa_admin_token");
+          sessionStorage.removeItem("iwfsa_admin_username");
+          sessionStorage.removeItem("iwfsa_admin_role");
+          sessionStorage.removeItem("iwfsa_admin_expires_at");
+        }
+
+        function escapeClientHtml(value) {
+          return String(value || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/\"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+        }
+
+        function normalizeDisplayText(value) {
+          return String(value || "").replace(/\\s+/g, " ").trim();
+        }
+
+        function isMissingDisplayText(value) {
+          const normalized = normalizeDisplayText(value).toLowerCase();
+          return !normalized || ["-", "--", "n/a", "na", "null", "undefined"].includes(normalized);
+        }
+
+        function displayText(value) {
+          return isMissingDisplayText(value) ? "" : normalizeDisplayText(value);
+        }
+
+        function initialsFromName(fullName) {
+          const parts = normalizeDisplayText(fullName).split(/\\s+/).filter(Boolean);
+          if (parts.length === 0) return "?";
+          const first = parts[0][0] ? parts[0][0].toUpperCase() : "?";
+          const second = parts.length > 1 && parts[1][0] ? parts[1][0].toUpperCase() : "";
+          return (first + second).slice(0, 2);
+        }
+
+        function currentSelectionIndex() {
+          return filteredProfiles.findIndex((item) => Number(item.userId) === Number(selectedProfileId));
+        }
+
+        function profileDetails(profile) {
+          return profile?.directoryDetails || {};
+        }
+
+        function profileContactPreferences(profile) {
+          return profile?.contactPreferences || {};
+        }
+
+        function profileHeadline(profile) {
+          const details = profileDetails(profile);
+          return displayText(details.profileHeadline) || displayText(profile.businessTitle) || displayText(profile.iwfsaPosition) || "IWFSA Member";
+        }
+
+        function profileSector(profile) {
+          return displayText(profileDetails(profile).industrySector);
+        }
+
+        function profileLocation(profile) {
+          const details = profileDetails(profile);
+          return [details.city, details.province, details.country].map(displayText).filter(Boolean).join(", ");
+        }
+
+        function profileLeadershipTags(profile) {
+          const details = profileDetails(profile);
+          return [...(details.committeeInvolvement || []), ...(details.leadershipProgrammeInvolvement || []), details.mentorshipRole, details.boardStatus]
+            .map(displayText)
+            .filter(Boolean);
+        }
+
+        function profileExpertiseTags(profile) {
+          const details = profileDetails(profile);
+          const tags = Array.isArray(details.expertiseTags) ? details.expertiseTags.filter(Boolean) : [];
+          if (tags.length > 0) {
+            return tags;
+          }
+          return displayText(profile.expertiseFreeText)
+            ? displayText(profile.expertiseFreeText).split(",").map((item) => item.trim()).filter(Boolean)
+            : [];
+        }
+
+        function profileSearchHaystack(profile) {
+          return [
+            profile.fullName,
+            profile.username,
+            profile.organisation,
+            profile.businessTitle,
+            profile.iwfsaPosition,
+            profile.expertiseFreeText,
+            profileSector(profile),
+            profileLocation(profile),
+            ...profileLeadershipTags(profile),
+            ...profileExpertiseTags(profile)
+          ]
+            .map((value) => normalizeDisplayText(value).toLowerCase())
+            .join(" ");
+        }
+
+        function hideSearchSuggestions() {
+          searchSuggestionProfiles = [];
+          activeSearchSuggestionIndex = -1;
+          if (browserSearchOptions) {
+            browserSearchOptions.hidden = true;
+            browserSearchOptions.innerHTML = "";
+          }
+          if (browserSearchInput) {
+            browserSearchInput.setAttribute("aria-expanded", "false");
+            browserSearchInput.removeAttribute("aria-activedescendant");
+          }
+        }
+
+        function searchSuggestionLabel(profile) {
+          const company = displayText(profile.organisation) || profileSector(profile) || "IWFSA network";
+          const location = profileLocation(profile) || "South Africa";
+          return {
+            name: displayText(profile.fullName) || displayText(profile.username) || "Member",
+            headline: profileHeadline(profile),
+            meta: company + " • " + location
+          };
+        }
+
+        function updateSearchSuggestionHighlight() {
+          if (!browserSearchOptions) {
+            return;
+          }
+          const options = Array.from(browserSearchOptions.querySelectorAll("[data-profile-search-option]"));
+          options.forEach((option, index) => {
+            const isActive = index === activeSearchSuggestionIndex;
+            option.classList.toggle("is-active", isActive);
+            if (isActive) {
+              browserSearchInput.setAttribute("aria-activedescendant", option.id);
+            }
+          });
+          if (activeSearchSuggestionIndex < 0) {
+            browserSearchInput.removeAttribute("aria-activedescendant");
+          }
+        }
+
+        function applySearchSuggestion(profile) {
+          if (!profile) {
+            return;
+          }
+          browserSearchInput.value = displayText(profile.fullName) || displayText(profile.username) || "";
+          selectedProfileId = Number(profile.userId);
+          hideSearchSuggestions();
+          applyFilters();
+        }
+
+        function trackViewedProfile(profileId) {
+          const parsedProfileId = Number(profileId || 0);
+          if (!parsedProfileId) {
+            return;
+          }
+          viewedProfileIds = viewedProfileIds.filter((item) => Number(item) !== parsedProfileId);
+          viewedProfileIds.unshift(parsedProfileId);
+          viewedProfileIds = viewedProfileIds.slice(0, 8);
+        }
+
+        function renderSearchSuggestions() {
+          if (!browserSearchOptions) {
+            return;
+          }
+          const query = normalizeDisplayText(browserSearchInput.value).toLowerCase();
+          const sector = normalizeDisplayText(browserGroupSelect.value);
+          const leadership = normalizeDisplayText(browserStandingSelect.value);
+          if (!query) {
+            hideSearchSuggestions();
+            return;
+          }
+
+          searchSuggestionProfiles = allProfiles
+            .filter((profile) => {
+              if (profileContactPreferences(profile).publicProfileEnabled === false) {
+                return false;
+              }
+              if (sector && profileSector(profile) !== sector) {
+                return false;
+              }
+              const leadershipTags = profileLeadershipTags(profile);
+              if (leadership && !leadershipTags.includes(leadership)) {
+                return false;
+              }
+              return profileSearchHaystack(profile).includes(query);
+            })
+            .slice(0, 6);
+
+          if (!searchSuggestionProfiles.length) {
+            hideSearchSuggestions();
+            return;
+          }
+
+          activeSearchSuggestionIndex = 0;
+          browserSearchOptions.hidden = false;
+          browserSearchInput.setAttribute("aria-expanded", "true");
+          browserSearchOptions.innerHTML = searchSuggestionProfiles
+            .map((profile, index) => {
+              const label = searchSuggestionLabel(profile);
+              return "<button type='button' id='profile-search-option-" + String(profile.userId) + "' class='profile-browser-search-option" + (index === 0 ? " is-active" : "") + "' data-profile-search-option data-profile-search-id='" + String(profile.userId) + "'>" +
+                "<span class='profile-browser-search-badge' aria-hidden='true'>" + escapeClientHtml(initialsFromName(profile.fullName)) + "</span>" +
+                "<span class='profile-browser-search-copy'><strong>" + escapeClientHtml(label.name) + "</strong><span>" + escapeClientHtml(label.headline) + "</span><span>" + escapeClientHtml(label.meta) + "</span></span>" +
+                "</button>";
+            })
+            .join("");
+          updateSearchSuggestionHighlight();
+        }
+
+        function renderBrowserList() {
+          if (!filteredProfiles.length) {
+            browserList.innerHTML = "<p class='muted'>No member profiles match the current filters.</p>";
+            stageCount.textContent = "0 matching profiles";
+            stagePrevButton.disabled = true;
+            stageNextButton.disabled = true;
+            stageCard.innerHTML = "<p class='muted'>Adjust the filters to continue browsing.</p>";
+            return;
+          }
+
+          stageCount.textContent = String(filteredProfiles.length) + (filteredProfiles.length === 1 ? " member profile" : " member profiles");
+          browserList.innerHTML = filteredProfiles
+            .map((profile) => {
+              const details = profileDetails(profile);
+              const isActive = Number(profile.userId) === Number(selectedProfileId);
+              const name = escapeClientHtml(displayText(profile.fullName) || profile.username || "Member");
+              const company = escapeClientHtml(profileSector(profile) || displayText(profile.organisation) || "Leadership network");
+              const title = escapeClientHtml(profileHeadline(profile));
+              const location = escapeClientHtml(profileLocation(profile) || "South Africa");
+              const avatar = profile.photoUrl
+                ? "<img class='profile-browser-avatar' alt='Portrait of " + name + "' src='" + escapeClientHtml(profile.photoUrl) + "' />"
+                : "<div class='profile-browser-avatar profile-browser-avatar-fallback' aria-hidden='true'>" + escapeClientHtml(initialsFromName(profile.fullName)) + "</div>";
+              return (
+                "<button type='button' class='profile-browser-item" + (isActive ? " is-active" : "") + "' data-profile-browse-id='" + String(profile.userId) + "'>" +
+                "<span class='profile-browser-visual'>" + avatar + "</span>" +
+                "<span class='profile-browser-copy'><strong>" + name + "</strong><span>" + title + "</span><span>" + company + " | " + location + "</span>" +
+                (displayText(details.featuredQuote) ? "<span class='profile-browser-quote'>&ldquo;" + escapeClientHtml(displayText(details.featuredQuote)) + "&rdquo;</span>" : "") +
+                "<span class='profile-browser-link'>Open full profile</span>" +
+                "</span>" +
+                "</button>"
+              );
+            })
+            .join("");
+        }
+
+        function renderProfileCard() {
+          const profile = filteredProfiles.find((item) => Number(item.userId) === Number(selectedProfileId));
+          const index = currentSelectionIndex();
+          stagePrevButton.disabled = index <= 0;
+          stageNextButton.disabled = index < 0 || index >= filteredProfiles.length - 1;
+
+          if (!profile) {
+            stageCard.innerHTML = "<p class='muted'>Select a member to open a profile.</p>";
+            return;
+          }
+
+          const storedUsername = getStoredUsername();
+          const storedRole = getStoredRole();
+          const details = profileDetails(profile);
+          const contactPrefs = profileContactPreferences(profile);
+          trackViewedProfile(profile.userId);
+          const isSelf = storedUsername && normalizeDisplayText(profile.username).toLowerCase() === storedUsername.toLowerCase();
+          const groups = Array.isArray(profile.groups) ? profile.groups.filter(Boolean) : [];
+          const location = profileLocation(profile);
+          const expertiseTags = profileExpertiseTags(profile);
+          const professionalHighlights = Array.isArray(details.achievements) ? details.achievements.filter(Boolean) : [];
+          const leadershipTags = profileLeadershipTags(profile);
+          const galleryItems = contactPrefs.showGallery === false ? [] : (Array.isArray(profile.galleryItems) ? profile.galleryItems : []);
+          const viewedProfiles = viewedProfileIds
+            .map((profileId) => allProfiles.find((item) => Number(item.userId) === Number(profileId)))
+            .filter(Boolean);
+          const links = [];
+          if (contactPrefs.showLinkedIn !== false && displayText(profile.linkedinUrl)) {
+            links.push({ label: "LinkedIn", url: profile.linkedinUrl });
+          }
+          if (contactPrefs.showLinkedIn !== false && displayText(details.website)) {
+            links.push({ label: "Website", url: details.website });
+          }
+          if (Array.isArray(profile.professionalLinks)) {
+            for (const link of profile.professionalLinks) {
+              if (displayText(link?.url)) {
+                links.push({ label: displayText(link?.label) || "Profile link", url: link.url });
+              }
+            }
+          }
+
+          const avatar = profile.photoUrl
+            ? "<img class='profile-stage-photo' alt='Portrait of " + escapeClientHtml(displayText(profile.fullName) || profile.username || "Member") + "' src='" + escapeClientHtml(profile.photoUrl) + "' />"
+            : "<div class='profile-stage-photo profile-stage-photo-fallback' aria-hidden='true'>" + escapeClientHtml(initialsFromName(profile.fullName)) + "</div>";
+          const chips = [profileSector(profile), ...leadershipTags.slice(0, 2), ...groups.slice(0, 2)]
+            .map(displayText)
+            .filter(Boolean)
+            .map((group) => "<span class='profile-directory-chip'>" + escapeClientHtml(group) + "</span>")
+            .join("") || "<span class='profile-directory-chip'>IWFSA</span>";
+          const linkHtml = links.length
+            ? "<div class='profile-stage-links'>" +
+              links
+                .map((link) => "<a target='_blank' rel='noreferrer' class='button-link button-link-ghost' href='" + escapeClientHtml(link.url) + "'>" + escapeClientHtml(link.label) + "</a>")
+                .join("") +
+              "</div>"
+            : "<p class='muted'>No external profile links are published yet.</p>";
+          const editLink = isSelf && (storedRole === "member" || storedRole === "event_editor")
+            ? "<a class='button-link' href='" + EDIT_PROFILE_URL + "'>View My Profile Settings</a>"
+            : storedRole === "admin" || storedRole === "chief_admin"
+              ? "<a class='button-link button-link-ghost' href='" + ADMIN_MEMBERS_URL + "'>Open admin member controls</a>"
+              : "";
+          const galleryHtml = galleryItems.length
+            ? "<div class='profile-media-grid'>" +
+              galleryItems
+                .slice(0, 6)
+                .map((item) => "<figure class='profile-media-card'><img loading='lazy' src='" + escapeClientHtml(item.imageUrl || item.thumbnailUrl || "") + "' alt='" + escapeClientHtml(item.caption || displayText(profile.fullName) || "Linked media") + "' /><figcaption>" + escapeClientHtml(displayText(item.caption) || displayText(item.sourceLabel) || "Linked media") + "</figcaption></figure>")
+                .join("") +
+              "</div>"
+            : "<p class='muted'>This member has not published gallery media yet, or the gallery is limited to a more private audience.</p>";
+          const contactHtml = [
+            contactPrefs.showEmail && displayText(profile.email) ? "<div><dt>Email</dt><dd><a href='mailto:" + encodeURIComponent(profile.email) + "'>" + escapeClientHtml(profile.email) + "</a></dd></div>" : "",
+            contactPrefs.showPhone && displayText(profile.phone) ? "<div><dt>Phone</dt><dd>" + escapeClientHtml(displayText(profile.phone)) + "</dd></div>" : "",
+            "<div><dt>Location</dt><dd>" + (contactPrefs.showLocation === false ? "<span class='muted'>Hidden by member preference</span>" : escapeClientHtml(location || "Not shared")) + "</dd></div>",
+            "<div><dt>Member cycle</dt><dd>" + escapeClientHtml(profile.membershipCycleYear ? String(profile.membershipCycleYear) : "Current") + "</dd></div>"
+          ].filter(Boolean).join("");
+          const viewedProfilesHtml = viewedProfiles.length
+            ? "<section class='profile-stage-collection' aria-label='Viewed profiles'><div class='profile-stage-collection-heading'><div><p class='eyebrow'>Browsing path</p><h3>Viewed on this page</h3></div><p class='muted'>Keep paging, then jump back to any member you opened.</p></div><div class='profile-stage-collection-list'>" +
+              viewedProfiles
+                .map((item, itemIndex) => {
+                  const displayName = displayText(item.fullName) || displayText(item.username) || "Member";
+                  const thumb = item.photoUrl
+                    ? "<img class='profile-stage-collection-avatar' alt='Portrait of " + escapeClientHtml(displayName) + "' src='" + escapeClientHtml(item.photoUrl) + "' />"
+                    : "<span class='profile-stage-collection-avatar profile-stage-collection-avatar-fallback' aria-hidden='true'>" + escapeClientHtml(initialsFromName(item.fullName)) + "</span>";
+                  return "<button type='button' class='profile-stage-collection-item" + (Number(item.userId) === Number(selectedProfileId) ? " is-active" : "") + "' data-profile-history-id='" + String(item.userId) + "'>" + thumb + "<span class='profile-stage-collection-copy'><strong>" + escapeClientHtml(displayName) + "</strong><span>Page " + String(itemIndex + 1) + " in your browse list</span></span></button>";
+                })
+                .join("") +
+              "</div></section>"
+            : "";
+          const stagePageSummary = filteredProfiles.length ? "Profile page " + String(index + 1) + " of " + String(filteredProfiles.length) : "Profile page 0 of 0";
+
+          stageCard.innerHTML =
+            viewedProfilesHtml +
+            "<div class='profile-stage-hero'>" +
+            "<div class='profile-stage-media'>" + avatar + "</div>" +
+            "<div class='profile-stage-copy'>" +
+            "<p class='eyebrow'>Read-only profile</p>" +
+            "<p class='profile-stage-page-marker'>" + escapeClientHtml(stagePageSummary) + "</p>" +
+            "<h2>" + escapeClientHtml(displayText(profile.fullName) || profile.username || "Member") + "</h2>" +
+            "<p class='profile-stage-role'>" + escapeClientHtml(profileHeadline(profile)) + "</p>" +
+            "<p class='profile-stage-company'>" + escapeClientHtml(displayText(profile.organisation) || "International Women's Forum South Africa") + "</p>" +
+            "<p class='profile-stage-company'>" + escapeClientHtml(location || "South Africa") + "</p>" +
+            "<div class='profile-stage-chips'>" + chips + "</div>" +
+            "<p class='profile-stage-bio'>" + escapeClientHtml(displayText(details.bioShort) || displayText(profile.bio) || "This member has not published a biography yet.") + "</p>" +
+            (displayText(details.featuredQuote) ? "<blockquote class='profile-stage-quote'>" + escapeClientHtml(displayText(details.featuredQuote)) + "</blockquote>" : "") +
+            (editLink ? "<div class='hero-actions'>" + editLink + "</div>" : "") +
+            "</div>" +
+            "</div>" +
+            "<div class='profile-stage-grid'>" +
+            "<div class='profile-stage-panel'><h3>About</h3><p>" + escapeClientHtml(displayText(details.bioLong) || displayText(profile.bio) || "No extended profile narrative has been published yet.") + "</p></div>" +
+            "<div class='profile-stage-panel'><h3>Professional Highlights</h3>" + (contactPrefs.showProfessionalHighlights === false ? "<p class='muted'>Professional highlights are hidden by member preference.</p>" : professionalHighlights.length ? "<ul class='profile-stage-list'>" + professionalHighlights.map((item) => "<li>" + escapeClientHtml(item) + "</li>").join("") + "</ul>" : "<p class='muted'>Highlights have not been published yet.</p>") + "</div>" +
+            "<div class='profile-stage-panel'><h3>Leadership &amp; Governance</h3>" + (leadershipTags.length ? "<ul class='profile-stage-list'>" + leadershipTags.map((item) => "<li>" + escapeClientHtml(item) + "</li>").join("") + "</ul>" : "<p class='muted'>Leadership roles have not been listed yet.</p>") + "</div>" +
+            "<div class='profile-stage-panel'><h3>Advancing Women</h3><p>" + escapeClientHtml(displayText(details.contributionsToWomenLeadership) || displayText(details.mentorshipRole) || "Mentorship and contribution notes have not been published yet.") + "</p></div>" +
+            "<div class='profile-stage-panel'><h3>Expertise Tags</h3>" + (expertiseTags.length ? "<div class='profile-stage-chips'>" + expertiseTags.map((item) => "<span class='profile-directory-chip'>" + escapeClientHtml(item) + "</span>").join("") + "</div>" : "<p class='muted'>Expertise tags are not available yet.</p>") + "</div>" +
+            "<div class='profile-stage-panel'><h3>Contact and links</h3>" + linkHtml + "</div>" +
+            "<div class='profile-stage-panel'><h3>Contact Preferences</h3><dl class='profile-stage-facts'>" + contactHtml + "</dl></div>" +
+            "</div>" +
+            "<div class='profile-stage-panel profile-stage-panel-wide'><h3>Photos &amp; Media</h3>" + galleryHtml + "</div>" +
+            "<div class='profile-stage-panel profile-stage-panel-wide'><h3>Read-only notice</h3><p>This is a read-only member profile. Only the member herself and authorised administrators can update profile information, visibility settings, and linked media.</p></div>";
+        }
+
+        function applyFilters() {
+          const query = normalizeDisplayText(browserSearchInput.value).toLowerCase();
+          const sector = normalizeDisplayText(browserGroupSelect.value);
+          const leadership = normalizeDisplayText(browserStandingSelect.value);
+
+          filteredProfiles = allProfiles.filter((profile) => {
+            if (profileContactPreferences(profile).publicProfileEnabled === false) {
+              return false;
+            }
+            if (sector && profileSector(profile) !== sector) {
+              return false;
+            }
+            const leadershipTags = profileLeadershipTags(profile);
+            if (leadership && !leadershipTags.includes(leadership)) {
+              return false;
+            }
+            if (!query) {
+              return true;
+            }
+            const haystack = [
+              profile.fullName
+            ];
+            return profileSearchHaystack(profile).includes(query);
+          });
+
+          filteredProfiles.sort((left, right) =>
+            String(left.fullName || left.username || "").localeCompare(String(right.fullName || right.username || ""))
+          );
+
+          if (!filteredProfiles.some((item) => Number(item.userId) === Number(selectedProfileId))) {
+            selectedProfileId = filteredProfiles[0] ? Number(filteredProfiles[0].userId) : 0;
+          }
+
+          if (browserSearchSummary) {
+            const activeFilters = [];
+            if (query) {
+              activeFilters.push("search '" + normalizeDisplayText(browserSearchInput.value) + "'");
+            }
+            if (sector) {
+              activeFilters.push("sector " + sector);
+            }
+            if (leadership) {
+              activeFilters.push("leadership " + leadership);
+            }
+            browserSearchSummary.textContent = filteredProfiles.length
+              ? "Showing " + String(filteredProfiles.length) + " of " + String(allProfiles.length) + " profiles" + (activeFilters.length ? " for " + activeFilters.join(", ") : ".")
+              : "No members match the current search and filter combination.";
+          }
+
+          renderSearchSuggestions();
+          renderBrowserList();
+          renderProfileCard();
+        }
+
+        function populateGroupFilter() {
+          const currentValue = browserGroupSelect.value;
+          const currentLeadershipValue = browserStandingSelect.value;
+          const sectors = new Set();
+          const leadershipAreas = new Set();
+          for (const profile of allProfiles) {
+            const sector = profileSector(profile);
+            if (sector) {
+              sectors.add(sector);
+            }
+            for (const item of profileLeadershipTags(profile)) {
+              if (item) {
+                leadershipAreas.add(item);
+              }
+            }
+          }
+          browserGroupSelect.innerHTML = "<option value=''>All sectors</option>" +
+            Array.from(sectors)
+              .sort((left, right) => left.localeCompare(right))
+              .map((group) => "<option value='" + escapeClientHtml(group) + "'>" + escapeClientHtml(group) + "</option>")
+              .join("");
+          browserStandingSelect.innerHTML = "<option value=''>All leadership areas</option>" +
+            Array.from(leadershipAreas)
+              .sort((left, right) => left.localeCompare(right))
+              .map((item) => "<option value='" + escapeClientHtml(item) + "'>" + escapeClientHtml(item) + "</option>")
+              .join("");
+          browserGroupSelect.value = Array.from(sectors).includes(currentValue) ? currentValue : "";
+          browserStandingSelect.value = Array.from(leadershipAreas).includes(currentLeadershipValue) ? currentLeadershipValue : "";
+        }
+
+        function pickInitialProfile() {
+          const params = new URLSearchParams(window.location.search);
+          const requestedMember = normalizeDisplayText(params.get("member"));
+          const storedUsername = getStoredUsername();
+          if (requestedMember.toLowerCase() === "self" && storedUsername) {
+            const selfProfile = allProfiles.find((item) => normalizeDisplayText(item.username).toLowerCase() === storedUsername.toLowerCase());
+            if (selfProfile) {
+              return Number(selfProfile.userId);
+            }
+          }
+          if (requestedMember) {
+            const requestedProfile = allProfiles.find((item) => normalizeDisplayText(item.username).toLowerCase() === requestedMember.toLowerCase());
+            if (requestedProfile) {
+              return Number(requestedProfile.userId);
+            }
+          }
+          return allProfiles[0] ? Number(allProfiles[0].userId) : 0;
+        }
+
+        async function loadProfiles() {
+          const token = getToken();
+          if (!token) {
+            window.location.replace(SIGN_IN_URL);
+            return;
+          }
+
+          galleryStatus.textContent = "Loading member profiles...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/member/profiles?limit=150", {
+              headers: { Authorization: "Bearer " + token }
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+              if (response.status === 401) {
+                clearStoredSession();
+                window.location.replace(SIGN_IN_URL);
+                return;
+              }
+              galleryStatus.textContent = payload.message || "Unable to load member profiles.";
+              return;
+            }
+            allProfiles = Array.isArray(payload.items) ? payload.items : [];
+            selectedProfileId = pickInitialProfile();
+            populateGroupFilter();
+            applyFilters();
+            galleryStatus.textContent = "Read-only profile gallery ready.";
+          } catch {
+            galleryStatus.textContent = "Unable to reach the API for member profiles.";
+          }
+        }
+
+        browserSearchInput.addEventListener("input", applyFilters);
+        browserSearchInput.addEventListener("focus", () => {
+          renderSearchSuggestions();
+        });
+        browserSearchInput.addEventListener("keydown", (event) => {
+          if (!searchSuggestionProfiles.length) {
+            return;
+          }
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            activeSearchSuggestionIndex = (activeSearchSuggestionIndex + 1) % searchSuggestionProfiles.length;
+            updateSearchSuggestionHighlight();
+            return;
+          }
+          if (event.key === "ArrowUp") {
+            event.preventDefault();
+            activeSearchSuggestionIndex = activeSearchSuggestionIndex <= 0 ? searchSuggestionProfiles.length - 1 : activeSearchSuggestionIndex - 1;
+            updateSearchSuggestionHighlight();
+            return;
+          }
+          if (event.key === "Enter" && activeSearchSuggestionIndex >= 0) {
+            event.preventDefault();
+            applySearchSuggestion(searchSuggestionProfiles[activeSearchSuggestionIndex]);
+            return;
+          }
+          if (event.key === "Escape") {
+            hideSearchSuggestions();
+          }
+        });
+        browserSearchInput.addEventListener("blur", () => {
+          setTimeout(() => {
+            hideSearchSuggestions();
+          }, 120);
+        });
+        browserGroupSelect.addEventListener("change", applyFilters);
+        browserStandingSelect.addEventListener("change", applyFilters);
+        if (browserSearchOptions) {
+          browserSearchOptions.addEventListener("mousedown", (event) => {
+            event.preventDefault();
+          });
+          browserSearchOptions.addEventListener("click", (event) => {
+            const trigger = event.target instanceof Element ? event.target.closest("[data-profile-search-id]") : null;
+            if (!trigger) return;
+            const profileId = Number(trigger.getAttribute("data-profile-search-id") || 0);
+            const profile = searchSuggestionProfiles.find((item) => Number(item.userId) === profileId);
+            applySearchSuggestion(profile || null);
+          });
+        }
+        browserList.addEventListener("click", (event) => {
+          const trigger = event.target instanceof Element ? event.target.closest("[data-profile-browse-id]") : null;
+          if (!trigger) return;
+          selectedProfileId = Number(trigger.getAttribute("data-profile-browse-id") || 0);
+          hideSearchSuggestions();
+          renderBrowserList();
+          renderProfileCard();
+        });
+        stageCard.addEventListener("click", (event) => {
+          const trigger = event.target instanceof Element ? event.target.closest("[data-profile-history-id]") : null;
+          if (!trigger) return;
+          selectedProfileId = Number(trigger.getAttribute("data-profile-history-id") || 0);
+          renderBrowserList();
+          renderProfileCard();
+        });
+        stagePrevButton.addEventListener("click", () => {
+          const index = currentSelectionIndex();
+          if (index > 0) {
+            selectedProfileId = Number(filteredProfiles[index - 1].userId);
+            renderBrowserList();
+            renderProfileCard();
+          }
+        });
+        stageNextButton.addEventListener("click", () => {
+          const index = currentSelectionIndex();
+          if (index >= 0 && index < filteredProfiles.length - 1) {
+            selectedProfileId = Number(filteredProfiles[index + 1].userId);
+            renderBrowserList();
+            renderProfileCard();
+          }
+        });
+
+        document.querySelectorAll(".session-nav-signout").forEach((button) => {
+          button.hidden = false;
+          button.addEventListener("click", () => {
+            clearStoredSession();
+            window.location.assign(SIGN_IN_URL);
+          });
+        });
+
+        const role = getStoredRole();
+        memberReturnLink.hidden = role === "admin" || role === "chief_admin";
+        adminReturnLink.hidden = !(role === "admin" || role === "chief_admin");
+        loadProfiles();
+      </script>
+    `
+  });
+}
+
 export function renderAdminPage(config) {
   return htmlLayout({
     title: "IWFSA | Admin Console",
@@ -3494,12 +4469,8 @@ export function renderAdminPage(config) {
               <aside class="portal-hero-card" aria-label="Admin console areas">
                 <div class="portal-hero-card-content">
                   <p class="eyebrow">Governance Console</p>
-                  <strong>Operational modules are grouped for member stewardship, events, fees, and reporting.</strong>
-                  <div class="portal-hero-tags" aria-hidden="true">
-                    <span>Members</span>
-                    <span>Events</span>
-                    <span>Audit</span>
-                  </div>
+                  <strong>Use one navigation set for overview, members, fees, imports, event operations, notifications, news, reports, and audit.</strong>
+                  <p class="muted">Audit opens the membership and fees workspace so governance history stays with the operational records.</p>
                 </div>
               </aside>
            </div>
@@ -3508,6 +4479,7 @@ export function renderAdminPage(config) {
              <a href="#overview" class="module-nav-link" data-module="overview" data-admin-module-link="overview">Overview</a>
              <a href="#members" class="module-nav-link" data-module="members" data-admin-module-link="members">Members</a>
              <a href="#fees" class="module-nav-link" data-module="fees" data-admin-module-link="fees">Membership &amp; Fees</a>
+             <a href="#audit" class="module-nav-link" data-module="audit" data-admin-module-link="audit">Audit</a>
              <a href="#imports" class="module-nav-link" data-module="imports" data-admin-module-link="imports">Imports</a>
              <a href="#events" class="module-nav-link" data-module="events" data-admin-module-link="events">Event Hub</a>
              <a href="#notifications" class="module-nav-link" data-module="notifications" data-admin-module-link="notifications">Notifications</a>
@@ -3551,6 +4523,65 @@ export function renderAdminPage(config) {
                    <p>Review engagement metrics, SMS activity, and moderation controls.</p>
                 </button>
              </div>
+             <div class="admin-card public-hero-settings-card" data-admin-panel="public_page_hero">
+               <div class="section-heading historical-heading">
+                 <div>
+                   <p class="eyebrow">Public Surface</p>
+                   <h3>Public Page Hero</h3>
+                 </div>
+                 <div class="member-actions">
+                   <button id="public-hero-refresh" type="button" disabled>Refresh hero settings</button>
+                   <a class="button-link button-link-ghost" href="${config.appBaseUrl}/" target="_blank" rel="noreferrer">Open public page</a>
+                 </div>
+               </div>
+               <p class="muted">Only admin and chief admin can change the lead image on the public homepage. Use either a stable https image link or upload a file into the site.</p>
+               <div class="public-hero-settings-grid">
+                 <div class="public-hero-settings-form-shell">
+                   <form id="public-hero-settings-form" class="login-form" enctype="multipart/form-data">
+                     <label for="public-hero-image-url">Linked image URL</label>
+                     <input id="public-hero-image-url" type="url" maxlength="2048" placeholder="https://cdn.example.com/iwfsa-public-hero.jpg" disabled />
+                     <label for="public-hero-upload-file">Upload image into the site</label>
+                     <input id="public-hero-upload-file" type="file" accept="image/jpeg,image/png,image/webp" disabled />
+                     <label for="public-hero-alt-text">Alt text</label>
+                     <textarea id="public-hero-alt-text" rows="3" maxlength="280" placeholder="Describe the people, setting, and purpose of the image for screen-reader users." disabled></textarea>
+                     <label for="public-hero-focal-point">Crop focus</label>
+                     <select id="public-hero-focal-point" disabled>
+                       <option value="top">Top focus</option>
+                       <option value="center">Centre focus</option>
+                       <option value="bottom">Bottom focus</option>
+                       <option value="left">Left focus</option>
+                       <option value="right">Right focus</option>
+                     </select>
+                     <div class="public-hero-settings-actions">
+                       <button id="public-hero-save-link" type="button" disabled>Save linked image</button>
+                       <button id="public-hero-upload-button" type="button" disabled>Upload to site</button>
+                       <button id="public-hero-reset-button" type="button" class="ghost" disabled>Use default image</button>
+                     </div>
+                   </form>
+                   <ul class="public-hero-guidance">
+                     <li>Use a landscape image, ideally 1600 x 900 or larger, so it stays sharp on wide screens.</li>
+                     <li>Keep the main subject in the upper middle of the image because the homepage crop uses a 16:9 cover frame.</li>
+                     <li>JPG, PNG, or WebP uploads are accepted up to 5 MB. Avoid text-heavy or overly busy images.</li>
+                     <li>Add alt text that describes the scene and purpose, not just the file name.</li>
+                   </ul>
+                   <p id="public-hero-status" class="muted">Sign in to manage the public page hero image.</p>
+                 </div>
+                 <aside class="public-hero-preview-shell" aria-label="Public hero preview">
+                   <p class="eyebrow">Preview</p>
+                   <div class="featured-photo-frame public-hero-admin-preview-frame">
+                     <img
+                       id="public-hero-preview-image"
+                       class="featured-hero-image"
+                       src="${config.appBaseUrl}/assets/iwfsa-home.jpg?v=${UI_BUILD}-public-refresh"
+                       alt="Default public page hero preview"
+                       loading="lazy"
+                       decoding="async"
+                     />
+                   </div>
+                   <p id="public-hero-preview-caption" class="muted">Default site image with the homepage crop applied.</p>
+                 </aside>
+               </div>
+             </div>
           </section>
 
           <div id="module-members" class="module-section">
@@ -3564,27 +4595,38 @@ export function renderAdminPage(config) {
                   <button id="refresh-members" type="button">Refresh list</button>
                   <button id="queue-invites" type="button" disabled>Send invite links</button>
                   <button id="queue-resets" type="button" disabled>Queue credential resets</button>
+                  <a class="button-link button-link-ghost" href="${config.appBaseUrl}/profiles">Open read-only profile gallery</a>
                   <span id="member-count" class="muted"></span>
                 </div>
                 <!-- ..rest of member directory.. -->
                 <div class="member-actions member-directory-controls" aria-label="Member directory filters">
-                  <input id="member-search" type="search" placeholder="Search name, email, organisation, or group" />
-                  <select id="member-status-filter" aria-label="Filter members by status">
+                  <div class="member-search-wrap" id="member-search-wrap">
+                    <input id="member-search" type="search" autocomplete="off" placeholder="Search name, email, organisation, or group" title="Start typing to filter the member list and pick a suggested member." />
+                    <div id="member-search-dropdown" class="member-search-dropdown" role="listbox" hidden></div>
+                  </div>
+                  <select id="member-status-filter" aria-label="Filter members by status" title="Show members by current status such as active, invited, or paused.">
                     <option value="">All statuses</option>
                   </select>
-                  <select id="member-role-filter" aria-label="Filter members by role">
+                  <select id="member-role-filter" aria-label="Filter members by role" title="Limit the member list to one role.">
                     <option value="">All roles</option>
                   </select>
-                  <select id="member-group-filter" aria-label="Filter members by group">
+                  <select id="member-group-filter" aria-label="Filter members by group" title="Show only members assigned to a selected group.">
                     <option value="">All groups</option>
                   </select>
-                  <select id="member-sort" aria-label="Sort member list">
+                  <select id="member-sort" aria-label="Sort member list" title="Choose how the filtered member list is ordered.">
                     <option value="name">Name A-Z</option>
                     <option value="organisation">Organisation A-Z</option>
                     <option value="status">Status</option>
                     <option value="recent">Newest first</option>
                   </select>
-                  <button id="member-filter-reset" type="button" class="ghost">Reset filters</button>
+                  <button id="member-filter-reset" type="button" class="ghost" title="Clear the search, dropdown filters, and sort order.">Reset filters</button>
+                </div>
+                <div id="member-selection-basket" class="member-selection-basket" hidden>
+                  <div class="msb-header">
+                    <span class="msb-label">Selected members</span>
+                    <button id="member-basket-clear" type="button" class="ghost-link">Clear all</button>
+                  </div>
+                  <div id="member-selection-chips" class="member-selection-chips"></div>
                 </div>
                 <form id="member-add-form" class="login-form member-add-form">
                   <div>
@@ -3594,6 +4636,10 @@ export function renderAdminPage(config) {
                   <div>
                     <label for="member-add-email">Email</label>
                     <input id="member-add-email" name="email" type="email" autocomplete="email" required />
+                  </div>
+                  <div>
+                    <label for="member-add-organisation">Organisation</label>
+                    <input id="member-add-organisation" name="company" autocomplete="organization" maxlength="180" />
                   </div>
                   <fieldset class="group-picker-fieldset field-span-full">
                     <legend>Group memberships</legend>
@@ -3673,6 +4719,7 @@ export function renderAdminPage(config) {
                 <legend>Group memberships</legend>
                 <p class="muted group-picker-help">Update the member's group access and event visibility.</p>
                 <div id="member-detail-groups" class="group-picker"></div>
+                <button id="member-detail-add-group" type="button" class="group-add-btn">+ Assign to a group…</button>
               </fieldset>
             </div>
             <div class="member-actions">
@@ -3682,6 +4729,34 @@ export function renderAdminPage(config) {
           </form>
         </div>
      </div>
+        <div id="group-assign-dialog" class="group-assign-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="group-assign-title">
+          <div class="group-assign-backdrop"></div>
+          <div class="group-assign-panel">
+            <div id="group-assign-picker">
+              <h4 id="group-assign-title">Assign members to group</h4>
+              <p id="group-assign-subtitle" class="muted"></p>
+              <label for="group-assign-select" class="group-assign-label">Choose group to assign</label>
+              <select id="group-assign-select" class="group-assign-select">
+                <option value="" disabled selected>— Select a group —</option>
+              </select>
+              <p id="group-assign-preview" class="group-assign-preview" hidden></p>
+              <div class="group-assign-actions">
+                <button id="group-assign-continue" type="button">Continue</button>
+                <button id="group-assign-abort" type="button" class="ghost">Cancel</button>
+              </div>
+            </div>
+            <div id="group-assign-confirm" hidden>
+              <h4 id="group-assign-question"></h4>
+              <p id="group-assign-detail" class="muted"></p>
+              <div class="group-assign-actions">
+                <button id="group-assign-yes" type="button">Yes, assign</button>
+                <button id="group-assign-skip" type="button" class="ghost">Skip</button>
+                <button id="group-assign-cancel" type="button" class="ghost">Cancel all</button>
+              </div>
+            </div>
+            <p id="group-assign-status" class="muted"></p>
+          </div>
+        </div>
      <div class="admin-card" data-admin-panel="public_profile_reviews">
         <h3>Public Profile Review</h3>
         <p class="muted">Review member requests for public-facing profile fields before they appear outside the portal.</p>
@@ -4474,8 +5549,12 @@ export function renderAdminPage(config) {
       <script>
         const DEFAULT_IMPORT_ACTIVATION_POLICY = "password_change_required";
         
-        const ADMIN_MODULES = ["overview", "members", "fees", "imports", "events", "notifications", "news", "reports"];
+        const ADMIN_MODULES = ["overview", "members", "fees", "audit", "imports", "events", "notifications", "news", "reports"];
         const ADMIN_SIGN_IN_URL = "${config.appBaseUrl}/sign-in";
+
+        function getAdminModuleSection(moduleName) {
+          return moduleName === "audit" ? "fees" : moduleName;
+        }
 
         function getToken() {
           return sessionStorage.getItem("iwfsa_admin_token");
@@ -4503,7 +5582,7 @@ export function renderAdminPage(config) {
           }
           handleHashChange();
           if (scroll) {
-            const target = document.getElementById("module-" + nextModule) || document.getElementById("admin-session-bar");
+            const target = document.getElementById("module-" + getAdminModuleSection(nextModule)) || document.getElementById("admin-session-bar");
             target?.scrollIntoView({ behavior: "smooth", block: "start" });
           }
         }
@@ -4511,13 +5590,14 @@ export function renderAdminPage(config) {
         function handleHashChange() {
            const requestedModule = window.location.hash.substring(1) || "overview";
            let activeModule = ADMIN_MODULES.includes(requestedModule) ? requestedModule : "overview";
+           const activeSection = getAdminModuleSection(activeModule);
 
            document.querySelectorAll('.module-nav-link').forEach(link => {
               link.classList.toggle('active', link.getAttribute('data-module') === activeModule);
            });
 
            document.querySelectorAll('.module-section').forEach(section => {
-              section.classList.toggle('active', section.id === 'module-' + activeModule);
+              section.classList.toggle('active', section.id === 'module-' + activeSection);
            });
         }
 
@@ -4567,6 +5647,27 @@ export function renderAdminPage(config) {
         const queueButton = document.getElementById("queue-invites");
         const resetButton = document.getElementById("queue-resets");
         const memberSearch = document.getElementById("member-search");
+        const memberSearchDropdown = document.getElementById("member-search-dropdown");
+        const memberSelectionBasket = document.getElementById("member-selection-basket");
+        const memberSelectionChips = document.getElementById("member-selection-chips");
+        const memberBasketClear = document.getElementById("member-basket-clear");
+        let basketMembers = new Map(); // memberId (number) → member object
+        const memberDetailAddGroupButton = document.getElementById("member-detail-add-group");
+        let groupAssignSingleMemberId = null;
+        const groupAssignDialog = document.getElementById("group-assign-dialog");
+        const groupAssignPickerPanel = document.getElementById("group-assign-picker");
+        const groupAssignConfirmPanel = document.getElementById("group-assign-confirm");
+        const groupAssignSubtitle = document.getElementById("group-assign-subtitle");
+        const groupAssignSelect = document.getElementById("group-assign-select");
+        const groupAssignQuestion = document.getElementById("group-assign-question");
+        const groupAssignDetail = document.getElementById("group-assign-detail");
+        const groupAssignStatus = document.getElementById("group-assign-status");
+        const groupAssignContinueButton = document.getElementById("group-assign-continue");
+        const groupAssignAbortButton = document.getElementById("group-assign-abort");
+        const groupAssignYesButton = document.getElementById("group-assign-yes");
+        const groupAssignSkipButton = document.getElementById("group-assign-skip");
+        const groupAssignCancelButton = document.getElementById("group-assign-cancel");
+        const groupAssignPreview = document.getElementById("group-assign-preview");
         const memberStatusFilter = document.getElementById("member-status-filter");
         const memberRoleFilter = document.getElementById("member-role-filter");
         const memberGroupFilter = document.getElementById("member-group-filter");
@@ -4576,6 +5677,7 @@ export function renderAdminPage(config) {
         const memberAddNameInput = document.getElementById("member-add-name");
         const memberAddEmailInput = document.getElementById("member-add-email");
         const memberAddGroups = document.getElementById("member-add-groups");
+        const memberAddOrgInput = document.getElementById("member-add-organisation");
         const memberAddStatus = document.getElementById("member-add-status");
         const selectAll = document.getElementById("select-all-members");
         const memberOutput = document.getElementById("member-output");
@@ -4661,6 +5763,18 @@ export function renderAdminPage(config) {
         const newsFilterStatusInput = document.getElementById("news-filter-status");
         const refreshNewsButton = document.getElementById("refresh-news");
         const newsTableBody = document.getElementById("news-table-body");
+        const publicHeroRefreshButton = document.getElementById("public-hero-refresh");
+        const publicHeroSettingsForm = document.getElementById("public-hero-settings-form");
+        const publicHeroImageUrlInput = document.getElementById("public-hero-image-url");
+        const publicHeroUploadFileInput = document.getElementById("public-hero-upload-file");
+        const publicHeroAltTextInput = document.getElementById("public-hero-alt-text");
+        const publicHeroFocalPointInput = document.getElementById("public-hero-focal-point");
+        const publicHeroSaveLinkButton = document.getElementById("public-hero-save-link");
+        const publicHeroUploadButton = document.getElementById("public-hero-upload-button");
+        const publicHeroResetButton = document.getElementById("public-hero-reset-button");
+        const publicHeroStatus = document.getElementById("public-hero-status");
+        const publicHeroPreviewImage = document.getElementById("public-hero-preview-image");
+        const publicHeroPreviewCaption = document.getElementById("public-hero-preview-caption");
         const importSubmitButton = document.getElementById("import-submit");
         const importForm = document.getElementById("import-form");
         const importFileInput = document.getElementById("import-file");
@@ -5084,12 +6198,16 @@ export function renderAdminPage(config) {
         let activeMemberDetailId = 0;
         let activeNewsPostId = null;
         let newsItemsCache = [];
+        let publicHeroSettings = null;
         let membershipFeeCycles = [];
         let membershipFeeOverview = null;
         let membershipFeeMembers = [];
         let membershipFeeCategories = [];
         let selectedMembershipFeeUserIds = new Set();
         const IMPORT_BATCH_STORAGE_KEY = "iwfsa_admin_last_import_batch_v1";
+        const PUBLIC_HERO_DEFAULT_IMAGE_URL = "${config.appBaseUrl}/assets/iwfsa-home.jpg?v=${UI_BUILD}-public-refresh";
+        const PUBLIC_HERO_DEFAULT_ALT_TEXT = "IWFSA leaders meeting around a conference table in Sandton while a presentation screen reads Ignite. Inspire. Impact.";
+        const PUBLIC_HERO_DEFAULT_FOCAL_POINT = "center top";
 
         function hideHostSuggestions() {
           if (eventHostSuggestions) {
@@ -5379,6 +6497,207 @@ export function renderAdminPage(config) {
             localStorage.setItem(IMPORT_BATCH_STORAGE_KEY, value);
           } catch {
             // no-op
+          }
+        }
+
+        function getDefaultPublicHeroSettings() {
+          return {
+            sourceType: "default",
+            imageUrl: null,
+            altText: PUBLIC_HERO_DEFAULT_ALT_TEXT,
+            focalPoint: "top",
+            focalPointCss: PUBLIC_HERO_DEFAULT_FOCAL_POINT,
+            hasCustomImage: false,
+            usesDefaultImage: true
+          };
+        }
+
+        function resolvePublicHeroPreviewSource(item) {
+          return item && item.imageUrl ? item.imageUrl : PUBLIC_HERO_DEFAULT_IMAGE_URL;
+        }
+
+        function applyPublicHeroPreview(item) {
+          const resolved = item || getDefaultPublicHeroSettings();
+          if (publicHeroPreviewImage) {
+            publicHeroPreviewImage.src = resolvePublicHeroPreviewSource(resolved);
+            publicHeroPreviewImage.alt = resolved.altText || PUBLIC_HERO_DEFAULT_ALT_TEXT;
+            publicHeroPreviewImage.style.objectPosition = resolved.focalPointCss || PUBLIC_HERO_DEFAULT_FOCAL_POINT;
+          }
+          if (publicHeroPreviewCaption) {
+            if (resolved.sourceType === "external") {
+              publicHeroPreviewCaption.textContent = "Linked image on the public page with the homepage crop applied.";
+            } else if (resolved.sourceType === "upload") {
+              publicHeroPreviewCaption.textContent = "Uploaded site image on the public page with the homepage crop applied.";
+            } else {
+              publicHeroPreviewCaption.textContent = "Default site image with the homepage crop applied.";
+            }
+          }
+        }
+
+        function populatePublicHeroSettings(item) {
+          const resolved = item || getDefaultPublicHeroSettings();
+          publicHeroSettings = resolved;
+          if (publicHeroImageUrlInput) {
+            publicHeroImageUrlInput.value = resolved.sourceType === "external" ? String(resolved.imageUrl || "") : "";
+          }
+          if (publicHeroAltTextInput) {
+            publicHeroAltTextInput.value = resolved.altText || PUBLIC_HERO_DEFAULT_ALT_TEXT;
+          }
+          if (publicHeroFocalPointInput) {
+            publicHeroFocalPointInput.value = resolved.focalPoint || "top";
+          }
+          if (publicHeroUploadFileInput) {
+            publicHeroUploadFileInput.value = "";
+          }
+          applyPublicHeroPreview(resolved);
+        }
+
+        async function loadPublicHeroSettings() {
+          if (!authToken) {
+            populatePublicHeroSettings(getDefaultPublicHeroSettings());
+            publicHeroStatus.textContent = "Sign in to manage the public page hero image.";
+            return;
+          }
+          if (!canUseAdminActions()) {
+            populatePublicHeroSettings(getDefaultPublicHeroSettings());
+            publicHeroStatus.textContent = "Only admin and chief admin roles can manage the public page hero image.";
+            return;
+          }
+
+          publicHeroStatus.textContent = "Loading public page hero settings...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/admin/site-settings/public-hero", {
+              headers: { Authorization: "Bearer " + authToken }
+            });
+            if (clearAdminAuthOnUnauthorized(response)) {
+              return;
+            }
+            const json = await response.json();
+            if (!response.ok) {
+              publicHeroStatus.textContent = json.message || "Unable to load public page hero settings.";
+              return;
+            }
+            populatePublicHeroSettings(json.item || getDefaultPublicHeroSettings());
+            publicHeroStatus.textContent = json.item && json.item.hasCustomImage
+              ? "Public page hero settings loaded."
+              : "Using the default public page hero image.";
+          } catch {
+            publicHeroStatus.textContent = "Unable to reach API for public page hero settings.";
+          }
+        }
+
+        async function saveLinkedPublicHero() {
+          if (!authToken || !canUseAdminActions()) {
+            publicHeroStatus.textContent = "Only admin and chief admin roles can manage the public page hero image.";
+            return;
+          }
+
+          const imageUrl = String(publicHeroImageUrlInput?.value || "").trim();
+          const altText = String(publicHeroAltTextInput?.value || "").trim();
+          const focalPoint = String(publicHeroFocalPointInput?.value || "top").trim();
+          if (!imageUrl) {
+            publicHeroStatus.textContent = "Add an https image URL before saving a linked image.";
+            return;
+          }
+          if (!altText) {
+            publicHeroStatus.textContent = "Add alt text before saving the public page image.";
+            return;
+          }
+
+          publicHeroStatus.textContent = "Saving linked image...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/admin/site-settings/public-hero", {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer " + authToken
+              },
+              body: JSON.stringify({ imageUrl, altText, focalPoint })
+            });
+            if (clearAdminAuthOnUnauthorized(response)) {
+              return;
+            }
+            const json = await response.json();
+            if (!response.ok) {
+              publicHeroStatus.textContent = json.message || "Unable to save linked image.";
+              return;
+            }
+            populatePublicHeroSettings(json.item || getDefaultPublicHeroSettings());
+            publicHeroStatus.textContent = "Public page hero updated from linked image.";
+          } catch {
+            publicHeroStatus.textContent = "Unable to reach API for public page hero settings.";
+          }
+        }
+
+        async function uploadPublicHeroImage() {
+          if (!authToken || !canUseAdminActions()) {
+            publicHeroStatus.textContent = "Only admin and chief admin roles can manage the public page hero image.";
+            return;
+          }
+
+          const file = publicHeroUploadFileInput?.files && publicHeroUploadFileInput.files[0] ? publicHeroUploadFileInput.files[0] : null;
+          const altText = String(publicHeroAltTextInput?.value || "").trim();
+          const focalPoint = String(publicHeroFocalPointInput?.value || "top").trim();
+          if (!file) {
+            publicHeroStatus.textContent = "Choose a JPG, PNG, or WebP file before uploading.";
+            return;
+          }
+          if (!altText) {
+            publicHeroStatus.textContent = "Add alt text before uploading the public page image.";
+            return;
+          }
+
+          const formData = new FormData();
+          formData.set("altText", altText);
+          formData.set("focalPoint", focalPoint);
+          formData.set("file", file, file.name || "public-hero-image");
+
+          publicHeroStatus.textContent = "Uploading public page image...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/admin/site-settings/public-hero/upload", {
+              method: "POST",
+              headers: { Authorization: "Bearer " + authToken },
+              body: formData
+            });
+            if (clearAdminAuthOnUnauthorized(response)) {
+              return;
+            }
+            const json = await response.json();
+            if (!response.ok) {
+              publicHeroStatus.textContent = json.message || "Unable to upload public page image.";
+              return;
+            }
+            populatePublicHeroSettings(json.item || getDefaultPublicHeroSettings());
+            publicHeroStatus.textContent = "Public page hero uploaded into the site.";
+          } catch {
+            publicHeroStatus.textContent = "Unable to reach API for public page hero settings.";
+          }
+        }
+
+        async function resetPublicHeroToDefault() {
+          if (!authToken || !canUseAdminActions()) {
+            publicHeroStatus.textContent = "Only admin and chief admin roles can manage the public page hero image.";
+            return;
+          }
+
+          publicHeroStatus.textContent = "Restoring default public page image...";
+          try {
+            const response = await fetch("${config.apiBaseUrl}/api/admin/site-settings/public-hero", {
+              method: "DELETE",
+              headers: { Authorization: "Bearer " + authToken }
+            });
+            if (clearAdminAuthOnUnauthorized(response)) {
+              return;
+            }
+            const json = await response.json();
+            if (!response.ok) {
+              publicHeroStatus.textContent = json.message || "Unable to restore default public page image.";
+              return;
+            }
+            populatePublicHeroSettings(json.item || getDefaultPublicHeroSettings());
+            publicHeroStatus.textContent = "Default public page hero restored.";
+          } catch {
+            publicHeroStatus.textContent = "Unable to reach API for public page hero settings.";
           }
         }
 
@@ -5775,6 +7094,26 @@ export function renderAdminPage(config) {
           reportWindowDaysInput.disabled = !authToken;
           addModeratorButton.disabled = !authToken;
           moderatorUserIdInput.disabled = !authToken;
+          const canManagePublicHero = Boolean(authToken) && canUseAdminActions();
+          if (publicHeroSettingsForm) {
+            Array.from(publicHeroSettingsForm.elements || []).forEach((element) => {
+              if (element instanceof HTMLElement) {
+                element.toggleAttribute("disabled", !canManagePublicHero);
+              }
+            });
+          }
+          if (publicHeroRefreshButton) {
+            publicHeroRefreshButton.disabled = !canManagePublicHero;
+          }
+          if (publicHeroSaveLinkButton) {
+            publicHeroSaveLinkButton.disabled = !canManagePublicHero;
+          }
+          if (publicHeroUploadButton) {
+            publicHeroUploadButton.disabled = !canManagePublicHero;
+          }
+          if (publicHeroResetButton) {
+            publicHeroResetButton.disabled = !canManagePublicHero;
+          }
           const canManageFees = Boolean(authToken) && canUseAdminActions();
           feeCycleYearInput.disabled = !canManageFees;
           feeRefreshButton.disabled = !canManageFees;
@@ -5841,6 +7180,8 @@ export function renderAdminPage(config) {
             moderatorStatus.textContent = "Sign in to manage moderators.";
             moderatorTableBody.innerHTML = "<tr><td colspan='4' class='muted'>Sign in to load moderators.</td></tr>";
             moderatorUserIdInput.innerHTML = "<option value=''>Select member</option>";
+            populatePublicHeroSettings(getDefaultPublicHeroSettings());
+            publicHeroStatus.textContent = "Sign in to manage the public page hero image.";
             newsStatusText.textContent = "Sign in to manage curated member news.";
             newsTableBody.innerHTML = "<tr><td colspan='6' class='muted'>Sign in to load member news posts.</td></tr>";
             profileReviewStatus.textContent = "Sign in to review public profile submissions.";
@@ -5885,6 +7226,8 @@ export function renderAdminPage(config) {
           }
           await loadMembers();
           if (!authToken) return;
+          await loadPublicHeroSettings();
+          if (!authToken) return;
           await loadPublicProfileReviews();
           if (!authToken) return;
           await loadHonoraryMembers();
@@ -5915,7 +7258,12 @@ export function renderAdminPage(config) {
           "refresh-members": "Reload the member directory from the API.",
           "queue-invites": "Queue onboarding invite links for selected members.",
           "queue-resets": "Queue credential reset links for selected members.",
-          "member-search": "Filter members by full name, email, or group.",
+          "member-search": "Start typing to filter the member directory and choose a suggested member.",
+          "member-status-filter": "Show members by current status such as active, invited, or paused.",
+          "member-role-filter": "Limit the directory to a specific member role.",
+          "member-group-filter": "Show members assigned to one governance or working group.",
+          "member-sort": "Choose how the filtered member list is ordered.",
+          "member-filter-reset": "Clear the search term, dropdown filters, and sort order.",
           "member-add-groups": "Assign one or more groups so targeted events and invites reach the right members.",
           "import-file": "Select an .xlsx workbook for dry-run, or leave empty to reuse the latest saved upload.",
           "apply-import": "Apply the loaded batch when blocking issues are zero.",
@@ -5927,6 +7275,10 @@ export function renderAdminPage(config) {
           "event-view": "Filter Event Hub cards by lifecycle/time state.",
           "refresh-events": "Refresh Event Hub cards from the API.",
           "dispatch-reminders": "Send due registration reminders now.",
+          "public-hero-image-url": "Paste a stable https image link for the public homepage hero.",
+          "public-hero-upload-file": "Upload a JPG, PNG, or WebP hero image directly into the site.",
+          "public-hero-alt-text": "Describe the hero image clearly for screen-reader users.",
+          "public-hero-focal-point": "Choose which part of the photo stays visible inside the homepage crop.",
           "refresh-deliveries": "Reload recent notification delivery outcomes.",
           "refresh-queue": "Reload notification queue status rows.",
           "fee-cycle-year": "Select the membership cycle year to review or edit.",
@@ -6364,7 +7716,16 @@ export function renderAdminPage(config) {
           updateQueueButton();
 
           document.querySelectorAll(".member-checkbox").forEach((checkbox) => {
+            checkbox.checked = basketMembers.has(Number(checkbox.value));
             checkbox.addEventListener("change", () => {
+              const id = Number(checkbox.value);
+              if (checkbox.checked) {
+                const member = memberDirectorySource.find((m) => Number(m.id || m.userId || 0) === id);
+                if (member) basketMembers.set(id, member);
+              } else {
+                basketMembers.delete(id);
+              }
+              renderMemberBasket();
               const checked = selectedIds().length;
               selectAll.checked = checked > 0 && checked === visibleItems.length;
               updateQueueButton();
@@ -7193,6 +8554,7 @@ export function renderAdminPage(config) {
           if (!authToken) {
             memberStatus.textContent = "Sign in to load members.";
             memberDirectorySource = [];
+            updateMemberSearchSuggestions([], "");
             memberTableBody.innerHTML = "<tr><td colspan='7' class='muted'>Sign in required.</td></tr>";
             memberOutput.textContent = "";
             memberCount.textContent = "";
@@ -7208,6 +8570,7 @@ export function renderAdminPage(config) {
               if (clearAdminAuthOnUnauthorized(response)) return;
               memberStatus.textContent = json.message || "Unable to load members.";
               memberDirectorySource = [];
+              updateMemberSearchSuggestions([], "");
               memberTableBody.innerHTML = "<tr><td colspan='7' class='muted'>Unable to load members.</td></tr>";
               memberOutput.textContent = "";
               memberCount.textContent = "";
@@ -7235,6 +8598,7 @@ export function renderAdminPage(config) {
           } catch {
             memberStatus.textContent = "Unable to reach the member service. Refresh the page and try again.";
             memberDirectorySource = [];
+            updateMemberSearchSuggestions([], "");
             memberTableBody.innerHTML = "<tr><td colspan='7' class='muted'>Unable to reach API.</td></tr>";
             memberOutput.textContent = "";
             memberCount.textContent = "";
@@ -8557,6 +9921,139 @@ export function renderAdminPage(config) {
             return String(value || "").trim();
           }
 
+        function memberMatchesSearch(member, term) {
+          const normalizedTerm = String(term || "").trim().toLowerCase();
+          if (!normalizedTerm) {
+            return true;
+          }
+          const name = String(member.fullName || member.username || "").toLowerCase();
+          const email = String(member.email || "").toLowerCase();
+          const groupsText = normalizeGroupList(member.groups || []).join(" ").toLowerCase();
+          const rolesText = (Array.isArray(member.roles) ? member.roles : []).join(" ").toLowerCase();
+          const organisation = normalizeDisplayText(member.organisation || member.company || "").toLowerCase();
+          return (
+            name.includes(normalizedTerm) ||
+            email.includes(normalizedTerm) ||
+            groupsText.includes(normalizedTerm) ||
+            rolesText.includes(normalizedTerm) ||
+            organisation.includes(normalizedTerm)
+          );
+        }
+
+        function updateMemberSearchSuggestions(members, term) {
+          if (!memberSearchDropdown) {
+            return;
+          }
+          memberSearchDropdown.innerHTML = "";
+          const normalizedTerm = String(term || "").trim().toLowerCase();
+          if (!normalizedTerm) {
+            memberSearchDropdown.hidden = true;
+            return;
+          }
+          const seen = new Set();
+          const matches = members
+            .filter((member) => memberMatchesSearch(member, normalizedTerm))
+            .sort((left, right) => String(left.fullName || left.username || "").localeCompare(String(right.fullName || right.username || "")))
+            .slice(0, 10);
+
+          if (!matches.length) {
+            memberSearchDropdown.hidden = true;
+            return;
+          }
+
+          matches.forEach((member) => {
+            const name = sanitizeName(member.fullName || member.username || member.email || "");
+            if (!name) return;
+            const key = (name + "|" + String(member.email || "")).toLowerCase();
+            if (seen.has(key)) return;
+            seen.add(key);
+
+            const email = String(member.email || "").trim();
+            const org = normalizeDisplayText(member.organisation || member.company || "").trim();
+            const groups = normalizeGroupList(member.groups || []);
+            const status = String(member.status || "active").trim().toLowerCase();
+
+            const groupBadges = groups.length
+              ? groups.map((g) => "<span class='badge member-group-badge-sm'>" + escapeClientHtml(g) + "</span>").join("")
+              : "<span class='msr-unassigned'>No group</span>";
+
+            const statusDot = status === "active" ? "msr-dot msr-dot-active" : status === "invited" ? "msr-dot msr-dot-invited" : "msr-dot msr-dot-other";
+
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "member-search-result";
+            btn.setAttribute("role", "option");
+            btn.innerHTML =
+              "<span class='msr-header'>" +
+              "<strong class='msr-name'>" + escapeClientHtml(name) + "</strong>" +
+              "<span class='" + statusDot + "'></span>" +
+              "</span>" +
+              (email ? "<span class='msr-email'>" + escapeClientHtml(email) + "</span>" : "") +
+              (org ? "<span class='msr-org'>" + escapeClientHtml(org) + "</span>" : "") +
+              "<span class='msr-groups'>" + groupBadges + "</span>";
+
+            btn.addEventListener("mousedown", (event) => {
+              event.preventDefault();
+              addToBasket(member);
+              memberSearch.value = "";
+              memberSearchDropdown.hidden = true;
+              applyMemberFilter();
+            });
+            memberSearchDropdown.appendChild(btn);
+          });
+
+          memberSearchDropdown.hidden = false;
+        }
+
+        function renderMemberBasket() {
+          if (!memberSelectionBasket || !memberSelectionChips) return;
+          if (basketMembers.size === 0) {
+            memberSelectionBasket.hidden = true;
+            memberSelectionChips.innerHTML = "";
+            return;
+          }
+          memberSelectionBasket.hidden = false;
+          memberSelectionChips.innerHTML = Array.from(basketMembers.values())
+            .map((m) => {
+              const id = Number(m.id || m.userId || 0);
+              const name = escapeClientHtml(m.fullName || m.username || "Member");
+              const org = escapeClientHtml(m.organisation || m.company || "");
+              return (
+                "<span class='msb-chip' data-basket-id='" + id + "'>" +
+                "<span class='msb-chip-name'>" + name + "</span>" +
+                (org ? "<span class='msb-chip-org'>" + org + "</span>" : "") +
+                "<button type='button' class='msb-chip-remove' aria-label='Remove " + name + "' data-remove-id='" + id + "'>\u00d7</button>" +
+                "</span>"
+              );
+            })
+            .join("");
+
+          memberSelectionChips.querySelectorAll(".msb-chip-remove").forEach((btn) => {
+            btn.addEventListener("click", () => {
+              const id = Number(btn.getAttribute("data-remove-id") || 0);
+              basketMembers.delete(id);
+              renderMemberBasket();
+              syncBasketToCheckboxes();
+              updateQueueButton();
+            });
+          });
+        }
+
+        function syncBasketToCheckboxes() {
+          document.querySelectorAll(".member-checkbox").forEach((cb) => {
+            cb.checked = basketMembers.has(Number(cb.value));
+          });
+        }
+
+        function addToBasket(member) {
+          const id = Number(member.id || member.userId || 0);
+          if (!id) return;
+          basketMembers.set(id, member);
+          renderMemberBasket();
+          syncBasketToCheckboxes();
+          updateQueueButton();
+        }
+
         function applyMemberFilter() {
           const term = String(memberSearch.value || "").trim().toLowerCase();
           const statusFilter = String(memberStatusFilter?.value || "").trim().toLowerCase();
@@ -8564,40 +10061,32 @@ export function renderAdminPage(config) {
           const groupFilter = String(memberGroupFilter?.value || "").trim().toLowerCase();
           const sortMode = String(memberSortInput?.value || "name").trim().toLowerCase();
           const filtered = memberDirectorySource.filter((member) => {
-            const name = String(member.fullName || member.username || "").toLowerCase();
-            const email = String(member.email || "").toLowerCase();
             const groups = normalizeGroupList(member.groups || []);
             const roles = Array.isArray(member.roles) ? member.roles : [];
-            const groupsText = groups.join(" ").toLowerCase();
-            const rolesText = roles.join(" ").toLowerCase();
-            const organisation = normalizeDisplayText(member.organisation || member.company || "").toLowerCase();
             const status = String(member.status || "active").trim().toLowerCase() || "active";
-            const matchesTerm =
-              !term ||
-              name.includes(term) ||
-              email.includes(term) ||
-              groupsText.includes(term) ||
-              rolesText.includes(term) ||
-              organisation.includes(term);
             const matchesStatus = !statusFilter || status === statusFilter;
             const matchesRole = !roleFilter || roles.some((role) => String(role || "").toLowerCase() === roleFilter);
             const matchesGroup = !groupFilter || groups.some((group) => String(group || "").toLowerCase() === groupFilter);
-            return matchesTerm && matchesStatus && matchesRole && matchesGroup;
+            return matchesStatus && matchesRole && matchesGroup;
           });
-          const sorted = filtered.slice().sort((left, right) => {
-            if (sortMode === "organisation") {
-              return normalizeDisplayText(left.organisation || left.company || "").localeCompare(
-                normalizeDisplayText(right.organisation || right.company || "")
-              );
-            }
-            if (sortMode === "status") {
-              return String(left.status || "active").localeCompare(String(right.status || "active"));
-            }
-            if (sortMode === "recent") {
-              return Number(right.id || right.userId || 0) - Number(left.id || left.userId || 0);
-            }
-            return String(left.fullName || left.username || "").localeCompare(String(right.fullName || right.username || ""));
-          });
+          updateMemberSearchSuggestions(filtered, term);
+          const sorted = filtered
+            .filter((member) => memberMatchesSearch(member, term))
+            .slice()
+            .sort((left, right) => {
+              if (sortMode === "organisation") {
+                return normalizeDisplayText(left.organisation || left.company || "").localeCompare(
+                  normalizeDisplayText(right.organisation || right.company || "")
+                );
+              }
+              if (sortMode === "status") {
+                return String(left.status || "active").localeCompare(String(right.status || "active"));
+              }
+              if (sortMode === "recent") {
+                return Number(right.id || right.userId || 0) - Number(left.id || left.userId || 0);
+              }
+              return String(left.fullName || left.username || "").localeCompare(String(right.fullName || right.username || ""));
+            });
           renderMembers(sorted);
         }
 
@@ -9200,7 +10689,7 @@ export function renderAdminPage(config) {
             .replaceAll(shortPrefix + String.fromCharCode(339), '"')
             .replaceAll(shortPrefix + String.fromCharCode(157), '"')
             .replaceAll(shortPrefix + String.fromCharCode(166), "...")
-            .replace(/\s+/g, " ")
+            .replace(/\\s+/g, " ")
             .trim();
         }
 
@@ -9895,6 +11384,173 @@ export function renderAdminPage(config) {
           applyMemberFilter();
         });
 
+        memberSearch.addEventListener("keydown", (event) => {
+          if (event.key === "Escape" && memberSearchDropdown) {
+            memberSearchDropdown.hidden = true;
+          }
+        });
+
+        document.addEventListener("click", (event) => {
+          if (!memberSearchDropdown || memberSearchDropdown.hidden) return;
+          const wrap = document.getElementById("member-search-wrap");
+          if (wrap && !wrap.contains(event.target)) {
+            memberSearchDropdown.hidden = true;
+          }
+        });
+
+        function waitForGroupAssignAnswer() {
+          return new Promise((resolve) => {
+            function cleanup() {
+              groupAssignYesButton.onclick = null;
+              groupAssignSkipButton.onclick = null;
+              groupAssignCancelButton.onclick = null;
+            }
+            groupAssignYesButton.onclick = () => { cleanup(); resolve("yes"); };
+            groupAssignSkipButton.onclick = () => { cleanup(); resolve("skip"); };
+            groupAssignCancelButton.onclick = () => { cleanup(); resolve("cancel"); };
+          });
+        }
+
+        function closeGroupAssignDialog() {
+          groupAssignSingleMemberId = null;
+          if (groupAssignDialog) groupAssignDialog.hidden = true;
+          if (groupAssignPickerPanel) groupAssignPickerPanel.hidden = false;
+          if (groupAssignConfirmPanel) groupAssignConfirmPanel.hidden = true;
+          if (groupAssignStatus) groupAssignStatus.textContent = "";
+        }
+
+        if (groupAssignAbortButton) {
+          groupAssignAbortButton.addEventListener("click", closeGroupAssignDialog);
+        }
+
+        if (groupAssignDialog) {
+          const backdrop = groupAssignDialog.querySelector(".group-assign-backdrop");
+          if (backdrop) {
+            backdrop.addEventListener("click", closeGroupAssignDialog);
+          }
+        }
+
+        if (groupAssignContinueButton) {
+          groupAssignContinueButton.addEventListener("click", async () => {
+            const selectedGroup = String(groupAssignSelect?.value || "").trim();
+            if (!selectedGroup) {
+              if (groupAssignStatus) groupAssignStatus.textContent = "Choose a group before continuing.";
+              return;
+            }
+            const ids = groupAssignSingleMemberId ? [groupAssignSingleMemberId] : selectedIds();
+            if (ids.length === 0) {
+              closeGroupAssignDialog();
+              return;
+            }
+            if (groupAssignPickerPanel) groupAssignPickerPanel.hidden = true;
+            if (groupAssignConfirmPanel) groupAssignConfirmPanel.hidden = false;
+            if (groupAssignStatus) groupAssignStatus.textContent = "";
+
+            let assigned = 0;
+            let skipped = 0;
+            let errorCount = 0;
+
+            for (const memberId of ids) {
+              const member = memberDirectorySource.find((m) => Number(m.id || m.userId || 0) === memberId);
+              if (!member) continue;
+              const name = String(member.fullName || member.username || "Member");
+              const currentGroups = normalizeGroupList(member.groups || []);
+              const alreadyInGroup = currentGroups.some((g) => g.toLowerCase() === selectedGroup.toLowerCase());
+
+              if (alreadyInGroup) {
+                skipped++;
+                continue;
+              }
+
+              if (groupAssignQuestion) {
+                groupAssignQuestion.textContent = "Assign " + name + " to " + selectedGroup + "?";
+              }
+              if (groupAssignDetail) {
+                groupAssignDetail.textContent = currentGroups.length
+                  ? "Current groups: " + currentGroups.join(", ")
+                  : "This member has no group assignments yet.";
+              }
+
+              const answer = await waitForGroupAssignAnswer();
+              if (answer === "cancel") break;
+              if (answer === "skip") { skipped++; continue; }
+
+              try {
+                const updatedGroups = Array.from(new Set([...currentGroups, selectedGroup]));
+                const response = await fetch("${config.apiBaseUrl}/api/members/" + String(memberId), {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json", Authorization: "Bearer " + authToken },
+                  body: JSON.stringify({ groups: updatedGroups })
+                });
+                const json = await response.json();
+                if (response.ok) {
+                  upsertMemberDirectoryItem(json.item || {});
+                  assigned++;
+                } else {
+                  errorCount++;
+                }
+              } catch {
+                errorCount++;
+              }
+            }
+
+            closeGroupAssignDialog();
+            applyMemberFilter();
+            const parts = [];
+            if (assigned > 0) parts.push(assigned + " member(s) assigned to " + selectedGroup + ".");
+            if (skipped > 0) parts.push(skipped + " skipped (already assigned or user chose Skip).");
+            if (errorCount > 0) parts.push(errorCount + " failed — check the API.");
+            if (parts.length && groupAssignStatus) {
+              groupAssignStatus.textContent = parts.join(" ");
+              groupAssignDialog.hidden = false;
+              if (groupAssignPickerPanel) groupAssignPickerPanel.hidden = true;
+              if (groupAssignConfirmPanel) groupAssignConfirmPanel.hidden = true;
+            }
+          });
+        }
+
+        if (memberDetailAddGroupButton) {
+          memberDetailAddGroupButton.addEventListener("click", () => {
+            if (!activeMemberDetailId || !authToken) return;
+            groupAssignSingleMemberId = activeMemberDetailId;
+            const availableGroups = listConfiguredAudienceGroups();
+            if (!availableGroups.length) return;
+            if (groupAssignSelect) {
+              groupAssignSelect.innerHTML =
+                "<option value='' disabled selected>— Select a group —</option>" +
+                availableGroups
+                  .map((g) => "<option value='" + escapeClientHtml(g) + "'>" + escapeClientHtml(g) + "</option>")
+                  .join("");
+            }
+            if (groupAssignPreview) groupAssignPreview.hidden = true;
+            const member = memberDirectorySource.find(
+              (m) => Number(m.id || m.userId || 0) === Number(activeMemberDetailId)
+            );
+            const memberName = member ? String(member.fullName || member.username || "this member") : "this member";
+            if (groupAssignSubtitle) {
+              groupAssignSubtitle.textContent = "Assigning a group to: " + memberName;
+            }
+            if (groupAssignStatus) groupAssignStatus.textContent = "";
+            if (groupAssignPickerPanel) groupAssignPickerPanel.hidden = false;
+            if (groupAssignConfirmPanel) groupAssignConfirmPanel.hidden = true;
+            if (groupAssignDialog) groupAssignDialog.hidden = false;
+          });
+        }
+
+        if (groupAssignSelect) {
+          groupAssignSelect.addEventListener("change", () => {
+            const val = String(groupAssignSelect.value || "").trim();
+            if (groupAssignPreview) {
+              if (val) {
+                groupAssignPreview.textContent = "Will assign to: " + val;
+                groupAssignPreview.hidden = false;
+              } else {
+                groupAssignPreview.hidden = true;
+              }
+            }
+          });
+        }
+
         [memberStatusFilter, memberRoleFilter, memberGroupFilter, memberSortInput].forEach((control) => {
           if (!control) return;
           control.addEventListener("change", () => {
@@ -9913,6 +11569,15 @@ export function renderAdminPage(config) {
           });
         }
 
+        if (memberBasketClear) {
+          memberBasketClear.addEventListener("click", () => {
+            basketMembers.clear();
+            renderMemberBasket();
+            syncBasketToCheckboxes();
+            updateQueueButton();
+          });
+        }
+
         memberAddForm.addEventListener("submit", async (event) => {
           event.preventDefault();
           if (!authToken) {
@@ -9922,6 +11587,7 @@ export function renderAdminPage(config) {
 
           const fullName = sanitizeName(memberAddNameInput.value);
           const email = sanitizeEmail(memberAddEmailInput.value);
+          const company = String(memberAddOrgInput ? memberAddOrgInput.value || "" : "").trim();
           const groups = selectedMemberGroups();
           if (groups.length === 0) {
             groups.push("Common Member");
@@ -9940,7 +11606,7 @@ export function renderAdminPage(config) {
                 "Content-Type": "application/json",
                 Authorization: "Bearer " + authToken
               },
-              body: JSON.stringify({ fullName, email, groups })
+              body: JSON.stringify({ fullName, email, company, groups })
             });
             const json = await response.json();
             if (!response.ok) {
@@ -10734,6 +12400,50 @@ export function renderAdminPage(config) {
         if (refreshProfileReviewsButton) {
           refreshProfileReviewsButton.addEventListener("click", () => {
             loadPublicProfileReviews();
+          });
+        }
+
+        if (publicHeroRefreshButton) {
+          publicHeroRefreshButton.addEventListener("click", () => {
+            loadPublicHeroSettings();
+          });
+        }
+
+        if (publicHeroSaveLinkButton) {
+          publicHeroSaveLinkButton.addEventListener("click", () => {
+            saveLinkedPublicHero();
+          });
+        }
+
+        if (publicHeroUploadButton) {
+          publicHeroUploadButton.addEventListener("click", () => {
+            uploadPublicHeroImage();
+          });
+        }
+
+        if (publicHeroResetButton) {
+          publicHeroResetButton.addEventListener("click", () => {
+            resetPublicHeroToDefault();
+          });
+        }
+
+        if (publicHeroFocalPointInput) {
+          publicHeroFocalPointInput.addEventListener("change", () => {
+            const current = publicHeroSettings || getDefaultPublicHeroSettings();
+            applyPublicHeroPreview({
+              ...current,
+              focalPoint: String(publicHeroFocalPointInput.value || "top"),
+              focalPointCss:
+                String(publicHeroFocalPointInput.value || "top") === "center"
+                  ? "center center"
+                  : String(publicHeroFocalPointInput.value || "top") === "bottom"
+                    ? "center bottom"
+                    : String(publicHeroFocalPointInput.value || "top") === "left"
+                      ? "left center"
+                      : String(publicHeroFocalPointInput.value || "top") === "right"
+                        ? "right center"
+                        : "center top"
+            });
           });
         }
 

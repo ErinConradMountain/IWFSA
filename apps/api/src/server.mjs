@@ -56,6 +56,18 @@ const EVENT_DOCUMENT_MEMBER_ACCESS_SCOPES = new Set(["all_visible", "invited_att
 const EVENT_DOCUMENT_MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
 const MEMBER_PROFILE_PHOTO_MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024;
 const MEMBER_PROFILE_PHOTO_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+const SITE_SETTING_PUBLIC_HOME_HERO = "public_home_hero";
+const PUBLIC_SITE_HERO_MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+const PUBLIC_SITE_HERO_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const PUBLIC_SITE_HERO_FOCAL_POINTS = new Map([
+  ["top", "center top"],
+  ["center", "center center"],
+  ["bottom", "center bottom"],
+  ["left", "left center"],
+  ["right", "right center"]
+]);
+const DEFAULT_PUBLIC_SITE_HERO_ALT_TEXT =
+  "IWFSA leaders meeting around a conference table in Sandton while a presentation screen reads Ignite. Inspire. Impact.";
 const BIRTHDAY_VISIBILITY_VALUES = new Set(["hidden", "members_only", "members_and_social"]);
 const PROFILE_VISIBILITY_VALUES = new Set([
   "private",
@@ -77,7 +89,46 @@ const MEMBER_PROFILE_VISIBILITY_FIELDS = Object.freeze([
   "photo",
   "birthday"
 ]);
+const MEMBER_PROFILE_REVIEW_REQUEST_FIELDS = Object.freeze([...MEMBER_PROFILE_VISIBILITY_FIELDS, "galleryItems"]);
 const MEMBER_PROFILE_LINK_VISIBILITY_FIELDS = new Set(["linkedinUrl", "professionalLinks"]);
+const MEMBER_PROFILE_MEDIA_SOURCE_TYPES = new Set([
+  "google_photos",
+  "linkedin",
+  "approved_url",
+  "organisation_cdn",
+  "camera_capture",
+  "direct_upload"
+]);
+const MEMBER_PROFILE_MEDIA_TYPES = new Set(["image"]);
+const MEMBER_PROFILE_DIRECTORY_DETAIL_TEXT_FIELDS = Object.freeze({
+  preferredName: 80,
+  title: 80,
+  suffix: 80,
+  profileHeadline: 180,
+  bioShort: 320,
+  bioLong: 2500,
+  currentRoleTitle: 160,
+  currentOrganisation: 180,
+  industrySector: 160,
+  mentorshipRole: 160,
+  boardStatus: 120,
+  featuredQuote: 280,
+  contributionsToWomenLeadership: 1200,
+  city: 120,
+  province: 120,
+  country: 120,
+  website: 2048,
+  coverPhotoUrl: 2048
+});
+const MEMBER_PROFILE_DIRECTORY_DETAIL_LIST_FIELDS = Object.freeze({
+  previousKeyRoles: { maxItems: 8, maxLength: 180 },
+  boardRoles: { maxItems: 8, maxLength: 180 },
+  achievements: { maxItems: 10, maxLength: 220 },
+  expertiseTags: { maxItems: 12, maxLength: 80 },
+  speakingTopics: { maxItems: 12, maxLength: 120 },
+  committeeInvolvement: { maxItems: 10, maxLength: 140 },
+  leadershipProgrammeInvolvement: { maxItems: 8, maxLength: 140 }
+});
 const PUBLIC_PROFILE_REVIEW_STATUSES = new Set(["pending", "approved", "rejected", "withdrawn"]);
 const DIRECTORY_ENTRY_STATUSES = new Set(["draft", "published", "archived"]);
 const MEMBER_NEWS_STATUSES = new Set(["draft", "published", "archived"]);
@@ -2429,6 +2480,69 @@ function listActiveMemberDirectory(database, { search = "", limit = 80 } = {}) {
     }));
 }
 
+function listMemberBrowseProfiles(database, { search = "", limit = 80 } = {}) {
+  const directoryItems = listActiveMemberDirectory(database, { search, limit });
+  const term = String(search || "").trim().toLowerCase();
+  return directoryItems
+    .map((item) => {
+      const profileRow = loadMemberProfile(database, item.userId);
+      const profile = profileRow ? toMemberBrowseProfileResponse(profileRow) : null;
+      return {
+        userId: item.userId,
+        username: item.username,
+        fullName: profile?.fullName || item.fullName || item.username,
+        organisation: profile?.company || item.organisation || "",
+        email: item.email || "",
+        groups: Array.isArray(item.groups) ? item.groups : [],
+        membershipStanding: item.membershipStanding || null,
+        membershipCycleYear: item.membershipCycleYear || null,
+        businessTitle: profile?.businessTitle || "",
+        iwfsaPosition: profile?.iwfsaPosition || "",
+        bio: profile?.bio || "",
+        phone: profile?.phone || "",
+        linkedinUrl: profile?.linkedinUrl || "",
+        professionalLinks: Array.isArray(profile?.professionalLinks) ? profile.professionalLinks : [],
+        expertiseFreeText: profile?.expertiseFreeText || "",
+        photoUrl: profile?.photoUrl || null,
+        directoryDetails: profile?.directoryDetails || normalizeMemberDirectoryDetails(null),
+        galleryItems: Array.isArray(profile?.galleryItems) ? profile.galleryItems : [],
+        contactPreferences: profile?.contactPreferences || normalizeMemberContactPreferences(null),
+        updatedAt: profile?.updatedAt || null
+      };
+    })
+    .filter((item) => {
+      if (!term) {
+        return true;
+      }
+      const detail = item.directoryDetails || {};
+      const haystack = [
+        item.fullName,
+        item.username,
+        item.organisation,
+        item.businessTitle,
+        item.iwfsaPosition,
+        item.expertiseFreeText,
+        detail.profileHeadline,
+        detail.industrySector,
+        detail.city,
+        detail.province,
+        detail.country,
+        detail.mentorshipRole,
+        detail.boardStatus,
+        detail.featuredQuote,
+        detail.contributionsToWomenLeadership,
+        ...(Array.isArray(detail.expertiseTags) ? detail.expertiseTags : []),
+        ...(Array.isArray(detail.committeeInvolvement) ? detail.committeeInvolvement : []),
+        ...(Array.isArray(detail.leadershipProgrammeInvolvement) ? detail.leadershipProgrammeInvolvement : []),
+        ...(Array.isArray(item.groups) ? item.groups : [])
+      ]
+        .map((value) => String(value || "").toLowerCase())
+        .join(" ");
+      return haystack.includes(term);
+    })
+    .sort((left, right) => String(left.fullName || left.username).localeCompare(String(right.fullName || right.username)));
+}
+
 function loadAdminMemberDetail(database, userId) {
   const parsedUserId = Number(userId || 0);
   if (!Number.isInteger(parsedUserId) || parsedUserId <= 0) {
@@ -3645,6 +3759,174 @@ function normalizeOptionalHttpUrl(value, fieldName) {
   return parsed.toString();
 }
 
+function coercePublicSiteHeroFocalPoint(value, fallback = "top") {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) {
+    return fallback;
+  }
+  return PUBLIC_SITE_HERO_FOCAL_POINTS.has(normalized) ? normalized : fallback;
+}
+
+function normalizePublicSiteHeroFocalPoint(value, fallback = "top") {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) {
+    return fallback;
+  }
+  if (!PUBLIC_SITE_HERO_FOCAL_POINTS.has(normalized)) {
+    const error = new Error("focalPoint must be top, center, bottom, left, or right.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  return normalized;
+}
+
+function normalizePublicSiteHeroAltText(value) {
+  const altText = toNullableTrimmedString(value, { maxLength: 280 });
+  if (!altText) {
+    const error = new Error("altText is required for the public page image.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  return altText;
+}
+
+function loadSiteSetting(database, settingKey) {
+  return database
+    .prepare(
+      `
+      SELECT setting_key AS settingKey,
+             value_json AS valueJson,
+             file_blob AS fileBlob,
+             file_mime_type AS fileMimeType,
+             file_name AS fileName,
+             updated_by_user_id AS updatedByUserId,
+             created_at AS createdAt,
+             updated_at AS updatedAt
+      FROM site_settings
+      WHERE setting_key = ?
+      LIMIT 1
+    `
+    )
+    .get(settingKey);
+}
+
+function upsertSiteSetting(
+  database,
+  settingKey,
+  value,
+  { fileBlob = null, fileMimeType = null, fileName = null, actorUserId = null } = {}
+) {
+  database
+    .prepare(
+      `
+      INSERT INTO site_settings (
+        setting_key,
+        value_json,
+        file_blob,
+        file_mime_type,
+        file_name,
+        updated_by_user_id,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ON CONFLICT(setting_key) DO UPDATE SET
+        value_json = excluded.value_json,
+        file_blob = excluded.file_blob,
+        file_mime_type = excluded.file_mime_type,
+        file_name = excluded.file_name,
+        updated_by_user_id = excluded.updated_by_user_id,
+        updated_at = CURRENT_TIMESTAMP
+    `
+    )
+    .run(
+      settingKey,
+      JSON.stringify(value || {}),
+      fileBlob,
+      fileMimeType,
+      fileName,
+      actorUserId
+    );
+}
+
+function deleteSiteSetting(database, settingKey) {
+  database.prepare("DELETE FROM site_settings WHERE setting_key = ?").run(settingKey);
+}
+
+function buildPublicSiteAssetBaseUrl(requestUrl) {
+  return `${requestUrl.protocol}//${requestUrl.host}`;
+}
+
+function getPublicSiteHeroSetting(database, requestUrl) {
+  const row = loadSiteSetting(database, SITE_SETTING_PUBLIC_HOME_HERO);
+  const value = parseJsonObject(row?.valueJson) || {};
+  const sourceType = String(value.sourceType || "").trim().toLowerCase();
+  const focalPoint = coercePublicSiteHeroFocalPoint(value.focalPoint, "top");
+  const altText = toNullableTrimmedString(value.altText, { maxLength: 280 }) || DEFAULT_PUBLIC_SITE_HERO_ALT_TEXT;
+  let imageUrl = null;
+  let effectiveSourceType = "default";
+
+  if (sourceType === "external") {
+    const externalUrl = toNullableTrimmedString(value.imageUrl, { maxLength: 2048 });
+    if (externalUrl) {
+      imageUrl = externalUrl;
+      effectiveSourceType = "external";
+    }
+  } else if (sourceType === "upload" && row?.fileBlob && row?.fileMimeType) {
+    imageUrl = `${buildPublicSiteAssetBaseUrl(requestUrl)}/api/public/site-settings/public-hero/image?v=${encodeURIComponent(
+      String(row.updatedAt || "")
+    )}`;
+    effectiveSourceType = "upload";
+  }
+
+  return {
+    sourceType: effectiveSourceType,
+    imageUrl,
+    altText,
+    focalPoint,
+    focalPointCss: PUBLIC_SITE_HERO_FOCAL_POINTS.get(focalPoint) || PUBLIC_SITE_HERO_FOCAL_POINTS.get("top"),
+    updatedAt: row?.updatedAt || null,
+    originalFileName: row?.fileName || null,
+    hasCustomImage: Boolean(imageUrl),
+    usesDefaultImage: !imageUrl
+  };
+}
+
+function normalizePublicSiteHeroExternalPayload(payload) {
+  const imageUrl = normalizeOptionalHttpUrl(payload?.imageUrl, "imageUrl");
+  if (!imageUrl) {
+    const error = new Error("imageUrl is required.");
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+
+  return {
+    sourceType: "external",
+    imageUrl,
+    altText: normalizePublicSiteHeroAltText(payload?.altText),
+    focalPoint: normalizePublicSiteHeroFocalPoint(payload?.focalPoint, "top")
+  };
+}
+
+function toOptionalBoolean(value, fallback = false) {
+  if (value === undefined || value === null || value === "") {
+    return Boolean(fallback);
+  }
+  if (typeof value === "boolean") {
+    return value;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  if (["true", "1", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["false", "0", "no", "off"].includes(normalized)) {
+    return false;
+  }
+  return Boolean(fallback);
+}
+
 function parseJsonObject(value) {
   if (!value) {
     return null;
@@ -3673,6 +3955,163 @@ function parseJsonArray(value) {
   } catch {
     return [];
   }
+}
+
+function normalizeStringList(value, { maxItems = 8, maxLength = 160, fieldName = "list" } = {}) {
+  const source = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value
+          .split(/\r?\n|,/)
+          .map((item) => item.trim())
+          .filter(Boolean)
+      : [];
+  const normalized = [];
+  for (const item of source) {
+    const trimmed = toNullableTrimmedString(item, { maxLength });
+    if (!trimmed) {
+      continue;
+    }
+    normalized.push(trimmed);
+    if (normalized.length >= maxItems) {
+      break;
+    }
+  }
+  if (normalized.length > maxItems) {
+    const error = new Error(`${fieldName} supports at most ${maxItems} entries.`);
+    error.httpStatus = 400;
+    error.code = "validation_error";
+    throw error;
+  }
+  return normalized;
+}
+
+function normalizeMemberDirectoryDetails(value, fallback = null) {
+  const fallbackSource = parseJsonObject(fallback) || fallback || {};
+  const candidate =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? value
+      : typeof value === "string"
+        ? parseJsonObject(value)
+        : fallbackSource;
+  const normalized = {};
+
+  for (const [fieldName, maxLength] of Object.entries(MEMBER_PROFILE_DIRECTORY_DETAIL_TEXT_FIELDS)) {
+    if (fieldName === "website" || fieldName === "coverPhotoUrl") {
+      normalized[fieldName] = normalizeOptionalHttpUrl(candidate?.[fieldName], fieldName);
+      continue;
+    }
+    normalized[fieldName] = toNullableTrimmedString(candidate?.[fieldName], { maxLength }) || "";
+  }
+
+  for (const [fieldName, config] of Object.entries(MEMBER_PROFILE_DIRECTORY_DETAIL_LIST_FIELDS)) {
+    normalized[fieldName] = normalizeStringList(candidate?.[fieldName], { ...config, fieldName });
+  }
+
+  return normalized;
+}
+
+function normalizeMemberGalleryItems(value, fallback = []) {
+  const source = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? parseJsonArray(value)
+      : Array.isArray(fallback)
+        ? fallback
+        : [];
+  const normalized = [];
+  for (const item of source.slice(0, 12)) {
+    const imageUrl = normalizeOptionalHttpUrl(item?.imageUrl, "galleryItems.imageUrl");
+    if (!imageUrl) {
+      continue;
+    }
+    const mediaType = String(item?.mediaType || "image").trim().toLowerCase();
+    if (!MEMBER_PROFILE_MEDIA_TYPES.has(mediaType)) {
+      continue;
+    }
+    const sourceType = String(item?.sourceType || "approved_url").trim().toLowerCase();
+    normalized.push({
+      id: toNullableTrimmedString(item?.id, { maxLength: 80 }) || `gallery-${normalized.length + 1}`,
+      mediaType,
+      imageUrl,
+      thumbnailUrl: normalizeOptionalHttpUrl(item?.thumbnailUrl, "galleryItems.thumbnailUrl"),
+      sourceType: MEMBER_PROFILE_MEDIA_SOURCE_TYPES.has(sourceType) ? sourceType : "approved_url",
+      sourceLabel: toNullableTrimmedString(item?.sourceLabel, { maxLength: 80 }) || "",
+      caption: toNullableTrimmedString(item?.caption, { maxLength: 220 }) || "",
+      credit: toNullableTrimmedString(item?.credit, { maxLength: 160 }) || "",
+      visibility: normalizeProfileVisibilityValue(item?.visibility, "members_only"),
+      approved: toOptionalBoolean(item?.approved, false),
+      createdBy: toNullableTrimmedString(item?.createdBy, { maxLength: 80 }) || "",
+      createdAt: toNullableTrimmedString(item?.createdAt, { maxLength: 64 }) || new Date().toISOString()
+    });
+  }
+  return normalized;
+}
+
+function memberGalleryApprovalFingerprint(item) {
+  return JSON.stringify({
+    imageUrl: String(item?.imageUrl || ""),
+    thumbnailUrl: String(item?.thumbnailUrl || ""),
+    sourceLabel: String(item?.sourceLabel || ""),
+    caption: String(item?.caption || ""),
+    credit: String(item?.credit || ""),
+    visibility: String(item?.visibility || "members_only")
+  });
+}
+
+function reconcileMemberGalleryApproval(nextItems, previousItems = [], { canApprove = false } = {}) {
+  const normalizedNext = normalizeMemberGalleryItems(nextItems, nextItems);
+  if (canApprove) {
+    return normalizedNext;
+  }
+  const previousByUrl = new Map(
+    normalizeMemberGalleryItems(previousItems, previousItems).map((item) => [String(item.imageUrl || ""), item])
+  );
+  return normalizedNext.map((item) => {
+    const previous = previousByUrl.get(String(item.imageUrl || ""));
+    const isUnchanged =
+      previous && memberGalleryApprovalFingerprint(previous) === memberGalleryApprovalFingerprint(item);
+    return {
+      ...item,
+      approved: Boolean(previous?.approved) && Boolean(isUnchanged)
+    };
+  });
+}
+
+function listPendingMemberGalleryItems(items) {
+  return normalizeMemberGalleryItems(items, items).filter((item) => item.approved === false);
+}
+
+function listApprovedMemberGalleryItems(items) {
+  return normalizeMemberGalleryItems(items, items).filter((item) => item.approved !== false);
+}
+
+function applyMemberGalleryReviewDecision(items, decision) {
+  const normalized = normalizeMemberGalleryItems(items, items);
+  if (decision !== "approved") {
+    return normalized;
+  }
+  return normalized.map((item) => ({ ...item, approved: true }));
+}
+
+function normalizeMemberContactPreferences(value, fallback = null) {
+  const fallbackSource = parseJsonObject(fallback) || fallback || {};
+  const candidate =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? value
+      : typeof value === "string"
+        ? parseJsonObject(value)
+        : fallbackSource;
+  return {
+    showEmail: toOptionalBoolean(candidate?.showEmail, false),
+    showPhone: toOptionalBoolean(candidate?.showPhone, false),
+    showLocation: toOptionalBoolean(candidate?.showLocation, true),
+    showLinkedIn: toOptionalBoolean(candidate?.showLinkedIn, true),
+    showGallery: toOptionalBoolean(candidate?.showGallery, true),
+    showProfessionalHighlights: toOptionalBoolean(candidate?.showProfessionalHighlights, true),
+    publicProfileEnabled: toOptionalBoolean(candidate?.publicProfileEnabled, true),
+    externalViewerEnabled: toOptionalBoolean(candidate?.externalViewerEnabled, false)
+  };
 }
 
 function normalizeMemberProfileVisibility(value, fallback) {
@@ -3741,6 +4180,20 @@ function collectSubmittedProfileVisibilityFields(visibility, profileSnapshot = n
     (fieldName) =>
       normalized.fields[fieldName] === "submitted_for_public_review" && hasProfileSnapshotValue(profileSnapshot, fieldName)
   );
+}
+
+function collectMemberProfileReviewFields(visibility, profileSnapshot = null, explicitVisibility = null, extraFields = []) {
+  const requestedFieldKeys = collectSubmittedProfileVisibilityFields(visibility, profileSnapshot, explicitVisibility);
+  for (const fieldName of extraFields) {
+    const normalizedFieldName = String(fieldName || "").trim();
+    if (
+      MEMBER_PROFILE_REVIEW_REQUEST_FIELDS.includes(normalizedFieldName) &&
+      !requestedFieldKeys.includes(normalizedFieldName)
+    ) {
+      requestedFieldKeys.push(normalizedFieldName);
+    }
+  }
+  return requestedFieldKeys;
 }
 
 function coerceMemberEditableProfileVisibility(nextVisibility, currentVisibility, canApprovePublicVisibility = false) {
@@ -3887,7 +4340,7 @@ function toPublicProfileReviewSubmissionResponse(submissionRow) {
   const profileSnapshot = parseJsonObject(submissionRow?.profileSnapshotJson) || null;
   const requestedFieldKeys = parseJsonArray(submissionRow?.requestedFieldKeysJson)
     .map((fieldName) => String(fieldName || "").trim())
-    .filter((fieldName) => MEMBER_PROFILE_VISIBILITY_FIELDS.includes(fieldName));
+    .filter((fieldName) => MEMBER_PROFILE_REVIEW_REQUEST_FIELDS.includes(fieldName));
   return {
     id: Number(submissionRow?.id || 0),
     userId: Number(submissionRow?.userId || 0),
@@ -3940,8 +4393,16 @@ function listPublicProfileReviewSubmissions(database, { status = "pending", limi
     .map((row) => toPublicProfileReviewSubmissionResponse(row));
 }
 
-function upsertPublicProfileReviewSubmission(database, { userId, requestedVisibility, profileSnapshot, explicitVisibility = null }) {
-  const requestedFieldKeys = collectSubmittedProfileVisibilityFields(requestedVisibility, profileSnapshot, explicitVisibility);
+function upsertPublicProfileReviewSubmission(
+  database,
+  { userId, requestedVisibility, profileSnapshot, explicitVisibility = null, extraRequestedFieldKeys = [] }
+) {
+  const requestedFieldKeys = collectMemberProfileReviewFields(
+    requestedVisibility,
+    profileSnapshot,
+    explicitVisibility,
+    extraRequestedFieldKeys
+  );
   if (requestedFieldKeys.length === 0) {
     database
       .prepare(
@@ -4243,6 +4704,9 @@ function loadMemberProfile(database, userId) {
         member_profiles.profile_visibility_json AS profileVisibilityJson,
         member_profiles.profile_confirmed_at AS profileConfirmedAt,
         member_profiles.photo_url AS photoUrl,
+        member_profiles.directory_details_json AS directoryDetailsJson,
+        member_profiles.gallery_items_json AS galleryItemsJson,
+        member_profiles.contact_preferences_json AS contactPreferencesJson,
         member_profiles.birthday_month AS birthdayMonth,
         member_profiles.birthday_day AS birthdayDay,
         member_profiles.birthday_visibility AS birthdayVisibility,
@@ -4274,6 +4738,9 @@ function toMemberProfileResponse(profileRow) {
     linkedinUrl: String(profileRow?.linkedinUrl || ""),
     professionalLinks: normalizeProfessionalLinks(profileRow?.professionalLinksJson),
     expertiseFreeText: String(profileRow?.expertiseFreeText || ""),
+    directoryDetails: normalizeMemberDirectoryDetails(profileRow?.directoryDetailsJson),
+    galleryItems: normalizeMemberGalleryItems(profileRow?.galleryItemsJson),
+    contactPreferences: normalizeMemberContactPreferences(profileRow?.contactPreferencesJson),
     profileVisibility,
     profileConfirmedAt: profileRow?.profileConfirmedAt || null,
     photoUrl: profileRow?.photoUrl || null,
@@ -4281,6 +4748,29 @@ function toMemberProfileResponse(profileRow) {
     birthdayDay: Number.isInteger(Number(profileRow?.birthdayDay)) ? Number(profileRow.birthdayDay) : null,
     birthdayVisibility: String(profileRow?.birthdayVisibility || "hidden"),
     updatedAt: profileRow?.profileUpdatedAt || null
+  };
+}
+
+function toMemberBrowseProfileResponse(profileRow) {
+  const profile = toMemberProfileResponse(profileRow);
+  return {
+    userId: profile.userId,
+    username: profile.username,
+    fullName: profile.fullName,
+    company: profile.company,
+    phone: profile.phone,
+    businessTitle: profile.businessTitle,
+    iwfsaPosition: profile.iwfsaPosition,
+    bio: profile.bio,
+    linkedinUrl: profile.linkedinUrl,
+    professionalLinks: Array.isArray(profile.professionalLinks) ? profile.professionalLinks : [],
+    expertiseFreeText: profile.expertiseFreeText,
+    photoUrl: profile.photoUrl,
+    directoryDetails: profile.directoryDetails,
+    galleryItems: listApprovedMemberGalleryItems(profile.galleryItems),
+    contactPreferences: profile.contactPreferences,
+    profileVisibility: profile.profileVisibility,
+    updatedAt: profile.updatedAt
   };
 }
 
@@ -4299,6 +4789,9 @@ function upsertMemberProfile(database, userId, profile) {
         linkedin_url,
         professional_links_json,
         expertise_free_text,
+        directory_details_json,
+        gallery_items_json,
+        contact_preferences_json,
         profile_visibility_json,
         profile_confirmed_at,
         photo_url,
@@ -4309,7 +4802,7 @@ function upsertMemberProfile(database, userId, profile) {
         created_at,
         updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       ON CONFLICT(user_id) DO UPDATE SET
         full_name = excluded.full_name,
         company = excluded.company,
@@ -4320,6 +4813,9 @@ function upsertMemberProfile(database, userId, profile) {
         linkedin_url = excluded.linkedin_url,
         professional_links_json = excluded.professional_links_json,
         expertise_free_text = excluded.expertise_free_text,
+        directory_details_json = excluded.directory_details_json,
+        gallery_items_json = excluded.gallery_items_json,
+        contact_preferences_json = excluded.contact_preferences_json,
         profile_visibility_json = excluded.profile_visibility_json,
         profile_confirmed_at = excluded.profile_confirmed_at,
         photo_url = excluded.photo_url,
@@ -4341,6 +4837,9 @@ function upsertMemberProfile(database, userId, profile) {
       profile.linkedinUrl,
       profile.professionalLinksJson,
       profile.expertiseFreeText,
+      profile.directoryDetailsJson,
+      profile.galleryItemsJson,
+      profile.contactPreferencesJson,
       profile.profileVisibilityJson,
       profile.profileConfirmedAt,
       profile.photoUrl,
@@ -4582,8 +5081,9 @@ function listMemberBirthdayHighlights(database, { windowDays = 30, limit = 5 } =
     daysUntil: Number(item.daysUntil || 0)
   }));
 }
-function ensureSeedMembers(database) {
+function ensureSeedMembers(database, { appBaseUrl = "http://127.0.0.1:3000" } = {}) {
   const seedPassword = "IwfsaTest2026!";
+  const assetBaseUrl = String(appBaseUrl || "http://127.0.0.1:3000").replace(/\/+$/, "");
   const seedMembers = [
     {
       username: "nomsa",
@@ -4592,7 +5092,21 @@ function ensureSeedMembers(database) {
       company: "Ubuntu Ventures",
       phone: "+27821234567",
       roles: ["Full Member"],
-      groups: ["Member Affairs"]
+      groups: ["Member Affairs"],
+      photoUrl: `${assetBaseUrl}/assets/member-portrait-nomsa.svg`,
+      businessTitle: "IWFSA Member",
+      expertiseFreeText: "Member affairs, forum stewardship, community operations",
+      directoryDetails: {
+        profileHeadline: "Community-first convener for member experience and operational continuity.",
+        bioShort: "Nomsa helps the forum feel personal, coordinated, and member-led across every touchpoint.",
+        bioLong: "Nomsa Dlamini leads relationship continuity across member operations, guiding onboarding, member support, and the small details that turn a directory into a community.",
+        industrySector: "Member Experience",
+        city: "Johannesburg",
+        country: "South Africa",
+        mentorshipRole: "Member guide",
+        achievements: ["Designed the member support playbook", "Coordinates member experience reviews"],
+        expertiseTags: ["Member care", "Operations", "Community building"]
+      }
     },
     {
       username: "thandi",
@@ -4610,7 +5124,20 @@ function ensureSeedMembers(database) {
       company: "Grove Holdings",
       phone: "+27831234567",
       roles: ["Board Member"],
-      groups: ["Board of Directors"]
+      groups: ["Board of Directors"],
+      photoUrl: `${assetBaseUrl}/assets/member-portrait-zara.svg`,
+      businessTitle: "Board Director",
+      directoryDetails: {
+        profileHeadline: "Board-level strategist focused on responsible growth and governance.",
+        bioShort: "Zara brings financial stewardship and decisive governance thinking to growth-stage leadership.",
+        bioLong: "Zara Patel works across governance, risk, and growth strategy with a practical lens on scaling organisations while keeping values visible in decision-making.",
+        industrySector: "Investment & Governance",
+        city: "Cape Town",
+        country: "South Africa",
+        boardStatus: "Board Director",
+        achievements: ["Chairs investment governance reviews", "Sponsors founder-mentoring cohorts"],
+        expertiseTags: ["Governance", "Capital strategy", "Board leadership"]
+      }
     },
     {
       username: "lerato",
@@ -4619,7 +5146,20 @@ function ensureSeedMembers(database) {
       company: "Maseko & Co.",
       phone: "+27841234567",
       roles: ["Full Member"],
-      groups: ["Advocacy and Voice"]
+      groups: ["Advocacy and Voice"],
+      photoUrl: `${assetBaseUrl}/assets/member-portrait-lerato.svg`,
+      businessTitle: "Advocacy Lead",
+      directoryDetails: {
+        profileHeadline: "Public voice strategist building visibility for women-led leadership.",
+        bioShort: "Lerato turns policy, advocacy, and visibility into practical momentum for women in leadership.",
+        bioLong: "Lerato Maseko works at the intersection of narrative strategy, public advocacy, and coalition building, helping leadership voices land with clarity and dignity.",
+        industrySector: "Advocacy",
+        city: "Pretoria",
+        country: "South Africa",
+        mentorshipRole: "Advocacy coach",
+        achievements: ["Leads policy-position workshops", "Supports member media preparation"],
+        expertiseTags: ["Public voice", "Advocacy", "Narrative strategy"]
+      }
     },
     {
       username: "naledi",
@@ -4638,6 +5178,85 @@ function ensureSeedMembers(database) {
       phone: "+27861234567",
       roles: ["Full Member"],
       groups: ["Catalytic Strategy"]
+    },
+    {
+      username: "ayanda",
+      email: "ayanda.mbeki@example.com",
+      fullName: "Ayanda Mbeki",
+      company: "North Star Advisory",
+      phone: "+27871234567",
+      roles: ["Full Member"],
+      groups: ["Leadership Development Committee"],
+      photoUrl: `${assetBaseUrl}/assets/member-portrait-ayanda.svg`,
+      businessTitle: "Founder and Leadership Architect",
+      iwfsaPosition: "Leadership Development Committee",
+      bio: "Ayanda advises executive teams on leadership transitions, culture, and high-trust growth.",
+      linkedinUrl: "https://www.linkedin.com/in/ayanda-mbeki",
+      professionalLinks: [
+        { label: "Studio Journal", url: "https://example.com/ayanda-journal" }
+      ],
+      expertiseFreeText: "Leadership transitions, organisational culture, executive facilitation, keynote speaking",
+      directoryDetails: {
+        profileHeadline: "Founder shaping resilient leadership cultures across boardrooms and founder-led businesses.",
+        bioShort: "Ayanda brings a warm but rigorous lens to transitions, strategy, and executive confidence.",
+        bioLong: "Ayanda Mbeki is a founder, strategist, and facilitator who helps leadership teams move through inflection points with clarity, composure, and a strong people-first operating rhythm. Her work spans board alignment, founder succession, leadership development, and strategic storytelling.",
+        currentRoleTitle: "Founder and Leadership Architect",
+        currentOrganisation: "North Star Advisory",
+        industrySector: "Leadership Advisory",
+        mentorshipRole: "Executive mentor",
+        boardStatus: "Advisory board member",
+        featuredQuote: "The strongest leadership rooms make space for candour, care, and consequence in the same conversation.",
+        contributionsToWomenLeadership: "Designs executive circles for women stepping into larger mandates and supports peer mentoring across sectors.",
+        city: "Johannesburg",
+        country: "South Africa",
+        website: "https://example.com/ayanda",
+        coverPhotoUrl: `${assetBaseUrl}/assets/member-gallery-ayanda-1.svg`,
+        previousKeyRoles: ["Chief strategy officer", "Founder coach", "Board facilitator"],
+        boardRoles: ["Advisory board member", "Nominations committee chair"],
+        achievements: ["Led 40+ executive transition labs", "Built a founder succession playbook used across three sectors", "Hosts a quarterly women-in-leadership salon"],
+        expertiseTags: ["Leadership transitions", "Culture design", "Executive facilitation", "Board alignment"],
+        speakingTopics: ["Women in executive transition", "Culture as operating system", "Strategic leadership rituals"],
+        committeeInvolvement: ["Leadership Development Committee"],
+        leadershipProgrammeInvolvement: ["Executive circles", "Founder mentoring"]
+      },
+      galleryItems: [
+        {
+          id: "ayanda-portrait-1",
+          mediaType: "image",
+          imageUrl: `${assetBaseUrl}/assets/member-gallery-ayanda-1.svg`,
+          thumbnailUrl: `${assetBaseUrl}/assets/member-gallery-ayanda-1.svg`,
+          sourceType: "approved_url",
+          sourceLabel: "Leadership studio",
+          caption: "Ayanda facilitating a strategy retreat session.",
+          credit: "IWFSA mock preview",
+          visibility: "members_only",
+          approved: true,
+          createdBy: "system-seed"
+        },
+        {
+          id: "ayanda-portrait-2",
+          mediaType: "image",
+          imageUrl: `${assetBaseUrl}/assets/member-gallery-ayanda-2.svg`,
+          thumbnailUrl: `${assetBaseUrl}/assets/member-gallery-ayanda-2.svg`,
+          sourceType: "approved_url",
+          sourceLabel: "Executive salon",
+          caption: "Ayanda hosting a women-in-leadership salon.",
+          credit: "IWFSA mock preview",
+          visibility: "members_only",
+          approved: true,
+          createdBy: "system-seed"
+        }
+      ],
+      contactPreferences: {
+        showEmail: true,
+        showPhone: true,
+        showLocation: true,
+        showLinkedIn: true,
+        showGallery: true,
+        showProfessionalHighlights: true,
+        publicProfileEnabled: true,
+        externalViewerEnabled: false
+      }
     }
   ];
   const seedUsernames = seedMembers.map((member) => member.username);
@@ -4753,6 +5372,28 @@ function ensureSeedMembers(database) {
         .map((name) => roleMap.get(name))
         .filter((id) => Number.isInteger(id));
       setRoleAssignments(database, userId, roleIds);
+
+      upsertMemberProfile(database, userId, {
+        fullName: String(seed.fullName || ""),
+        company: String(seed.company || ""),
+        phone: String(seed.phone || ""),
+        businessTitle: String(seed.businessTitle || ""),
+        iwfsaPosition: String(seed.iwfsaPosition || ""),
+        bio: String(seed.bio || ""),
+        linkedinUrl: String(seed.linkedinUrl || ""),
+        professionalLinksJson: JSON.stringify(seed.professionalLinks || []),
+        expertiseFreeText: String(seed.expertiseFreeText || ""),
+        directoryDetailsJson: JSON.stringify(normalizeMemberDirectoryDetails(seed.directoryDetails || {})),
+        galleryItemsJson: JSON.stringify(normalizeMemberGalleryItems(seed.galleryItems || [])),
+        contactPreferencesJson: JSON.stringify(normalizeMemberContactPreferences(seed.contactPreferences || {})),
+        profileVisibilityJson: JSON.stringify({ profile: "members_only", links: "members_only", fields: {} }),
+        profileConfirmedAt: new Date().toISOString(),
+        photoUrl: String(seed.photoUrl || "") || null,
+        birthdayMonth: null,
+        birthdayDay: null,
+        birthdayVisibility: "hidden",
+        birthdayConsentConfirmedAt: null
+      });
     }
   });
 
@@ -8076,7 +8717,7 @@ export async function startApiServer(config) {
   try {
     ensureBootstrapAdmin(database);
     if (seedMembersEnabled) {
-      ensureSeedMembers(database);
+      ensureSeedMembers(database, { appBaseUrl: config.appBaseUrl });
     }
   } catch (error) {
     console.error(
@@ -8253,6 +8894,24 @@ export async function startApiServer(config) {
           payload.expertiseFreeText !== undefined
             ? toNullableTrimmedString(payload.expertiseFreeText, { maxLength: 300 })
             : toNullableTrimmedString(current.expertiseFreeText, { maxLength: 300 });
+        const directoryDetails =
+          payload.directoryDetails !== undefined
+            ? normalizeMemberDirectoryDetails(payload.directoryDetails, current.directoryDetails)
+            : normalizeMemberDirectoryDetails(current.directoryDetails, current.directoryDetails);
+        const galleryItems =
+          payload.galleryItems !== undefined
+            ? reconcileMemberGalleryApproval(payload.galleryItems, current.galleryItems, {
+                canApprove: isAdminRole(auth.user.role)
+              })
+            : normalizeMemberGalleryItems(current.galleryItems, current.galleryItems);
+        const contactPreferences =
+          payload.contactPreferences !== undefined
+            ? normalizeMemberContactPreferences(payload.contactPreferences, current.contactPreferences)
+            : normalizeMemberContactPreferences(current.contactPreferences, current.contactPreferences);
+        const photoUrl =
+          payload.photoUrl !== undefined
+            ? normalizeOptionalHttpUrl(payload.photoUrl, "photoUrl")
+            : normalizeOptionalHttpUrl(current.photoUrl, "photoUrl");
         const professionalLinks =
           payload.professionalLinks !== undefined
             ? normalizeProfessionalLinks(payload.professionalLinks, current.professionalLinks)
@@ -8323,9 +8982,12 @@ export async function startApiServer(config) {
           linkedinUrl,
           professionalLinksJson: JSON.stringify(professionalLinks),
           expertiseFreeText,
+          directoryDetailsJson: JSON.stringify(directoryDetails),
+          galleryItemsJson: JSON.stringify(galleryItems),
+          contactPreferencesJson: JSON.stringify(contactPreferences),
           profileVisibilityJson: JSON.stringify(profileVisibility),
           profileConfirmedAt: current.profileConfirmedAt || new Date().toISOString(),
-          photoUrl: current.photoUrl,
+          photoUrl,
           birthdayMonth,
           birthdayDay,
           birthdayVisibility,
@@ -8343,16 +9005,19 @@ export async function startApiServer(config) {
           linkedinUrl,
           professionalLinks,
           expertiseFreeText,
-          photoUrl: current.photoUrl,
+          photoUrl,
+          galleryItems,
           birthdayMonth,
           birthdayDay,
           birthdayVisibility
         };
+        const pendingGalleryItems = listPendingMemberGalleryItems(galleryItems);
         const submission = upsertPublicProfileReviewSubmission(database, {
           userId: auth.user.id,
           requestedVisibility: profileVisibility,
           profileSnapshot,
-          explicitVisibility: payload.profileVisibility
+          explicitVisibility: payload.profileVisibility,
+          extraRequestedFieldKeys: pendingGalleryItems.length > 0 ? ["galleryItems"] : []
         });
 
         database
@@ -8371,11 +9036,14 @@ export async function startApiServer(config) {
               hasPhone: Boolean(phone),
               hasBusinessTitle: Boolean(businessTitle),
               hasIwfsaPosition: Boolean(iwfsaPosition),
-              hasBio: Boolean(bio),
-              hasLinkedinUrl: Boolean(linkedinUrl),
-              professionalLinksCount: professionalLinks.length,
-              profileVisibility,
-              publicReviewSubmissionStatus: submission?.status || null,
+          hasBio: Boolean(bio),
+          hasLinkedinUrl: Boolean(linkedinUrl),
+          hasPhotoUrl: Boolean(photoUrl),
+          hasProfileHeadline: Boolean(directoryDetails.profileHeadline),
+          galleryItemCount: galleryItems.length,
+          professionalLinksCount: professionalLinks.length,
+          profileVisibility,
+          publicReviewSubmissionStatus: submission?.status || null,
               birthdayMonth,
               birthdayDay,
               birthdayVisibility
@@ -8417,6 +9085,179 @@ export async function startApiServer(config) {
           corsHeaders
         );
       }
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/public/site-settings/public-hero") {
+      const item = getPublicSiteHeroSetting(database, requestUrl);
+      writeJson(response, 200, { item }, corsHeaders);
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/public/site-settings/public-hero/image") {
+      const row = loadSiteSetting(database, SITE_SETTING_PUBLIC_HOME_HERO);
+      const value = parseJsonObject(row?.valueJson) || {};
+      if (
+        !row ||
+        String(value.sourceType || "").trim().toLowerCase() !== "upload" ||
+        !row.fileBlob ||
+        !row.fileMimeType
+      ) {
+        writeJson(response, 404, { error: "not_found", message: "Public hero image not found." }, corsHeaders);
+        return;
+      }
+
+      response.writeHead(200, {
+        "Content-Type": String(row.fileMimeType),
+        "Cache-Control": "public, max-age=3600"
+      });
+      response.end(Buffer.isBuffer(row.fileBlob) ? row.fileBlob : Buffer.from(row.fileBlob));
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/admin/site-settings/public-hero") {
+      const auth = requireAuth(database, request, response, corsHeaders);
+      if (!auth) {
+        return;
+      }
+      if (!requireRole(auth.user, ADMIN_ROLES, response, corsHeaders)) {
+        return;
+      }
+
+      const item = getPublicSiteHeroSetting(database, requestUrl);
+      writeJson(response, 200, { item }, corsHeaders);
+      return;
+    }
+
+    if (request.method === "PUT" && requestUrl.pathname === "/api/admin/site-settings/public-hero") {
+      try {
+        const auth = requireAuth(database, request, response, corsHeaders);
+        if (!auth) {
+          return;
+        }
+        if (!requireRole(auth.user, ADMIN_ROLES, response, corsHeaders)) {
+          return;
+        }
+
+        const value = normalizePublicSiteHeroExternalPayload(await readJsonBody(request));
+        upsertSiteSetting(database, SITE_SETTING_PUBLIC_HOME_HERO, value, { actorUserId: auth.user.id });
+        database
+          .prepare(
+            `
+            INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+            VALUES (?, 'public_site_hero_updated', 'site_setting', ?, ?)
+          `
+          )
+          .run(auth.user.id, SITE_SETTING_PUBLIC_HOME_HERO, JSON.stringify({ sourceType: "external", focalPoint: value.focalPoint }));
+        writeJson(response, 200, { updated: true, item: getPublicSiteHeroSetting(database, requestUrl) }, corsHeaders);
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 400),
+          { error: error.code || "invalid_json", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/admin/site-settings/public-hero/upload") {
+      const auth = requireAuth(database, request, response, corsHeaders);
+      if (!auth) {
+        return;
+      }
+      if (!requireRole(auth.user, ADMIN_ROLES, response, corsHeaders)) {
+        return;
+      }
+
+      let formData;
+      try {
+        formData = await readMultipartForm(request, { maxFileSizeBytes: PUBLIC_SITE_HERO_MAX_FILE_SIZE_BYTES });
+      } catch (error) {
+        if (String(error.message || error) === "file_too_large") {
+          writeJson(response, 413, { error: "file_too_large", message: "Image exceeds the size limit." }, corsHeaders);
+          return;
+        }
+        writeJson(response, 400, { error: "invalid_form", message: "Unable to parse image upload." }, corsHeaders);
+        return;
+      }
+
+      if (!formData.file?.buffer || formData.file.buffer.length === 0) {
+        writeJson(response, 400, { error: "validation_error", message: "Image file is required." }, corsHeaders);
+        return;
+      }
+
+      const mimeType = String(formData.file.mimeType || "").trim().toLowerCase();
+      if (!PUBLIC_SITE_HERO_MIME_TYPES.has(mimeType)) {
+        writeJson(
+          response,
+          400,
+          { error: "validation_error", message: "Image must be jpeg, png, or webp." },
+          corsHeaders
+        );
+        return;
+      }
+
+      try {
+        const value = {
+          sourceType: "upload",
+          altText: normalizePublicSiteHeroAltText(formData.fields.altText),
+          focalPoint: normalizePublicSiteHeroFocalPoint(formData.fields.focalPoint, "top")
+        };
+        upsertSiteSetting(database, SITE_SETTING_PUBLIC_HOME_HERO, value, {
+          fileBlob: formData.file.buffer,
+          fileMimeType: mimeType,
+          fileName: toNullableTrimmedString(formData.file.filename, { maxLength: 255 }) || "public-hero-image",
+          actorUserId: auth.user.id
+        });
+        database
+          .prepare(
+            `
+            INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+            VALUES (?, 'public_site_hero_uploaded', 'site_setting', ?, ?)
+          `
+          )
+          .run(
+            auth.user.id,
+            SITE_SETTING_PUBLIC_HOME_HERO,
+            JSON.stringify({
+              sourceType: "upload",
+              focalPoint: value.focalPoint,
+              mimeType,
+              size: formData.file.buffer.length
+            })
+          );
+        writeJson(response, 200, { updated: true, item: getPublicSiteHeroSetting(database, requestUrl) }, corsHeaders);
+      } catch (error) {
+        writeJson(
+          response,
+          Number(error.httpStatus || 400),
+          { error: error.code || "validation_error", message: String(error.message || error) },
+          corsHeaders
+        );
+      }
+      return;
+    }
+
+    if (request.method === "DELETE" && requestUrl.pathname === "/api/admin/site-settings/public-hero") {
+      const auth = requireAuth(database, request, response, corsHeaders);
+      if (!auth) {
+        return;
+      }
+      if (!requireRole(auth.user, ADMIN_ROLES, response, corsHeaders)) {
+        return;
+      }
+
+      deleteSiteSetting(database, SITE_SETTING_PUBLIC_HOME_HERO);
+      database
+        .prepare(
+          `
+          INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata_json)
+          VALUES (?, 'public_site_hero_reset', 'site_setting', ?, ?)
+        `
+        )
+        .run(auth.user.id, SITE_SETTING_PUBLIC_HOME_HERO, JSON.stringify({ resetToDefault: true }));
+      writeJson(response, 200, { updated: true, item: getPublicSiteHeroSetting(database, requestUrl) }, corsHeaders);
       return;
     }
 
@@ -8466,6 +9307,12 @@ export async function startApiServer(config) {
           submission.requestedVisibilityJson,
           decision
         );
+        const requestedFieldKeys = parseJsonArray(submission.requestedFieldKeysJson)
+          .map((fieldName) => String(fieldName || "").trim())
+          .filter((fieldName) => MEMBER_PROFILE_REVIEW_REQUEST_FIELDS.includes(fieldName));
+        const nextGalleryItems = requestedFieldKeys.includes("galleryItems")
+          ? applyMemberGalleryReviewDecision(currentProfile.galleryItems, decision)
+          : normalizeMemberGalleryItems(currentProfile.galleryItems, currentProfile.galleryItems);
 
         upsertMemberProfile(database, userId, {
           fullName: currentProfile.fullName || null,
@@ -8477,6 +9324,11 @@ export async function startApiServer(config) {
           linkedinUrl: currentProfile.linkedinUrl || null,
           professionalLinksJson: JSON.stringify(currentProfile.professionalLinks || []),
           expertiseFreeText: currentProfile.expertiseFreeText || null,
+          directoryDetailsJson: JSON.stringify(normalizeMemberDirectoryDetails(currentProfile.directoryDetails, currentProfile.directoryDetails)),
+          galleryItemsJson: JSON.stringify(nextGalleryItems),
+          contactPreferencesJson: JSON.stringify(
+            normalizeMemberContactPreferences(currentProfile.contactPreferences, currentProfile.contactPreferences)
+          ),
           profileVisibilityJson: JSON.stringify(nextVisibility),
           profileConfirmedAt: currentProfile.profileConfirmedAt,
           photoUrl: currentProfile.photoUrl,
@@ -8879,6 +9731,11 @@ export async function startApiServer(config) {
         linkedinUrl: normalizeOptionalHttpUrl(current.linkedinUrl, "linkedinUrl"),
         professionalLinksJson: JSON.stringify(normalizeProfessionalLinks(current.professionalLinks, [])),
         expertiseFreeText: toNullableTrimmedString(current.expertiseFreeText, { maxLength: 300 }),
+        directoryDetailsJson: JSON.stringify(normalizeMemberDirectoryDetails(current.directoryDetails, current.directoryDetails)),
+        galleryItemsJson: JSON.stringify(normalizeMemberGalleryItems(current.galleryItems, current.galleryItems)),
+        contactPreferencesJson: JSON.stringify(
+          normalizeMemberContactPreferences(current.contactPreferences, current.contactPreferences)
+        ),
         profileVisibilityJson: JSON.stringify(normalizeMemberProfileVisibility(current.profileVisibility, current.profileVisibility)),
         profileConfirmedAt: current.profileConfirmedAt,
         photoUrl,
@@ -8930,6 +9787,11 @@ export async function startApiServer(config) {
         linkedinUrl: normalizeOptionalHttpUrl(current.linkedinUrl, "linkedinUrl"),
         professionalLinksJson: JSON.stringify(normalizeProfessionalLinks(current.professionalLinks, [])),
         expertiseFreeText: toNullableTrimmedString(current.expertiseFreeText, { maxLength: 300 }),
+        directoryDetailsJson: JSON.stringify(normalizeMemberDirectoryDetails(current.directoryDetails, current.directoryDetails)),
+        galleryItemsJson: JSON.stringify(normalizeMemberGalleryItems(current.galleryItems, current.galleryItems)),
+        contactPreferencesJson: JSON.stringify(
+          normalizeMemberContactPreferences(current.contactPreferences, current.contactPreferences)
+        ),
         profileVisibilityJson: JSON.stringify(normalizeMemberProfileVisibility(current.profileVisibility, current.profileVisibility)),
         profileConfirmedAt: current.profileConfirmedAt,
         photoUrl: null,
@@ -9055,6 +9917,25 @@ export async function startApiServer(config) {
       const search = requestUrl.searchParams.get("search") || "";
       const limit = Number(requestUrl.searchParams.get("limit") || 80);
       const items = listActiveMemberDirectory(database, { search, limit });
+      writeJson(response, 200, { items }, corsHeaders);
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/member/profiles") {
+      const auth = requireAuth(database, request, response, corsHeaders);
+      if (!auth) {
+        return;
+      }
+      if (!requireRole(auth.user, INTERNAL_PORTAL_ROLES, response, corsHeaders)) {
+        return;
+      }
+      if (!requireActivationClear(auth.user, response, corsHeaders)) {
+        return;
+      }
+
+      const search = requestUrl.searchParams.get("search") || "";
+      const limit = Number(requestUrl.searchParams.get("limit") || 120);
+      const items = listMemberBrowseProfiles(database, { search, limit });
       writeJson(response, 200, { items }, corsHeaders);
       return;
     }
@@ -14230,6 +15111,11 @@ export async function startApiServer(config) {
               linkedinUrl,
               professionalLinksJson: JSON.stringify(current.professionalLinks || []),
               expertiseFreeText,
+              directoryDetailsJson: JSON.stringify(normalizeMemberDirectoryDetails(current.directoryDetails, current.directoryDetails)),
+              galleryItemsJson: JSON.stringify(normalizeMemberGalleryItems(current.galleryItems, current.galleryItems)),
+              contactPreferencesJson: JSON.stringify(
+                normalizeMemberContactPreferences(current.contactPreferences, current.contactPreferences)
+              ),
               profileVisibilityJson: JSON.stringify(current.profileVisibility || { profile: "members_only", links: "members_only" }),
               profileConfirmedAt: current.profileConfirmedAt || new Date().toISOString(),
               photoUrl: current.photoUrl,
@@ -14292,6 +15178,7 @@ export async function startApiServer(config) {
         const payload = await readJsonBody(request);
         const fullName = String(payload.fullName || "").trim();
         const emailRaw = String(payload.email || "").trim();
+        const company = String(payload.company || "").trim().slice(0, 180) || null;
         const requestedGroups = Array.isArray(payload.groups)
           ? payload.groups
           : typeof payload.groups === "string"
@@ -14361,11 +15248,11 @@ export async function startApiServer(config) {
         database
           .prepare(
             `
-            INSERT INTO member_profiles (user_id, full_name, created_at, updated_at)
-            VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            INSERT INTO member_profiles (user_id, full_name, company, created_at, updated_at)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
           `
           )
-          .run(userId, fullName);
+          .run(userId, fullName, company);
 
         if (normalizedGroupNames.length > 0) {
           const groupMap = ensureGroupIds(database, normalizedGroupNames);
@@ -14435,6 +15322,7 @@ export async function startApiServer(config) {
             username,
             email,
             fullName,
+            company,
             groups: normalizedGroupNames,
             inviteQueued: inviteResult.queued.length,
             inviteEmailSent

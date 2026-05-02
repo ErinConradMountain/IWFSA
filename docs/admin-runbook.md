@@ -7,6 +7,7 @@ This runbook describes day-to-day operations for the IWFSA application.
 - **Event Hub**: Use this dashboard to see all upcoming events (published and draft) and access planning tools.
 - **Help Banners**: Most admin screens have a help banner at the top explaining key tasks. You can click the **"X"** to dismiss these instructions. They will stay hidden on your device unless you clear your browser data.
 - **Queue Status**: Check the "Notification Queue Status" card on the main admin dashboard for a quick health check of the email system (`Healthy`, `Degraded`, etc.).
+- **Public Page Hero**: Use the Overview card called **Public Page Hero** to change the homepage lead image. Only Admin and ChiefAdmin can update it.
 
 ## Roles referenced
 - **ChiefAdmin**: platform owner and escalation path (Akeida Bradley)
@@ -118,6 +119,23 @@ Admin may edit or add to the same information when needed.
 3. Compare the submitted public preview against the member-visible profile to confirm nothing private is being exposed.
 4. Approve, reject, request revision, or archive the submission.
 5. Confirm the review action is reflected in the queue and captured in audit history.
+
+## 4) Managing the public homepage hero image
+1. Open Admin → Overview → Public Page Hero.
+2. Choose one of these options:
+   - paste a stable `https` image link, then select **Save linked image**
+   - choose a JPG, PNG, or WebP file and select **Upload to site**
+3. Add alt text that describes the scene and purpose of the image.
+4. Choose the crop focus that best keeps the main subject visible on the homepage.
+5. Use the preview to confirm the image still works inside the wide homepage frame before leaving the page.
+6. If the image does not fit well, switch to a wider landscape image or move the crop focus.
+7. Use **Use default image** to restore the original homepage image.
+
+Recommended image guidance:
+- Aim for a landscape image at about `1600 x 900` or larger.
+- Keep the main subject near the upper middle of the image because the public page uses a 16:9 cover crop.
+- Avoid images with small text or busy edges because they crop poorly on smaller screens.
+- Keep uploaded files under `5 MB`.
 
 ### Honorary members and memorial management
 1. Open Admin → Honorary Members or Admin → Memorials.

@@ -374,6 +374,7 @@ test("member profile API saves extended professional details and visibility", as
         iwfsaPosition: "Member Affairs Committee",
         bio: "Governance leader focused on member dignity and institutional memory.",
         linkedinUrl: "https://www.linkedin.com/in/lerato-mokoena",
+        photoUrl: "https://photos.example.com/lerato-mokoena.jpg",
         expertiseFreeText: "Governance, strategy, member engagement",
         professionalLinks: [
           {
@@ -398,6 +399,7 @@ test("member profile API saves extended professional details and visibility", as
     assert.equal(updatePayload.item.iwfsaPosition, "Member Affairs Committee");
     assert.equal(updatePayload.item.bio, "Governance leader focused on member dignity and institutional memory.");
     assert.equal(updatePayload.item.linkedinUrl, "https://www.linkedin.com/in/lerato-mokoena");
+    assert.equal(updatePayload.item.photoUrl, "https://photos.example.com/lerato-mokoena.jpg");
     assert.equal(updatePayload.item.expertiseFreeText, "Governance, strategy, member engagement");
     assert.equal(updatePayload.item.profileVisibility.profile, "members_only");
     assert.equal(updatePayload.item.profileVisibility.links, "submitted_for_public_review");
@@ -419,6 +421,7 @@ test("member profile API saves extended professional details and visibility", as
             iwfsa_position AS iwfsaPosition,
             bio,
             linkedin_url AS linkedinUrl,
+            photo_url AS photoUrl,
             expertise_free_text AS expertiseFreeText,
             professional_links_json AS professionalLinksJson,
             profile_visibility_json AS profileVisibilityJson,
@@ -434,6 +437,7 @@ test("member profile API saves extended professional details and visibility", as
       assert.equal(profile.iwfsaPosition, "Member Affairs Committee");
       assert.equal(profile.bio, "Governance leader focused on member dignity and institutional memory.");
       assert.equal(profile.linkedinUrl, "https://www.linkedin.com/in/lerato-mokoena");
+      assert.equal(profile.photoUrl, "https://photos.example.com/lerato-mokoena.jpg");
       assert.equal(profile.expertiseFreeText, "Governance, strategy, member engagement");
       const storedVisibility = JSON.parse(profile.profileVisibilityJson);
       assert.equal(storedVisibility.profile, "members_only");
@@ -452,6 +456,66 @@ test("member profile API saves extended professional details and visibility", as
     } finally {
       database.close();
     }
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("member profile browse API returns rich read-only profile cards", async () => {
+  const { server, workingDirectory } = await createRunningServer();
+
+  try {
+    const loginResponse = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const loginPayload = await loginResponse.json();
+    assert.equal(loginResponse.status, 200);
+
+    const updateResponse = await fetch(`http://${server.host}:${server.port}/api/member/profile`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${loginPayload.token}`
+      },
+      body: JSON.stringify({
+        fullName: "Member One",
+        company: "Ubuntu Ventures",
+        businessTitle: "Forum Speaker",
+        iwfsaPosition: "Member Affairs",
+        bio: "Curates member stories and profile highlights.",
+        expertiseFreeText: "Storytelling, governance, member engagement",
+        linkedinUrl: "https://www.linkedin.com/in/member-one",
+        photoUrl: "https://images.example.com/member-one.jpg",
+        professionalLinks: [{ label: "Portfolio", url: "https://example.com/member-one" }],
+        galleryItems: [
+          {
+            sourceLabel: "Leadership Portrait",
+            imageUrl: "https://images.example.com/member-one-gallery.jpg",
+            caption: "Conference leadership portrait"
+          }
+        ]
+      })
+    });
+    assert.equal(updateResponse.status, 200);
+
+    const browseResponse = await fetch(`http://${server.host}:${server.port}/api/member/profiles?search=member%20one`, {
+      headers: { Authorization: `Bearer ${loginPayload.token}` }
+    });
+    const browsePayload = await browseResponse.json();
+
+    assert.equal(browseResponse.status, 200);
+    assert.ok(Array.isArray(browsePayload.items));
+    assert.equal(browsePayload.items.length, 1);
+    assert.equal(browsePayload.items[0].fullName, "Member One");
+    assert.equal(browsePayload.items[0].organisation, "Ubuntu Ventures");
+    assert.equal(browsePayload.items[0].businessTitle, "Forum Speaker");
+    assert.equal(browsePayload.items[0].iwfsaPosition, "Member Affairs");
+    assert.equal(browsePayload.items[0].photoUrl, "https://images.example.com/member-one.jpg");
+    assert.equal(browsePayload.items[0].professionalLinks[0].url, "https://example.com/member-one");
+    assert.deepEqual(browsePayload.items[0].galleryItems, []);
   } finally {
     await server.close();
     rmSync(workingDirectory, { recursive: true, force: true });
@@ -489,6 +553,13 @@ test("admin APIs manage public profile review, honorary members, and memorial en
         company: "IWFSA Test Company",
         linkedinUrl: "https://www.linkedin.com/in/member-one",
         professionalLinks: [{ label: "Portfolio", url: "https://example.com/member-one" }],
+        galleryItems: [
+          {
+            sourceLabel: "LinkedIn",
+            imageUrl: "https://images.example.com/member-one-gallery-review.jpg",
+            caption: "Member One at mentorship forum"
+          }
+        ],
         profileVisibility: {
           profile: "submitted_for_public_review",
           links: "submitted_for_public_review",
@@ -513,7 +584,10 @@ test("admin APIs manage public profile review, honorary members, and memorial en
     assert.equal(reviewListResponse.status, 200);
     assert.equal(reviewListPayload.items.length, 1);
     assert.equal(reviewListPayload.items[0].userId, memberId);
-    assert.deepEqual(reviewListPayload.items[0].requestedFieldKeys.sort(), ["fullName", "linkedinUrl", "professionalLinks"].sort());
+    assert.deepEqual(
+      reviewListPayload.items[0].requestedFieldKeys.sort(),
+      ["fullName", "linkedinUrl", "professionalLinks", "galleryItems"].sort()
+    );
 
     const approveResponse = await fetch(
       `http://${server.host}:${server.port}/api/admin/member-profile-reviews/${memberId}/decision`,
@@ -529,6 +603,17 @@ test("admin APIs manage public profile review, honorary members, and memorial en
     const approvePayload = await approveResponse.json();
     assert.equal(approveResponse.status, 200);
     assert.equal(approvePayload.item.status, "approved");
+
+    const browseAfterApproval = await fetch(`http://${server.host}:${server.port}/api/member/profiles?search=member%20one`, {
+      headers: { Authorization: `Bearer ${memberPayload.token}` }
+    });
+    const browseAfterApprovalPayload = await browseAfterApproval.json();
+    assert.equal(browseAfterApproval.status, 200);
+    assert.equal(browseAfterApprovalPayload.items[0].galleryItems.length, 1);
+    assert.equal(
+      browseAfterApprovalPayload.items[0].galleryItems[0].imageUrl,
+      "https://images.example.com/member-one-gallery-review.jpg"
+    );
 
     const database = openDatabase(databasePath);
     const profileVisibilityRow = database
@@ -946,6 +1031,160 @@ test("GET /api/members requires admin role", async () => {
   }
 });
 
+test("GET /api/public/site-settings/public-hero returns a public default without auth", async () => {
+  const { server, workingDirectory } = await createRunningServer();
+
+  try {
+    const response = await fetch(`http://${server.host}:${server.port}/api/public/site-settings/public-hero`);
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.item.sourceType, "default");
+    assert.equal(payload.item.usesDefaultImage, true);
+    assert.equal(payload.item.hasCustomImage, false);
+    assert.equal(payload.item.imageUrl, null);
+    assert.equal(payload.item.focalPoint, "top");
+    assert.match(payload.item.altText, /IWFSA leaders meeting around a conference table/);
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("admin can update public hero with an external image and member cannot", async () => {
+  const { server, workingDirectory, databasePath } = await createRunningServer();
+
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
+    });
+    const adminPayload = await adminLogin.json();
+    assert.equal(adminLogin.status, 200);
+
+    const memberLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "member1", password: "memberpass" })
+    });
+    const memberPayload = await memberLogin.json();
+    assert.equal(memberLogin.status, 200);
+
+    const forbiddenResponse = await fetch(`http://${server.host}:${server.port}/api/admin/site-settings/public-hero`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${memberPayload.token}`
+      },
+      body: JSON.stringify({
+        imageUrl: "https://cdn.example.com/hero.jpg",
+        altText: "External hero",
+        focalPoint: "center"
+      })
+    });
+    const forbiddenPayload = await forbiddenResponse.json();
+
+    assert.equal(forbiddenResponse.status, 403);
+    assert.equal(forbiddenPayload.error, "forbidden");
+
+    const response = await fetch(`http://${server.host}:${server.port}/api/admin/site-settings/public-hero`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminPayload.token}`
+      },
+      body: JSON.stringify({
+        imageUrl: "https://cdn.example.com/hero.jpg",
+        altText: "Women leaders standing together at an IWFSA event.",
+        focalPoint: "center"
+      })
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.updated, true);
+    assert.equal(payload.item.sourceType, "external");
+    assert.equal(payload.item.imageUrl, "https://cdn.example.com/hero.jpg");
+    assert.equal(payload.item.altText, "Women leaders standing together at an IWFSA event.");
+    assert.equal(payload.item.focalPoint, "center");
+    assert.equal(payload.item.focalPointCss, "center center");
+
+    const publicResponse = await fetch(`http://${server.host}:${server.port}/api/public/site-settings/public-hero`);
+    const publicPayload = await publicResponse.json();
+
+    assert.equal(publicResponse.status, 200);
+    assert.equal(publicPayload.item.sourceType, "external");
+    assert.equal(publicPayload.item.imageUrl, "https://cdn.example.com/hero.jpg");
+    assert.equal(publicPayload.item.usesDefaultImage, false);
+
+    const database = openDatabase(databasePath);
+    try {
+      const auditRow = database
+        .prepare(
+          `
+          SELECT metadata_json AS metadataJson
+          FROM audit_logs
+          WHERE action_type = 'public_site_hero_updated'
+          ORDER BY id DESC
+          LIMIT 1
+        `
+        )
+        .get();
+      assert.ok(auditRow);
+      const metadata = JSON.parse(auditRow.metadataJson || "{}");
+      assert.equal(metadata.sourceType, "external");
+      assert.equal(metadata.focalPoint, "center");
+    } finally {
+      database.close();
+    }
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
+test("admin can upload a public hero image and the public image route serves it", async () => {
+  const { server, workingDirectory } = await createRunningServer();
+
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
+    });
+    const adminPayload = await adminLogin.json();
+    assert.equal(adminLogin.status, 200);
+
+    const form = new FormData();
+    form.set("altText", "Members seated in a bright meeting room.");
+    form.set("focalPoint", "bottom");
+    form.set("file", new Blob([Buffer.from("fake-image-payload")], { type: "image/png" }), "hero.png");
+
+    const uploadResponse = await fetch(`http://${server.host}:${server.port}/api/admin/site-settings/public-hero/upload`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${adminPayload.token}` },
+      body: form
+    });
+    const uploadPayload = await uploadResponse.json();
+
+    assert.equal(uploadResponse.status, 200);
+    assert.equal(uploadPayload.item.sourceType, "upload");
+    assert.equal(uploadPayload.item.focalPoint, "bottom");
+    assert.match(uploadPayload.item.imageUrl, /\/api\/public\/site-settings\/public-hero\/image\?/);
+
+    const imageResponse = await fetch(uploadPayload.item.imageUrl);
+    const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+
+    assert.equal(imageResponse.status, 200);
+    assert.match(imageResponse.headers.get("content-type") || "", /image\/png/);
+    assert.deepEqual(imageBuffer, Buffer.from("fake-image-payload"));
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
+  }
+});
+
 test("GET and PATCH /api/members/:id let admins edit member records", async () => {
   const { server, workingDirectory, databasePath } = await createRunningServer();
 
@@ -1156,6 +1395,59 @@ test("POST /api/members stores group memberships, emails invite, and records aud
     await server.close();
     rmSync(workingDirectory, { recursive: true, force: true });
     delete globalThis[EMAIL_OUTBOX_GLOBAL_KEY];
+  }
+});
+
+test("PATCH /api/members/:id with only groups field appends group while preserving profile data", async () => {
+  const { server, workingDirectory } = await createRunningServer();
+
+  try {
+    const adminLogin = await fetch(`http://${server.host}:${server.port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: BOOTSTRAP_ADMIN.username, password: BOOTSTRAP_ADMIN.password })
+    });
+    const adminPayload = await adminLogin.json();
+    assert.equal(adminLogin.status, 200);
+
+    // Step 1: create a member with one group
+    const createResponse = await fetch(`http://${server.host}:${server.port}/api/members`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminPayload.token}` },
+      body: JSON.stringify({
+        fullName: "Group Append Test",
+        email: "groupappend@iwfsa.local",
+        groups: ["Board of Directors"]
+      })
+    });
+    const created = await createResponse.json();
+    assert.equal(createResponse.status, 201);
+    assert.deepEqual(created.groups, ["Board of Directors"]);
+
+    // Step 2: PATCH sending only the groups field (simulates UI assign-to-group action)
+    const patchResponse = await fetch(`http://${server.host}:${server.port}/api/members/${created.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminPayload.token}` },
+      body: JSON.stringify({ groups: ["Board of Directors", "Advocacy and Voice"] })
+    });
+    const patched = await patchResponse.json();
+    assert.equal(patchResponse.status, 200);
+    assert.deepEqual([...patched.item.groups].sort(), ["Advocacy and Voice", "Board of Directors"]);
+
+    // Step 3: profile fields (fullName) must still be intact after groups-only PATCH
+    assert.equal(patched.item.fullName, "Group Append Test");
+    assert.equal(patched.item.email, "groupappend@iwfsa.local");
+
+    // Step 4: fresh GET confirms persistence
+    const getResponse = await fetch(`http://${server.host}:${server.port}/api/members/${created.id}`, {
+      headers: { Authorization: `Bearer ${adminPayload.token}` }
+    });
+    const fetched = await getResponse.json();
+    assert.equal(getResponse.status, 200);
+    assert.deepEqual([...fetched.item.groups].sort(), ["Advocacy and Voice", "Board of Directors"]);
+  } finally {
+    await server.close();
+    rmSync(workingDirectory, { recursive: true, force: true });
   }
 });
 
